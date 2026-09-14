@@ -158,6 +158,34 @@ union of one or more such closed, possibly overlapping, loops — never a mix of
 > Figure 13-3's typical sections)? Auto-deriving a closed-loop topology from a
 > spacing rule alone is a non-trivial geometry problem; deferring this to the
 > tracer bullet / early implementation spike (§11) rather than guessing now.
+>
+> **RESOLVED (R4, #71):** the **user selects**; §6.1 **validates** the
+> selection rather than generating it. §6.1 admits many valid coverings of the
+> same layout and the spec has no tie-break rule between them, so
+> auto-derivation would mean inventing one.
+
+> ### ⚠️ AMENDED — A1 (#81): cross-ties return, for ONE reason only
+>
+> The blanket deletion of single-leg cross-ties above is **partially
+> reversed**. A closed loop can only enclose a subset whose narrow dimension
+> exceeds the tie's minimum bend diameter — a subset of two bars on opposite
+> faces produces a rectangle ~25 mm wide, which no bar can bend to. Revit
+> refuses it with a **modal dialog**, not a catchable exception.
+>
+> So: a bar §6.1 requires to be restrained gets a **closed rectangular loop**;
+> a **single-leg cross-tie is used only where that loop cannot be bent**.
+>
+> ```
+> loop is buildable  <=>  narrow dimension >= tie bend diameter + tie diameter
+> ```
+>
+> The bend diameter is **read from the `RebarBarType`**, never assumed as a
+> multiple of Ø. Failing this test is the **sole** permitted trigger for a
+> cross-tie — never tidiness, simplicity or preference. The test runs
+> **before** the Revit API call, and the Review report states, per restrained
+> bar, which was used and that the bend test is why.
+>
+> Full rationale and the live-host evidence: `docs/column/spec-amendments.md`.
 
 ### 6.3 Hook corner alternation (NEW rule — do not confuse with §6.1's static bar-membership rule)
 

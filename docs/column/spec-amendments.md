@@ -11,15 +11,34 @@ issue decided it.
 
 ## Status
 
-`specs/column-rft-detailing.md` is **LOCKED at v1**. No amendments have been
-issued yet — the Wayfinder cycle resolved decisions *about* the spec (packaging,
-API mechanics, reuse) without changing the spec text.
+`specs/column-rft-detailing.md` is **LOCKED at v1**, with **one amendment
+(A1)** issued against §6.2. Everything else the Wayfinder cycle produced was a
+decision *about* the spec (packaging, API mechanics, reuse) rather than a
+change to its text.
 
 ## Amendments
 
 | # | Section | Change | Decided by |
 |---|---|---|---|
-| — | — | *(none yet)* | — |
+| **A1** | **§6.2** | **Cross-ties are reinstated, as a fallback triggered by ONE condition only: the bend fails.** §6.2's amendment had deleted single-leg cross-ties outright ("the original simple 1-leg cross-tie assumption is DELETED"). A1 partially reverses that: a bar §6.1 requires to be restrained gets a **closed rectangular loop**, and a **single-leg cross-tie only where that loop cannot physically be bent**. A loop is *buildable* when `narrow dimension >= tie bend diameter + tie diameter`, the bend diameter **read from the `RebarBarType`**, never assumed. Owner's wording: *"use tie only when bending fail"* — so a cross-tie may never be chosen for tidiness, simplicity, preference, or because a loop would merely be awkward. Failing the bend test is the **sole** permitted trigger, and the Review report must state per restrained bar which was used and that the bend test is why. | #81 |
+
+### Why A1 was needed — it was not a theoretical gap
+
+A hand-built cage on the live host (450×600, cover 40, 10M ties, 16M bars,
+3 bars per 450-face) put **both** faces in §6.1's `150 < x <= 250` tier, so
+every bar required restraint. The subset {N-mid bar, S-mid bar} is a closed
+rectangle **25.4 mm wide** — narrower than a 10M bar's ~38 mm bend diameter.
+Revit refused with a modal **"Can't solve Rebar Shape"**, three times, and
+blocked the session. §6.2 as written demanded a shape that cannot exist.
+
+### What A1 changes in the data model
+
+`column_layout`'s output stops being "a list of closed loops". It becomes a
+list of **restraint elements**, each either a closed loop (subset → rectangle)
+or a cross-tie (a single leg between two bars). The review report, the sketch
+and the placer all consume that union type. The buildability test runs
+**before** the Revit API call, so the user sees a stated choice rather than a
+modal refusal.
 
 ## Resolutions — questions answered without changing the spec
 
@@ -56,6 +75,8 @@ the affected code is written.
 | Q7 | §6.3 | Can `MoveBarInSet` accept a **reflection**, and is a **mirrored 135° hook** legal? | **CLOSED** → R9/R10 (#78) |
 | Q8 | §6.3 | Only the `hand`-normal mirror plane (SW→SE) was tested. Mirroring about the `face` normal (SW→NW) is the other adjacent move, untested. Should alternation use one plane throughout, or alternate between both across four levels? §6.3 requires only "a different corner" each level, so the spec does not decide this. | open |
 | Q9 | §6.2 | Every tie experiment so far used the **outer perimeter** tie only. No inner subset tie had ever been created. | **CLOSED** → R11 |
+| Q10 | §6.2 | **The tie/stirrup SHAPE CATALOGUE cannot be finalised.** Owner, 2026-09-14: *"for stirrups shape it is very hard to give you one final answer."* There is no closed list of tie shapes to implement against, and there may never be one. | **open by nature, not by omission** — see below |
+| Q11 | §6.2 | Given Q10, should the template picker (#71) offer a fixed catalogue of Figure 13-3 sections at all, or let the user **define subsets directly** (start bar index + count, per §6.2's own convention) with §6.1 validating whatever they build? | open |
 
 ### Inherited, consciously
 
@@ -70,3 +91,31 @@ therefore be applied to **both** elements.
 | Risk | Rule at stake | Mitigation required |
 |---|---|---|
 | Per-bar transforms are keyed on **bar position index**, and Revit does **not** re-map them when the layout changes. After a spacing edit the alternation silently became `F,T,T,F,T,F` — bars 1 and 2 both rotated, bar 3 not. Nothing throws. | §6.3 | Apply transforms only **after** the final layout; reset and re-apply the whole rotation map on **any** layout change; prove the ordering with a mutation-provable AST guard. (#70) |
+| **Placing rebar silently MOVES rebar already placed.** Revit auto-creates `ToOtherRebar` constraints: longitudinal bars placed first were dragged ~18.5 mm off their computed positions when the ties were placed afterwards. Spacing and span survived; only the origins moved. Zero warnings, nothing thrown. | §2, §6.2, §9 — every placed quantity | The placer must **own** the constraints, not let Revit infer them: set each handle explicitly to a host face or cover, never to other rebar, unless a rebar target is deliberately wanted. Creation ORDER is part of the contract. Read positions back and assert them. (#80) |
+| A closed loop whose narrow dimension is below the tie's bend diameter is **geometrically unsolvable**, and Revit refuses with a **modal dialog** that blocks the whole session — not a catchable exception. | §6.2 / A1 | Run the buildability test (`narrow >= bend diameter + tie diameter`, bend diameter read from the `RebarBarType`) **before** any API call, and fall back to a cross-tie per A1. Never let the geometry reach Revit untested. (#81) |
+
+## Q10 — why the tie shape catalogue stays open, and why that is fine
+
+The owner's position is explicit: *"for stirrups shape it is very hard to give
+you one final answer."* There is no closed list of tie shapes to implement
+against, and pretending otherwise would mean inventing one — precisely what
+`CONTEXT.md` forbids.
+
+This **vindicates R4** (#71) rather than undermining it. R4 chose "the user
+picks, §6.1 validates" over auto-derivation exactly because the tool has no
+business deciding tie topology. Q10 says the same thing one level deeper: the
+tool should not hardcode the *catalogue* either.
+
+What follows for the implementation, and what does not:
+
+- **Not blocked.** §6.1's validator, A1's buildability test, the subset →
+  rectangle geometry, the per-level mirror map and the placer are all
+  shape-agnostic. They take whatever subsets they are given.
+- **Blocked:** shipping a fixed list of Figure 13-3 sections as *the*
+  templates. That list does not exist yet and may never be complete.
+- **Open (Q11):** whether the picker offers named templates at all, or lets
+  the engineer state subsets directly in §6.2's own terms (start bar index +
+  count) with §6.1 and A1 validating whatever they build. The second needs no
+  catalogue and cannot go stale — but it asks more of the user.
+
+Nothing here may be resolved by assumption.
