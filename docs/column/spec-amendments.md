@@ -11,8 +11,8 @@ issue decided it.
 
 ## Status
 
-`specs/column-rft-detailing.md` is **LOCKED at v1**, with **one amendment
-(A1)** issued against §6.2. Everything else the Wayfinder cycle produced was a
+`specs/column-rft-detailing.md` is **LOCKED at v1**, with **two amendments** —
+**A1** against §6.2 and **A2** against §1. Everything else the Wayfinder cycle produced was a
 decision *about* the spec (packaging, API mechanics, reuse) rather than a
 change to its text.
 
@@ -21,6 +21,31 @@ change to its text.
 | # | Section | Change | Decided by |
 |---|---|---|---|
 | **A1** | **§6.2** | **Cross-ties are reinstated, as a fallback triggered by ONE condition only: the bend fails.** §6.2's amendment had deleted single-leg cross-ties outright ("the original simple 1-leg cross-tie assumption is DELETED"). A1 partially reverses that: a bar §6.1 requires to be restrained gets a **closed rectangular loop**, and a **single-leg cross-tie only where that loop cannot physically be bent**. A loop is *buildable* when `narrow dimension >= tie bend diameter + tie diameter`, the bend diameter **read from the `RebarBarType`**, never assumed. Owner's wording: *"use tie only when bending fail"* — so a cross-tie may never be chosen for tidiness, simplicity, preference, or because a loop would merely be awkward. Failing the bend test is the **sole** permitted trigger, and the Review report must state per restrained bar which was used and that the bend test is why. | #81 |
+| **A2** | **§1** | **Cover is READ from the Revit element, not entered in the tool.** §1 listed cover as a user input *"assumed 25 mm as a starting default … but must remain an editable input, not a hardcoded constant"*. Owner's ruling: *"cover to be determined from revit element cover setting"*. The host's cover parameter is the **single source of truth**; the tool reads it and shows it **read-only**. Cover remains editable — in Revit, on the element, where every other discipline already sees it — and is never typed into the tool or defaulted to 25. | #83 |
+
+### Why A2 was forced — the input was already fiction
+
+R16 proved the tool could not have honoured a typed cover anyway. Ties carry
+`Edge -> ToCover` constraints, so Revit **clamps** them to the host's cover: a
+tie built for 25 landed at the host's 40, silently, with no warning and no
+exception. A user typing 25 would have got 40 in the model while the Review
+report said 25 — exactly the report/model divergence §8 exists to prevent.
+
+A2 does not remove a capability; it **stops the tool claiming one it never
+had**. It also strengthens §8's single-source-of-truth principle rather than
+weakening it: report and model now read the same number because they read the
+*same parameter*.
+
+**Which parameter:** for a column's four vertical faces — the ones every tie
+and perimeter bar is measured from — that is `CLEAR_COVER_OTHER`
+("Other Faces"). Confirmed empirically: the test column reads 40 mm there, and
+ties clamped to exactly 40.
+
+> **Open, and must not be guessed (Q5):** the same column's
+> `Rebar Cover - Top Face` is **unset** (`-1`). A2 makes that load-bearing —
+> the tool now depends on reading cover, so what it does when the parameter it
+> needs is unset is a real branch, not a defensive nicety. Refuse, fall back
+> to "Other Faces", or prompt?
 
 ### Why A1 was needed — it was not a theoretical gap
 
@@ -73,14 +98,14 @@ the affected code is written.
 | Q2 | §6.3 | Diagonal (180°) or adjacent hook corner? | **CLOSED** → R8 (adjacent required, #70) and R9 (proven buildable, #78) |
 | Q3 | §0 | What the tool DOES with an out-of-scope column. | **CLOSED** → R5/R6 (C1), R12 (C2), R13 (C3) — #73 |
 | Q4 | §7 | Tie bar steel grade vs the 135° hook default. | **CLOSED** → R7 (#74) |
-| Q5 | §1 | Cover must be an editable input. The test column's `Rebar Cover - Top Face` was **unset** (`-1`), so a per-face read cannot assume all three cover parameters resolve. | open (#69) |
+| Q5 | §1 | The test column's `Rebar Cover - Top Face` is **unset** (`-1`), so a per-face read cannot assume all three cover parameters resolve. **A2 makes this load-bearing** — the tool now depends on reading cover, so an unset parameter is a real branch: refuse, fall back to "Other Faces", or prompt? | open (#69, #83) |
 | Q6 | §9 | **Roof / top-storey column.** §9 protrudes `L_s` above the top support "to connect with the next story" — a roof column has none, so bars would project out of the slab. The closure rule at the roof slab is undefined. | open, **deferred by owner** (#77) |
 | Q7 | §6.3 | Can `MoveBarInSet` accept a **reflection**, and is a **mirrored 135° hook** legal? | **CLOSED** → R9/R10 (#78) |
 | Q8 | §6.3 | Only the `hand`-normal mirror plane (SW→SE) was tested. Mirroring about the `face` normal (SW→NW) is the other adjacent move, untested. Should alternation use one plane throughout, or alternate between both across four levels? §6.3 requires only "a different corner" each level, so the spec does not decide this. | open |
 | Q9 | §6.2 | Every tie experiment so far used the **outer perimeter** tie only. No inner subset tie had ever been created. | **CLOSED** → R11 |
 | Q10 | §6.2 | **The tie/stirrup SHAPE CATALOGUE cannot be finalised.** Owner, 2026-09-14: *"for stirrups shape it is very hard to give you one final answer."* There is no closed list of tie shapes to implement against, and there may never be one. | **open by nature, not by omission** — see below |
 | Q11 | §6.2 | Given Q10, should the template picker (#71) offer a fixed catalogue of Figure 13-3 sections at all, or let the user **define subsets directly** (start bar index + count, per §6.2's own convention) with §6.1 validating whatever they build? | open |
-| Q12 | §1 | **The cover input is not honoured downward.** Per R16, Revit clamps a tie to the host's cover parameter: cover 25 entered, cover 40 built, silently. §1 requires cover to be an editable input, but the model overrules it. Options: (a) read the host's cover and show it read-only, (b) write the user's cover onto the host before placing, (c) warn/refuse when the user's value is below the host's, naming both. | open (#83) |
+| Q12 | §1 | The cover input is not honoured downward — Revit clamps a tie to the host's cover parameter. | **CLOSED** → **A2**: cover is read from the element (#83) |
 | Q13 | §6.1 | **The tier check may validate coordinates the model does not use.** `x`, the clear distance between bars, decides which tier applies and therefore which bars need restraint. Per R15, corner bars sit ~3.5 mm inboard of their computed positions. Should §6.1 be evaluated on idealised coordinates or on positions read back after placement? | open |
 
 ### Inherited, consciously
