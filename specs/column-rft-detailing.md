@@ -44,7 +44,7 @@ rectangular column of user-input dimensions `a × b`.
 | `Hc_mm` | Clear height of the column segment (support face to support face). |
 | Longitudinal bar type, count per face, corner bars | Ø and fy read from the selected `RebarBarType`, same convention as beam's `role_picker_label`. |
 | Tie/stirrup bar type | Ø and fy, user-selected. |
-| Cover | Cover to ties/stirrups. Assumed 25 mm as a starting default per the original sketch, but **must remain an editable input, not a hardcoded constant** — same discipline as the beam tool's per-face cover reads. |
+| Cover | ⚠️ **AMENDED — A2 (#83).** Originally: *"assumed 25 mm as a starting default … but must remain an editable input, not a hardcoded constant."* Now: **cover is READ from the Revit element's own cover parameter** (`CLEAR_COVER_OTHER` — "Other Faces" — for a column's four vertical faces) and shown **read-only**. It is never typed into the tool and never defaults to 25. Cover stays editable, in Revit, on the element. **Why:** Revit clamps ties to the host's cover regardless of what is passed (`Edge -> ToCover`), so a typed 25 silently became 40 in the model while the report said 25. The input was fiction. See `docs/column/spec-amendments.md`. |
 | Main outer tie hook type | User-selected dropdown, populated from available `RebarHookType`s in the project, default 135° (§7). |
 | Inner tie hook type | A SEPARATE, independently user-selected dropdown from the main outer tie hook, default 135° (§7). |
 | Spacing mode | Toggle: Mode A (Auto-Calculate) or Mode B (Manual Override) — see §8. |
