@@ -64,3 +64,4 @@ jobs:
         run: |
           python -m compileall -q RFT.lib
           python -m py_compile "SimpleBeamRFT.extension/RFT-Tools.tab/Beams.panel/Simple Beam.pushbutton/script.py"
+          python -m py_compile "ColumnRFT.extension/RFT-Tools.tab/Columns.panel/ColumnRFT.pushbutton/script.py"

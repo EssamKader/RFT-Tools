@@ -101,7 +101,7 @@ only that the import and the surrounding code still load.
 - **Superseded by issue #30 (Revit 2024 live probe):** `RebarHostData.
   GetFaces`/`GetCoverType` and `RebarFaceType` did not exist; cover reads
   now go through `read_beam_face_covers_mm` -- see
-  `docs/verification/issue-30-cover-face-reads.md`. `RebarBarType` diameter
+  `docs/beam/verification/issue-30-cover-face-reads.md`. `RebarBarType` diameter
   properties and `pyrevit.forms.SelectFromList.show`'s signature remain
   open.
 - **Whether the refusal genuinely fires BEFORE any Revit mutation in

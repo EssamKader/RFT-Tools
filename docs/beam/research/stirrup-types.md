@@ -1,7 +1,7 @@
 # Stirrup Types 1–4 — Revit API Research Findings
 
 Documentation-only research, no live Revit host used. Builds on
-`docs/research/revit-api-strategy.md` (mm-internal/convert-at-boundary,
+`docs/beam/research/revit-api-strategy.md` (mm-internal/convert-at-boundary,
 `Rebar.CreateFromCurves`, `RebarStyle`, `SetLayoutAsMaximumSpacing`, one
 `Transaction` per beam — all treated as fixed here, not re-litigated).
 

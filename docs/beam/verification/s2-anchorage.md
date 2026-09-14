@@ -106,7 +106,7 @@ both ends straight (1 segment).
 
 **1. `support_reference_point`'s curve-midpoint fallback.** A column exposes
 `Location.Point`; rev 2 says nothing about what a wall or girder's `Location`
-looks like, and neither does `docs/research/revit-api-strategy.md` (support
+looks like, and neither does `docs/beam/research/revit-api-strategy.md` (support
 detection beyond columns was never researched there -- see
 `rft/revit/geometry.py`'s pre-existing module docstring). Falling back to the
 `Location.Curve`'s midpoint is this ticket's own engineering choice, not a
@@ -220,7 +220,7 @@ deliverable an engineer reads to decide whether to trust the bars.
   `beam_end_cover` now has a real answer -- it is only ever requested, via
   `read_beam_face_covers_mm`'s `need_end_start`/`need_end_end` flags, at
   whichever end is actually unsupported, which is exactly where an end
-  face IS exposed. See `docs/verification/issue-30-cover-face-reads.md`.
+  face IS exposed. See `docs/beam/verification/issue-30-cover-face-reads.md`.
 - **`OST_Walls`/`OST_StructuralFraming` as valid `FilteredElementCollector.OfCategory`
   arguments** are assumed to exist and behave like `OST_StructuralColumns`
   already did (untested new API surface, flagged in `tests/fake_revit_api.py`).

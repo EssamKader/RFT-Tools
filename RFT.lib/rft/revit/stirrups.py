@@ -83,7 +83,7 @@ def apply_maximum_spacing_layout(
     SHAPE UNVERIFIED: `Rebar.GetShapeDrivenAccessor()` and
     `RebarShapeDrivenAccessor.SetLayoutAsMaximumSpacing`'s exact parameter
     order/count are assumed from
-    docs/research/revit-api-strategy.md's documentation-only research
+    docs/beam/research/revit-api-strategy.md's documentation-only research
     (`SetLayoutAsMaximumSpacing(spacing, arrayLength, barsOnNormalSide,
     includeFirstBar, includeLastBar)`), not confirmed against a live host.
     See tests/fake_revit_api.py header.

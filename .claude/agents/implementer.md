@@ -20,20 +20,20 @@ rectangular concrete beams.
 1. **`CONTEXT.md`** — the project's standing rules. Non-negotiable.
 2. **`specs/beam-rft-detailing.md`** — the user story your ticket implements,
    with its acceptance criteria.
-3. **`00.Technical Material/beam_rebar_detailing_spec_v2.docx`** — the
+3. **`technical-material/beam/beam_rebar_detailing_spec_v2.docx`** — the
    technical source of truth. **Revision 2 only.** `beam_rebar_detailing_spec.docx`
    (rev 1) is a historical baseline and must not be implemented from.
-4. **`docs/spec-amendments.md`** — why rev 2 says what it says, traced to the
+4. **`docs/beam/spec-amendments.md`** — why rev 2 says what it says, traced to the
    ticket that decided each point.
-5. **`docs/research/revit-api-strategy.md`** and
-   **`docs/research/stirrup-types.md`** — the API decisions already made.
+5. **`docs/beam/research/revit-api-strategy.md`** and
+   **`docs/beam/research/stirrup-types.md`** — the API decisions already made.
 
 The .docx is binary. Extract its text with:
 
 ```bash
 python -c "
 import zipfile, re
-z = zipfile.ZipFile('00.Technical Material/beam_rebar_detailing_spec_v2.docx')
+z = zipfile.ZipFile('technical-material/beam/beam_rebar_detailing_spec_v2.docx')
 xml = z.read('word/document.xml').decode('utf-8')
 paras = re.findall(r'<w:p[ >].*?</w:p>', xml, re.DOTALL)
 for p in paras:

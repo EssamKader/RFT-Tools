@@ -725,7 +725,7 @@ found two more that had been missed, one of them the replacement text
 written for this very ticket.
 
 Also: bars get a minimum drawn radius (the POSITION stays exact; only the
-symbol drawn at it gets a floor, as `docs/ui/sketch-notation.svg` draws
+symbol drawn at it gets a floor, as `docs/beam/ui/sketch-notation.svg` draws
 them anyway); `MAX_SCHEMATIC_TICKS_PER_ZONE` 24 -> 8; section canvases
 260 -> 420 px.
 
@@ -1216,7 +1216,7 @@ One transaction (A46). Any refusal — A51's, an invalid input, a Revit error
 
 20 new tests on the plan module, the one whose output becomes steel.
 Cross-checked against the 300×900 verification beam **and** against
-`docs/ui/sketch-notation.svg`, drawn by hand from the spec weeks earlier:
+`docs/beam/ui/sketch-notation.svg`, drawn by hand from the spec weeks earlier:
 both give `offset₁ = 43 mm` and four crack layers at 162.8 mm.
 
 359 tests pass. **None of that is evidence that a single bar is correctly
@@ -1460,11 +1460,11 @@ work is at the top of this file.
   reference manual, `CONTEXT.md` standing rules, MIT licence.
 - **Spec revision 2** (`beam_rebar_detailing_spec_v2.docx`) incorporating 40
   amendments from the Wayfinder decision cycle, each traced to its deciding
-  ticket in `docs/spec-amendments.md`. Revision 1 is retained as the
+  ticket in `docs/beam/spec-amendments.md`. Revision 1 is retained as the
   historical baseline and must not be implemented from.
-- **Research findings**: `docs/research/revit-api-strategy.md` (unit boundary,
+- **Research findings**: `docs/beam/research/revit-api-strategy.md` (unit boundary,
   rebar creation API, bend-radius datum, host prerequisites, rebar-set layout
-  rules, transaction pattern) and `docs/research/stirrup-types.md` (closure
+  rules, transaction pattern) and `docs/beam/research/stirrup-types.md` (closure
   type mapping).
 - **User stories**: `specs/beam-rft-detailing.md` — nine stories sliced
   tracer-bullet-first, acceptance criteria traced to rev 2 sections.
@@ -1635,7 +1635,7 @@ work is at the top of this file.
   this ticket wires both into all three pushbuttons and makes every
   rejection/warning name its condition and spec section via a
   `GuardMessage(condition, spec_section, message)` result, never a bare
-  string. See `docs/verification/s9-guards.md`.
+  string. See `docs/beam/verification/s9-guards.md`.
 
 ### Known risks
 
@@ -1645,7 +1645,7 @@ work is at the top of this file.
   would have raised `AttributeError` on their first cover read. Replaced in
   #30 by classifying exposed-face normals against the beam's own frame,
   confirmed on a live host including a beam rotated 45° in plan
-  (`docs/verification/issue-30-cover-face-reads.md`).
+  (`docs/beam/verification/issue-30-cover-face-reads.md`).
 - **`Place Crack Bars` re-asks for the main bar layer counts.** A26's
   `H_avail` is measured to the innermost main bar layer, so the crack-bar
   run needs `layers_top` / `layers_btm` -- and nothing reads them back from
@@ -1663,7 +1663,7 @@ work is at the top of this file.
   Stirrup/Tie (1). The probe also found the constraint that matters: a
   Standard-family hook is rejected by `RebarStyle.StirrupTie` with an opaque
   `InternalException` *whatever* its angle — so the guard checks family as
-  well as angle (A45; `docs/verification/issue-25-stirrup-hook-family-and-angle.md`).
+  well as angle (A45; `docs/beam/verification/issue-25-stirrup-hook-family-and-angle.md`).
 - **#26 — the A7 clearance has no defined failure behaviour.** The tool warns
   and places anyway, which is a placeholder chosen to avoid inventing a
   detailing rule, not an answer. Needs a decision.

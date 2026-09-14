@@ -158,7 +158,7 @@ from rft.ui.sketch_palette import brush_key_for_style
 # are plain WPF/CLR types (Line/Ellipse/Polygon/TextBlock/Points), not the
 # Revit API -- constructing them needs no API context, exactly like every
 # other direct control write already in this file (self.h_avail_tb.Text =
-# ..., etc., per docs/research/ui-wpf-hosting.md's "direct reads + one
+# ..., etc., per docs/beam/research/ui-wpf-hosting.md's "direct reads + one
 # explicit redraw" recommendation). Wrapped: if this import ever fails on
 # a live host (a pyRevit engine that has not loaded PresentationFramework
 # for some reason), the whole window must still open -- the sketch is a
@@ -181,7 +181,7 @@ except Exception:
 # ``System.Windows.Controls.Canvas.SetLeft``/``SetTop`` are real static
 # attached-property setters, per the .NET Framework documentation -- but
 # NEITHER has been called from inside a pyRevit-hosted ``WPFWindow`` in
-# this project before now. docs/research/ui-wpf-hosting.md confirms
+# this project before now. docs/beam/research/ui-wpf-hosting.md confirms
 # ``Canvas``/``Line``/``Ellipse``/``Polygon``/``TextBlock`` construction
 # and pyRevit's own resource injection into ``WPFWindow``, but not
 # ``FindResource`` specifically, nor ``PointCollection`` construction from

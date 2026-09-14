@@ -1,0 +1,13 @@
+# The RIBBON TAB -- deliberately the SAME title as
+# SimpleBeamRFT.extension/RFT-Tools.tab/bundle.yaml.
+#
+# pyRevit merges tabs BY TITLE across extensions. Declaring "RFT-Tools"
+# here is what makes this separate extension land on the same ribbon tab
+# as the beam tools instead of adding a tab per element. The title string
+# is therefore load-bearing: change it and the column tool silently moves
+# to a tab of its own.
+#
+# The rule, unchanged from the beam extension: the TAB names the domain,
+# the PANEL names the element, the BUTTON names the case.
+title: RFT-Tools
+author: Essam Kader

@@ -27,7 +27,7 @@ dimension would).
 
 One brush here, ``PassGreen``, does not exist among the ten brushes
 ``SimpleBeamWindow.xaml`` already declares for #60's palette -- none of
-those ten is green, and the notation SVG (docs/ui/sketch-notation.svg)
+those ten is green, and the notation SVG (docs/beam/ui/sketch-notation.svg)
 uses green specifically for "complies" (crack/skin bars, a passing
 spacing dimension). It is declared in this ticket's XAML edit, in
 ``Window.Resources`` alongside the existing ten, never on the ``<Window>``

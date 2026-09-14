@@ -15,7 +15,7 @@ tooltip: >-
   SCOPE: single span only. A continuous run is detected and REFUSED rather
   than detailed as if it were simply supported (rev 2 section 9 item 2).
 
-  See specs/ui-single-window.md and docs/spec-amendments.md.
+  See specs/ui-single-window.md and docs/beam/spec-amendments.md.
 author: Essam Kader
 
 # REQUIRED, not optional (#59). The window is MODELESS, so its event

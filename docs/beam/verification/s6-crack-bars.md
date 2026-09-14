@@ -120,7 +120,7 @@ limitation every prior ticket's write-up carries.
   `GetCoverType`'s assumed shape did not exist, and neither did
   `RebarFaceType`. Cover reads here now go through `read_beam_face_covers_mm`
   / `read_support_side_cover_mm`, classifying each exposed face by its own
-  normal -- see `docs/verification/issue-30-cover-face-reads.md`. This
+  normal -- see `docs/beam/verification/issue-30-cover-face-reads.md`. This
   pushbutton's FOUR conceptually distinct cover reads (top, bottom, side,
   and the supporting element's own cover) are unchanged in concept, only in
   mechanism. `RebarBarType.BarNominalDiameter` vs. `BarModelDiameter`

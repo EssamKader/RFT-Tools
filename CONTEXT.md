@@ -1,16 +1,57 @@
-# Project Context — RFT-Tools Tool
+# Project Context — RFT-Tools
+
+## Which context applies to the work in front of you
+
+This repo holds **more than one element**. Rules below that name beams, spans,
+`h > 700`, anchorage or the three-zone stirrup rule are the **beam tool's**
+rules and do not govern another element.
+
+| Working on | Read |
+|---|---|
+| **Any element** | this file's *repo-wide* rules (below), plus [`REUSE_GUIDELINES.md`](REUSE_GUIDELINES.md) |
+| **Beam** | the beam sections of this file + [`specs/beam-rft-detailing.md`](specs/beam-rft-detailing.md) |
+| **Column** | [`ColumnRFT.extension/CONTEXT.md`](ColumnRFT.extension/CONTEXT.md) + [`specs/column-rft-detailing.md`](specs/column-rft-detailing.md) |
+| **Shared `RFT.lib`** | [`docs/column/reuse-audit.md`](docs/column/reuse-audit.md) — what is genuinely element-agnostic, and what only looks it |
+| **Adding a new element** | [`docs/reuse-for-new-elements.md`](docs/reuse-for-new-elements.md) |
+
+### Repo-wide rules, true for every element
+
+1. **The spec is the source of truth.** Every rule in code cites its numbered
+   spec section. A gap is a decision ticket, never a silent guess.
+2. **pyRevit extensions only** — no `.addin`, no compiled DLL, no installer, no
+   C# port. Python against pyRevit's engine.
+3. **Element isolation.** An element's core module, extension and docs are its
+   own. Shared code lives in `RFT.lib` and is reused only where an audit has
+   earned it. A ticket never mixes two elements; issues carry `element:beam`,
+   `element:column` or `element:shared`.
+4. **Mutation-proven guards.** Any guard over code that cannot run under CPython
+   must be proven by `tools/prove_guards.py`-style mutation. A guard that has
+   never been shown to fail has only been written, not tested.
+5. **`master` means the code exists; a tag means it was verified on a live host.**
+   Only a tagged commit is ever loaded into Revit. Tags are per tool —
+   `beam/vX.Y.Z`, `column/vX.Y.Z`.
+
+> **Note on the "no live Revit host" rule below:** that constraint is the **beam
+> tool's** development reality and is still true of it. The **column** tool has
+> a live Revit host reachable over MCP — see `ColumnRFT.extension/CONTEXT.md`.
+> The verification discipline does not relax either way; only the reason for
+> guessing goes away.
+
+---
+
+# Beam tool — standing rules
 
 ## Standing rule: the spec is the source of truth
 
 All detailing logic (development length & anchorage, stirrup distribution,
 main bar layer offsets, crack/skin reinforcement, bar spacing rules, stirrup
 closure types) is governed by
-[`00.Technical Material/beam_rebar_detailing_spec_v2.docx`](00.Technical%20Material/beam_rebar_detailing_spec_v2.docx).
+[`technical-material/beam/beam_rebar_detailing_spec_v2.docx`](technical-material/beam/beam_rebar_detailing_spec_v2.docx).
 
 **Revision 2 is the source of truth.** `beam_rebar_detailing_spec.docx`
 (revision 1) is kept only as the historical baseline — do not implement from
 it. Rev 2 incorporates 40 amendments from the Wayfinder cycle, each traced to
-its deciding ticket in [`docs/spec-amendments.md`](docs/spec-amendments.md).
+its deciding ticket in [`docs/beam/spec-amendments.md`](docs/beam/spec-amendments.md).
 
 - Every rule implemented in code must trace back to a numbered section of
   the spec (e.g. "per §2.1", "per §6.2"). Do not invent detailing rules that

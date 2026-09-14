@@ -54,7 +54,7 @@ Currently ``SHAPE UNVERIFIED``:
 - ``Rebar.GetShapeDrivenAccessor() -> RebarShapeDrivenAccessor`` and
   ``RebarShapeDrivenAccessor.SetLayoutAsMaximumSpacing(spacing, arrayLength,
   barsOnNormalSide, includeFirstBar, includeLastBar)``. Assumed from
-  docs/research/revit-api-strategy.md's documentation-only research (issue
+  docs/beam/research/revit-api-strategy.md's documentation-only research (issue
   #18, S5 stirrups); no live-host confirmation of the accessor's exact
   parameter order, or that `GetShapeDrivenAccessor` is even the correct
   accessor name for a `CreateFromCurves`-built stirrup (vs. a distinct
@@ -113,7 +113,7 @@ Currently ``SHAPE UNVERIFIED``:
   NOT faked here at all (``pyrevit`` itself is not importable in this
   environment) -- the three pushbuttons' selection helpers are therefore
   UNEXECUTED, not merely shape-unverified. See each pushbutton's own
-  module docstring and docs/verification/s7-grades.md.
+  module docstring and docs/beam/verification/s7-grades.md.
 """
 
 import math

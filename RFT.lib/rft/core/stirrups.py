@@ -240,7 +240,7 @@ def stirrup_count_and_spacing(array_length_mm, max_spacing_mm, include_first_bar
     placement (issue #18 review finding #1).
 
     This mirrors the documented "Place a Rebar Set" behaviour (see
-    docs/research/revit-api-strategy.md): "the number of rebar changes...
+    docs/beam/research/revit-api-strategy.md): "the number of rebar changes...
     maintaining a distance no larger than the maximum". Used here for
     reporting (per-zone count/spacing) computed independently of the Revit
     call, matching the reporting pattern already established in S1

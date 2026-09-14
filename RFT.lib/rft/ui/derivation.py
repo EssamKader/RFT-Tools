@@ -12,7 +12,7 @@ free to drift from the first (exactly the class of duplication this
 project's amendments keep closing). No OTHER detailing arithmetic lives
 here; this module only decides REQUESTED/NOT REQUESTED and says why.
 
-The rule (specs/ui-single-window.md U6, docs/spec-amendments.md A42, A50):
+The rule (specs/ui-single-window.md U6, docs/beam/spec-amendments.md A42, A50):
 
 - Main bars, per face -- requested when that face's ``RebarBarType`` is
   selected AND its bar count is non-blank. Faces are independent: top can

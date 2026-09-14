@@ -7,7 +7,7 @@ curve segment -- NOT a RebarHookType. `a`/`b` are theoretical-corner
 dimensions (A5) and are fed to Line.CreateBound raw: Revit inserts its own
 fillet at each shared vertex and the rendered straight segments come out
 shorter than `a`/`b` -- expected, not a bug, no bend-radius compensation
-applied here (docs/research/revit-api-strategy.md section 3).
+applied here (docs/beam/research/revit-api-strategy.md section 3).
 
 Corrected per issue #14 review (the ticket's original "2-segment" wording
 described one end only and contradicted its own both-ends acceptance
@@ -197,7 +197,7 @@ def place_anchored_bar(doc, host, bar_type, curves, norm):
     single free-form bar, and whether the resulting Rebar defaults to a
     single physical bar with no further `SetLayoutAsSingle`-style call
     needed, are documented behaviour we could not confirm without a live
-    host. See docs/verification/s1-tracer-bullet.md.
+    host. See docs/beam/verification/s1-tracer-bullet.md.
     """
     rebar = Rebar.CreateFromCurves(
         doc,

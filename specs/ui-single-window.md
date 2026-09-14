@@ -5,13 +5,13 @@ under Wayfinder root
 [#33](https://github.com/EssamKader/rft-beam-detailing/issues/33) into
 implementable user stories.
 
-**Source of truth:** `00.Technical Material/beam_rebar_detailing_spec_v2.docx`
+**Source of truth:** `technical-material/beam/beam_rebar_detailing_spec_v2.docx`
 (revision 2) §8, as amended by **A46, A47, A48, A49**. Amendment provenance:
-[`docs/spec-amendments.md`](../docs/spec-amendments.md). Standing rules:
+[`docs/beam/spec-amendments.md`](../docs/beam/spec-amendments.md). Standing rules:
 [`CONTEXT.md`](../CONTEXT.md). Research:
-[`docs/research/ui-wpf-hosting.md`](../docs/research/ui-wpf-hosting.md),
-[`docs/research/ui-sketch-data-sources.md`](../docs/research/ui-sketch-data-sources.md).
-Notation: [`docs/ui/sketch-notation.svg`](../docs/ui/sketch-notation.svg).
+[`docs/beam/research/ui-wpf-hosting.md`](../docs/beam/research/ui-wpf-hosting.md),
+[`docs/beam/research/ui-sketch-data-sources.md`](../docs/beam/research/ui-sketch-data-sources.md).
+Notation: [`docs/beam/ui/sketch-notation.svg`](../docs/beam/ui/sketch-notation.svg).
 
 **This document supersedes [#21](https://github.com/EssamKader/rft-beam-detailing/issues/21)**
 (S8 WPF form). #21's substance — one dialog, A35's dialog-then-pick ordering,
@@ -155,7 +155,7 @@ transaction. Tab *contents* are U3–U6.
   folders, loaded independently, sharing `lib/rft/` read-only.
 - [ ] `forms.WPFWindow` loading a XAML **file** by bare filename from the
   pushbutton folder. A plain `TabControl` — proven by the #42 spike, so the
-  `Expander` fallback in `docs/research/ui-wpf-hosting.md` is **not** needed.
+  `Expander` fallback in `docs/beam/research/ui-wpf-hosting.md` is **not** needed.
 - [ ] Five tabs in order: **Beam & Materials · Main bars · Stirrups · Crack
   bars · Review**.
 - [ ] **A35 — the dialog opens first, then the engineer picks the beam.** The
@@ -255,7 +255,7 @@ existing pushbutton inputs; Phase 5 may split them if it prefers.
 **Acceptance criteria**
 
 - [ ] A WPF `Canvas` drawn from code, following the notation defined in
-  `docs/ui/sketch-notation.svg`. Vector only — no bitmaps (#40 found no
+  `docs/beam/ui/sketch-notation.svg`. Vector only — no bitmaps (#40 found no
   precedent for relative `<Image>` paths and a concrete reason to expect
   failure).
 - [ ] **Cross-section and longitudinal elevation, following the active tab**
@@ -265,7 +265,7 @@ existing pushbutton inputs; Phase 5 may split them if it prefers.
   origin at the section centroid, `v` positive **up**, `translate(cx,cy)
   scale(s,−s)`.
 - [ ] **Every drawn dimension sourced from `rft.core`** per A48 and the
-  element-by-element mapping in `docs/research/ui-sketch-data-sources.md`.
+  element-by-element mapping in `docs/beam/research/ui-sketch-data-sources.md`.
 - [ ] Achieved clear spacing and the A7 clearance are drawn **and coloured by
   compliance**, from `LayerSpacingResult.passes` and `ClearanceResult.ok`.
   This is the story's real value: the sketch is a verification surface.
@@ -338,7 +338,7 @@ window opens, so "filled in" cannot mean "has values". The rule:
 
 **Acceptance criteria**
 
-- [ ] The legend from `docs/ui/sketch-notation.svg` reachable from the
+- [ ] The legend from `docs/beam/ui/sketch-notation.svg` reachable from the
   window — drawn on the Canvas, or a dedicated pane on Review.
 - [ ] Each row maps **drawn symbol → meaning → the tool's symbol → the spec
   section**, matching the SVG exactly.
@@ -392,7 +392,7 @@ window opens, so "filled in" cannot mean "has values". The rule:
   relabelled for.
 - [ ] `spec_section` stays on every message.
 - [ ] Field labels, legend rows and message text use **one vocabulary** —
-  the mapping in `docs/ui/sketch-notation.svg` is the authority.
+  the mapping in `docs/beam/ui/sketch-notation.svg` is the authority.
 
 **Depends on:** U1, U8.
 
