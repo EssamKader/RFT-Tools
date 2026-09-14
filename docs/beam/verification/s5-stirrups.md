@@ -9,7 +9,7 @@
 > a `StirrupTie` rebar rejects a Standard-family hook whatever the angle,
 > and accepts a Stirrup/Tie-family hook at 135° *or* 180°. The
 > `SHAPE UNVERIFIED` notes on `hook_angle_deg` are retired. See
-> `docs/verification/issue-25-stirrup-hook-family-and-angle.md`; this
+> `docs/beam/verification/issue-25-stirrup-hook-family-and-angle.md`; this
 > document is kept as the record of what was known at the time.
 
 

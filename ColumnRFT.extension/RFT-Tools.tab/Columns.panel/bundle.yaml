@@ -1,0 +1,9 @@
+# The PANEL names the ELEMENT. Columns get their own panel beside Beams
+# on the shared RFT-Tools tab, so the two elements never crowd into each
+# other's buttons -- the same reasoning that made "Beams" a panel rather
+# than "Simple Beam".
+#
+# A future multi-storey or circular column tool belongs on THIS panel,
+# next to Column RFT, not on one of its own.
+title: Columns
+author: Essam Kader

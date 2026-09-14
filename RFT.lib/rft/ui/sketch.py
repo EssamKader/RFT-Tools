@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Live sketch geometry: cross-section and longitudinal elevation (issue
-#49, U5), following docs/ui/sketch-notation.svg.
+#49, U5), following docs/beam/ui/sketch-notation.svg.
 
 PURE MODULE (A48). No ``pyrevit`` import, no ``Autodesk`` import, no WPF
 import -- this file must be importable under plain CPython, which is the
@@ -147,7 +147,7 @@ def section_shapes(b_mm, h_mm, cover_top_mm, cover_btm_mm, cover_side_mm,
                     spacer_length_mm=None,
                     crack_dia_mm=None, crack_plan=None,
                     top_missing=(), bottom_missing=()):
-    """Every drawn element of the cross-section (docs/ui/sketch-notation.svg
+    """Every drawn element of the cross-section (docs/beam/ui/sketch-notation.svg
     section 1), true scale, at the section centroid.
 
     ``b_mm``/``h_mm`` and the four covers are already-read model values
@@ -331,7 +331,7 @@ def elevation_shapes(l_mm, support_width_start_mm, support_width_end_mm, h_mm,
                       clearance_start=None, clearance_end=None,
                       crack_plan=None):
     """Every drawn element of the longitudinal elevation
-    (docs/ui/sketch-notation.svg section 2).
+    (docs/beam/ui/sketch-notation.svg section 2).
 
     ``u`` runs 0..``l_mm`` along the support-centreline-to-support-
     centreline datum ``rft.core.stirrups.stirrup_zones_mm`` already uses
@@ -432,7 +432,7 @@ def elevation_shapes(l_mm, support_width_start_mm, support_width_end_mm, h_mm,
     # anchorage's own bend point (a_mm inside the support face, exact,
     # from EndPlan.a_mm) to the matching point at the far end; a short
     # bend stub (length b_mm, exact) turns the bar toward the support --
-    # down for the top bar, up for the bottom (docs/ui/sketch-notation.svg
+    # down for the top bar, up for the bottom (docs/beam/ui/sketch-notation.svg
     # section 2's own convention). A REFUSED end (refused_reason set) has
     # no a_mm/b_mm to draw at all -- see this module's own docstring.
     for is_top, end_start, end_end, v_frac in (
@@ -506,7 +506,7 @@ def elevation_shapes(l_mm, support_width_start_mm, support_width_end_mm, h_mm,
 
 
 def hook_detail_shapes(bend_leg_mm, hook_angle_deg, cu_mm=0.0, cv_mm=0.0, scale=1.0):
-    """A small standalone drawing of the stirrup hook (docs/ui/sketch-
+    """A small standalone drawing of the stirrup hook (docs/beam/ui/sketch-
     notation.svg's bubble): the 135-degree angle and the leg LENGTH are
     exact (from ``rft.core.plan.EndPlan``-adjacent bend geometry / the
     hook type's own read-back angle, A45); the FILLET the real bend

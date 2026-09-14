@@ -9,7 +9,7 @@
 > a `StirrupTie` rebar rejects a Standard-family hook whatever the angle,
 > and accepts a Stirrup/Tie-family hook at 135° *or* 180°. The
 > `SHAPE UNVERIFIED` notes on `hook_angle_deg` are retired. See
-> `docs/verification/issue-25-stirrup-hook-family-and-angle.md`; this
+> `docs/beam/verification/issue-25-stirrup-hook-family-and-angle.md`; this
 > document is kept as the record of what was known at the time.
 
 
@@ -184,7 +184,7 @@ outright.** This was surfaced honestly as GitHub issue
 [#27](https://github.com/EssamKader/rft-beam-detailing/issues/27) rather
 than silently patched, and the project owner decided the fix on
 2026-09-09: **A42**, one `RebarBarType` selection per bar ROLE, recorded in
-`docs/spec-amendments.md`.
+`docs/beam/spec-amendments.md`.
 
 **What changed under #27:**
 
@@ -331,7 +331,7 @@ For this ticket specifically:
   `ImportError` from the refactor, nothing about correctness against a real
   Revit session.
 - **Whether `RebarStyle.StirrupTie` permits a 180° hook at all** remains the
-  load-bearing unknown named in `CONTEXT.md` and in `docs/verification/
+  load-bearing unknown named in `CONTEXT.md` and in `docs/beam/verification/
   s5-stirrups.md` — unchanged by this ticket, since it is a property of the
   Revit API itself, not of how the hook type is selected.
 

@@ -116,7 +116,7 @@ project. Worth remembering when reviewing #17 and #19.
   correct) no longer applies. Cover reads now go through
   `read_beam_face_covers_mm`, which classifies each exposed face by its
   own normal rather than an enum lookup — see
-  `docs/verification/issue-30-cover-face-reads.md`. The failure mode this
+  `docs/beam/verification/issue-30-cover-face-reads.md`. The failure mode this
   paragraph asked to prefer (throw rather than return a wrong number) is
   preserved: an oblique/unclassifiable face still refuses rather than
   guessing.

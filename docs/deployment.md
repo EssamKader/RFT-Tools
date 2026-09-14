@@ -5,7 +5,7 @@
 Per `CHANGELOG.md`'s "Delivery model" section: a merge to `master` means the
 code exists, not that it is safe to load. **No tag has been cut for this
 project yet** -- every ticket so far has closed on documentation-only
-research and mock-object simulation (`docs/verification/`), because nothing
+research and mock-object simulation (`docs/beam/verification/`), because nothing
 in this project's development environment can execute Revit API code
 (`CONTEXT.md`, "no live Revit host"). The placement path (`Rebar.CreateFromCurves`,
 host validation, cover read-back, hook family/angle read-back) has **never
@@ -146,7 +146,7 @@ first missing selection:
    detailed, and of both its supports.** `RebarHostData.GetRebarHostData(beam)`
    must return non-null and `.IsValidHost()` must return true (structural
    framing, structural usage set, concrete material) before any pushbutton
-   proceeds (`docs/research/revit-api-strategy.md` §4). Beyond that, an
+   proceeds (`docs/beam/research/revit-api-strategy.md` §4). Beyond that, an
    **undefined face `RebarCoverType` silently falls back to a document
    default** rather than erroring -- this project's adapter (issue #30,
    `rft/revit/host.py`) explicitly reads back each face's own cover so a

@@ -159,7 +159,7 @@ Bars", where previously the cover read ran first unconditionally. Both
 pushbuttons were reordered: continuous-run guard → support detection → (Main
 Bars only: the "no support at either end" refusal) → cover reads → (Main
 Bars only: §6.2-6.4 spacing validation, now after cover reads instead of
-before support detection). `docs/verification/s4-spacing-validation.md` and
+before support detection). `docs/beam/verification/s4-spacing-validation.md` and
 `s2-anchorage.md`'s claims about this ordering have been corrected in place
 to point here rather than restating the old (now false) sequence.
 

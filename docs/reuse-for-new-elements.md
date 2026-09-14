@@ -112,7 +112,7 @@ Paths are relative to `RFT.lib/rft/`.
 | `revit/bar_types.py` | collects `RebarBarType` / `RebarHookType`, reads diameter, hook angle and hook style. A column asks the identical questions |
 | `revit/placement.py` | `place_anchored_bar`, `run_in_transaction`, `bar_point_at_uv` — a bar in a `u`/`v` frame, which every element has |
 | `core/spacing.py` | every signature is `(b_mm, cover_side_mm, stirrup_dia_mm, bar_dia_mm, bar_count)`. `b` is just "the width of the face being checked" — a column face and a wall face ask exactly this |
-| `core/layout.py` | `first_layer_offset_mm`, `layer_offset_mm`, `corner_bar_u_positions_mm` — bars stacked inside a closed tie. **Identical arithmetic for a column** |
+| `core/layout.py` | `first_layer_offset_mm`, `corner_bar_side_offset_mm`, `corner_bar_u_positions_mm` — bars inside a closed tie. **Identical arithmetic for a column.** ⚠️ **CORRECTED by the column audit (#72):** `layer_offset_mm` was listed here and does **not** transfer — it takes `spacer_dia_mm` and `layer_n`, i.e. the beam's vertically stacked layers behind one face, which the column perimeter model (column spec §2) does not have. `corner_bar_u_positions_mm` also needs corner **de-duplication** on a column, where all four faces share their corner bars. See `docs/column/reuse-audit.md` §0 |
 | `ui/inputs.py` | the field parsers and their refusal messages |
 | `ui/sketch_layout.py` | pixel-space label placement. Zero domain knowledge, and it is what made the sketch readable |
 | `ui/sketch_palette.py` | style keys |
@@ -151,13 +151,13 @@ The code is the smaller half of what this project produced.
    uses `subprocess.run` with a timeout rather than `call` with a pipe
    (an unread pipe deadlocks on a large failure message).
 
-2. **`docs/spec-amendments.md`** — the amendment ledger: `A1..A49` plus
+2. **`docs/beam/spec-amendments.md`** — the amendment ledger: `A1..A49` plus
    `R`-numbered resolutions, each naming what changed, why, and which
    issue decided it. This is what makes a spec disagreement resolvable
    six months later instead of re-litigated. A new element starts its own
    ledger; it does not extend this one.
 
-3. **`docs/verification/*.md`** — standalone write-ups proving logic by
+3. **`docs/beam/verification/*.md`** — standalone write-ups proving logic by
    mock-object simulation. Mandatory here, because IronPython under
    pyRevit cannot be executed in the dev environment, so a green test
    suite does not cover the Revit API path. Any new element has the same
@@ -178,7 +178,7 @@ The code is the smaller half of what this project produced.
    loaded into Revit. `v0.2.0` needed eight candidates and `v0.1.0` six.
    Budget candidates for a new element too.
 
-7. **`docs/ui/sketch-notation.svg`** — authored SVG, true scale, with a
+7. **`docs/beam/ui/sketch-notation.svg`** — authored SVG, true scale, with a
    twelve-row legend mapping drawing to meaning to symbol to spec
    section. It doubles as the renderer's specification, sharing the
    renderer's coordinate convention. Note its own stated limit: it is a

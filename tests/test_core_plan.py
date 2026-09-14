@@ -4,7 +4,7 @@
 These tests are the ones that matter most in the project: this module's
 output becomes steel. Everything here is checked against the 300x900
 verification beam the tool was proven on, and against the independently
-authored notation drawing (docs/ui/sketch-notation.svg), so a wrong number
+authored notation drawing (docs/beam/ui/sketch-notation.svg), so a wrong number
 has to survive two unrelated sources agreeing.
 """
 
@@ -33,7 +33,7 @@ def _bottom_face(layer_count=2, bar_count=3):
 def test_first_layer_offset_matches_the_notation_drawing():
     """43 mm on the verification beam: 25 cover + 10 stirrup + 16/2.
 
-    docs/ui/sketch-notation.svg was drawn from the spec by hand and states
+    docs/beam/ui/sketch-notation.svg was drawn from the spec by hand and states
     offset_1 = 43. Two independent derivations agreeing is worth more than
     either alone.
     """
@@ -244,7 +244,7 @@ def test_parked_closure_type_3_is_refused_here_too():
 
 def test_crack_plan_matches_the_notation_drawing():
     """Four layers at 162.8 mm on the verification beam -- the same figure
-    docs/ui/sketch-notation.svg carries, derived independently."""
+    docs/beam/ui/sketch-notation.svg carries, derived independently."""
     result = plan.crack_plan(
         H_MM, B_MM, COVER_MM, STIRRUP_DIA_MM, 12.0, 43.0, 43.0, 200.0
     )

@@ -5,13 +5,13 @@ supplied ``from_internal_units``/``to_internal_units`` (``rft.revit.units``).
 
 Rev 2 section 1 (b, h, L / A6), section 2.4 (support width / A9).
 
-UNVERIFIED AGAINST A LIVE HOST: docs/research/revit-api-strategy.md does not
+UNVERIFIED AGAINST A LIVE HOST: docs/beam/research/revit-api-strategy.md does not
 cover support detection at all (it scopes unit boundary, rebar creation,
 bend radius, host prerequisites, rebar sets and transactions -- not "how do
 I find the column at a beam's end"). The approach below -- bounding-box
 proximity in plan to the beam's end point -- is this ticket's own design
 choice, not a settled research finding, and is untested against a real
-model. See docs/verification/s1-tracer-bullet.md.
+model. See docs/beam/verification/s1-tracer-bullet.md.
 """
 
 from Autodesk.Revit.DB import (
@@ -129,7 +129,7 @@ def beam_section_centre_offsets(beam, station_point):
     joined or attached geometry, in which case its centre is not the
     section centroid. Reading the justification parameters directly would
     be exact, but assumes a parameter set that cannot be confirmed here --
-    see docs/verification/s1-tracer-bullet.md.
+    see docs/beam/verification/s1-tracer-bullet.md.
     """
     u_dir, _v_dir = beam_section_axes(beam)
 

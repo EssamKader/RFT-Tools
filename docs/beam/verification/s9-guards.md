@@ -182,7 +182,7 @@ class as the four findings before it.
 ## The A39 decision, now closed
 
 A39 left "warn on, or refuse" open. The project owner chose **refuse**
-(2026-09-08), recorded as **A41** in `docs/spec-amendments.md`. What the
+(2026-09-08), recorded as **A41** in `docs/beam/spec-amendments.md`. What the
 code does is unchanged; what changed is that it is no longer this ticket's
 own policy guess sitting in a docstring.
 

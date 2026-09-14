@@ -8,7 +8,7 @@
 > replaced by `rft.revit.host.read_beam_face_covers_mm` /
 > `read_support_side_cover_mm`, which classify each exposed face's own
 > normal against the beam's frame instead of looking it up by a
-> nonexistent enum. See `docs/verification/issue-30-cover-face-reads.md`
+> nonexistent enum. See `docs/beam/verification/issue-30-cover-face-reads.md`
 > for the live measurements and the new design. The "24/24 pass" figure
 > below is stale; the current count is reported in that write-up.
 
@@ -99,7 +99,7 @@ the bend past the far face of the support entirely.
 
 - **`rft/revit/geometry.py`'s `find_supporting_column` and
   `beam_section_dimensions_mm`** remain unexercised by the mock suite, for
-  the same reason as before this fix pass: `docs/research/revit-api-strategy.md`
+  the same reason as before this fix pass: `docs/beam/research/revit-api-strategy.md`
   does not cover "how do I find the column supporting a beam's end" at all,
   and the bounding-box-proximity approach is this ticket's own design
   choice, untested against a real model.
@@ -150,7 +150,7 @@ the bend past the far face of the support entirely.
   `script.get_output()`) depends on the live pyRevit/Revit session and
   cannot be executed or meaningfully mocked outside one.
 
-These are exactly the categories `docs/research/revit-api-strategy.md`'s own
+These are exactly the categories `docs/beam/research/revit-api-strategy.md`'s own
 "Unverified against a live host" section already anticipated, plus the two
 new items this fix pass surfaced (the `GetExposedFaces`/`GetCoverType`
 API-shape mismatch, and the `GeometryInstance` extraction step for

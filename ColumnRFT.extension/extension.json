@@ -1,0 +1,6 @@
+{
+    "name": "ColumnRFT",
+    "description": "Reinforcement detailing for ONE floor-to-floor segment of a rectangular concrete column, per specs/column-rft-detailing.md. Ships one button, Column RFT, on the shared RFT-Tools ribbon tab beside the beam tools -- pyRevit merges tabs by title, so this is a separate extension that lands on the same tab. Versioned and released independently of SimpleBeamRFT, as column/vX.Y.Z.",
+    "author": "Essam Kader",
+    "url": "https://github.com/EssamKader/RFT-Tools.git"
+}

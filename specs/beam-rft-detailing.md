@@ -5,8 +5,8 @@ the Wayfinder cycle (root issue
 [#1](https://github.com/EssamKader/rft-beam-detailing/issues/1)) into
 implementable user stories.
 
-**Source of truth:** `00.Technical Material/beam_rebar_detailing_spec_v2.docx`
-(revision 2). Amendment provenance: [`docs/spec-amendments.md`](../docs/spec-amendments.md).
+**Source of truth:** `technical-material/beam/beam_rebar_detailing_spec_v2.docx`
+(revision 2). Amendment provenance: [`docs/beam/spec-amendments.md`](../docs/beam/spec-amendments.md).
 Standing rules: [`CONTEXT.md`](../CONTEXT.md).
 
 Throughout, **"the engineer"** means the BIM/structural engineer running the

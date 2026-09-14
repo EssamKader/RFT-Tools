@@ -1,0 +1,121 @@
+Simple Beam Rebar Detailing
+Technical Specification
+Scope: single-span, rectangular concrete beam. This document covers pure detailing logic bar geometry, placement, and quantities with no flexural or shear design calculation performed. Bar sizes, counts, and base dimensions are user inputs; this spec defines how those inputs become placed rebar geometry.
+Modeled after the workflow of CADS Rebar Extensions for Revit, built from first principles for a custom pyRevit / Revit API tool.
+1. Notation
+Symbol
+Meaning
+L
+Beam span length
+b, h
+Beam cross-section width and depth
+cover
+Concrete cover to stirrup outer face
+ØTOP, ØBTM
+Diameter of top / bottom main bars
+Østirrup
+Stirrup bar diameter
+LD
+Development (anchorage) length required for a bar
+a, b (a_t, b_t for top)
+Straight and bent legs of an anchorage detail
+Dagg
+Maximum aggregate size
+H_avail
+Clear height available for crack/skin bars between main bar layers
+2. Development Length &amp; End Anchorage
+Rule: where the column width is insufficient for a straight development length, the bar is split into a straight run ‘a’ plus a bent leg ‘b’, such that a + b = LD.
+2.1 Top bar anchorage (into column)
+a_t = Column width − Cover − ØBTM
+ØBTM (not ØTOP) is used deliberately, this sizes the clearance so the bent top bar does not clash with the bottom bar's own hook at the joint.
+b_t = LD_top − a_t
+LD_top is computed from a user-specified multiplier, e.g. LD_top = 60 × ØTOP or 55 × ØTOP (multiplier is code/grade dependent user input, not hardcoded).
+2.2 Bottom bar anchorage
+a_btm = Column width − Coverb_btm = LD_btm − a_btm
+Open item: bend geometry mirrors the top bar's logic by convention but has not been independently confirmed against a sketch  finalize before implementation.
+2.3 Governing constraints (apply to both top and bottom)
+Minimum bend length: if the computed b (remaining bend leg after a is cut) is &lt; 200 mm, clamp it to b = 200 mm.
+Mandatory hook rule: even if LD is less than the column width (bar could anchor straight with no bend), a hook is still forced with a minimum leg of 200 mm. A hook is never omitted.
+
+Figure 1 - Development length / end anchorage detail (corrected L-shaped hook geometry)
+3. Stirrup Distribution
+Rule: beam span is split into three zones of equal length L/3 — dense stirrup spacing near both supports, normal spacing at midspan (simplified 3-zone convention, not derived from a shear-demand diagram).
+Zone 1 (support A):  0        → L/3     — dense spacingZone 2 (midspan):     L/3      → 2L/3    — normal spacingZone 3 (support B):   2L/3     → L       — dense spacing
+First stirrup is placed 50 mm from the face of the support.
+Dense and normal spacing values are user inputs (e.g. Ø10 @ 150 dense, Ø10 @ 200 normal, per the worked example).
+
+Figure 2 — Stirrup distribution across L/3 zones
+4. Main Bar Layer Offset (Cross-Section)
+Rule: the centerline of the first (outermost) bar in a layer is offset from the beam face by:
+offset = Cover + Østirrup + (½ × Øbar)
+This is measured from the beam face to the center of the first bottom (or top) bar — not to the stirrup, and not to the bar's outer edge.
+Applies independently to the top layer (using ØTOP) and bottom layer (using ØBTM).
+Multi-layer case (&gt;1 row of bars): each additional row adds + Øbar + layer gap beyond the first row's offset (layer gap is a user input; see §6 for spacer-bar convention).
+
+Figure 3 — Main bar layer offset, distinct top (3Ø12) and bottom (3Ø16) bar sizes
+5. Crack / Skin Reinforcement (Beam Depth &gt; 700 mm)
+Trigger: only applies when h &gt; 700 mm. If h ≤ 700 mm, n_crack_layers = 0 and this section does not fire.
+5.1 Available height
+H_avail = h − offset_top − offset_btm
+offset_top and offset_btm are computed per §4 (to the centerline of the top and bottom main bars respectively — Option A, confirmed).
+5.2 Layer count and spacing
+Given a user-specified maximum spacing s_max between crack-bar layers:
+n_gaps         = ceil(H_avail / s_max)n_crack_layers = n_gaps − 1actual_spacing = H_avail / n_gaps      (≤ s_max, evenly distributed —                                          no single odd leftover gap)
+Crack bars are placed at each internal division point along H_avail, one bar per side (left/right face) per layer.
+
+Figure 4 — Crack/skin bar layers between main bar rows
+6. Bar Spacing Rules (Cross-Section Arrangement)
+6.1 Corner-bar rule
+A bar is always placed at each corner of the stirrup cage; remaining bars in that face are then distributed with equal spacing between the corner bars.
+6.2 Minimum clear spacing between bars
+min_spacing = max( 25 mm, Øbar, 1.33 × Dagg )      — if Dagg is user-definedmin_spacing = 50 mm                                  — fallback, only if Dagg                                                        is NOT defined
+Dagg (max aggregate size), when provided, always governs over the 50 mm fallback.
+6.3 Multi-layer bars (more than one row, same face)
+Up to 5 layers maximum per face.
+Option 1: single wide row (all bars in one line, no stacking).
+Option 2: stacked rows separated by a spacer bar (convention: Ø16 spacer).
+spacer_length = b − 2×Cover − 2×Østirrup
+User must be informed of resulting spacing per layer and the number of layers used, for both top and bottom faces independently.
+Note: stacking layers does reduce effective depth d for rows beyond the first  not accounted for here since this tool performs no capacity/crack-width analysis, detailing only.
+
+7. Stirrup Type (Closure / Hook Style)
+Aligned to CADS Rebar Extensions convention — stirrup “type” governs closure and hook style of a single 2-leg perimeter stirrup, not leg count. Multi-leg crossties are out of scope for this tool (same as CADS's base beam tool; CADS only offers extra legs/crossties for columns via a separate “Additional Stirrups” feature).
+Type
+Description
+1
+Closed perimeter, hook overlap at top-right corner
+2
+Closed perimeter, hook overlap at top-left corner
+3
+Nested double perimeter (inner closed loop) — for larger sections needing extra confinement
+4
+Open U-shape, no top closure (hooks at both top ends instead)
+
+
+Figure 5 Stirrup closure/hook type variants (CADS-aligned)
+8. Summary — User Inputs vs. Calculated Outputs
+Category
+User Input
+Calculated
+Geometry
+L, b, h, cover, Dagg (optional)
+—
+Main bars
+ØTOP, ØBTM, bar count/face, layer option
+bar length, layer offsets, spacer length
+Stirrups
+Østirrup, dense/normal spacing, stirrup type (1–4)
+zone boundaries, stirrup count, leg dimensions
+Development length
+LD multiplier (e.g. 60Ø / 55Ø)
+a, b legs (clamped ≥ 200 mm), hook geometry
+Crack bars
+s_max (relevant only if h &gt; 700 mm)
+n_crack_layers, actual_spacing
+Spacing
+min_spacing override (optional)
+governing min_spacing from formula or fallback
+9. Open Items / Not Yet Specified
+Bottom bar anchorage bend geometry (a_btm) — placeholder formula in §2.2 mirrors the top bar logic but has not been independently confirmed against a sketch.
+Multi-span beam behavior (this spec covers single-span only).
+Stirrup leg dimensioning formulas (perimeter minus cover, per stirrup type) — referenced conceptually in §7 but not yet reduced to explicit formulas.

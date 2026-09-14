@@ -1,7 +1,7 @@
 """Mock-object verification for `rft.revit.geometry`'s support-face and
 rotation-aware width derivations (issue #14 review findings #2 and #5).
 
-Not previously covered by the mock suite (docs/verification/s1-tracer-bullet.md
+Not previously covered by the mock suite (docs/beam/verification/s1-tracer-bullet.md
 flagged column-detection/bounding-box math as an untested gap) -- these
 functions are geometrically pure enough (given fake XYZ/transform/bbox
 stand-ins) to exercise the real adapter logic here, same pattern as

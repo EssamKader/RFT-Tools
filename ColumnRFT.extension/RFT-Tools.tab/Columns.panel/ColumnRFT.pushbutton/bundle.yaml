@@ -1,0 +1,31 @@
+title: "Column\nRFT"
+tooltip: >-
+  Reinforcement for ONE floor-to-floor segment of a rectangular concrete
+  column: longitudinal bars as a single perimeter layout, confinement-zone
+  and middle-zone ties, and the inner ties that restrain intermediate bars.
+
+  NOT YET IMPLEMENTED. This button is a placeholder while the column spec's
+  open decisions are resolved. It refuses rather than doing anything.
+
+  SCOPE, when it ships: one segment only. Foundation starter bars/dowels
+  (C1), multi-storey stacks beyond the one top-of-support splice (C2) and
+  non-rectangular sections (C3) are out of scope by decision, not by
+  omission.
+
+  See specs/column-rft-detailing.md and ColumnRFT.extension/CONTEXT.md.
+author: Essam Kader
+
+# Set NOW, before the window exists, so the beam tool's v0.2.0-rc2 failure
+# is not repeated here. The Column RFT window will be MODELESS, and a
+# modeless window's event handlers run after script.py has returned.
+# Without a persistent engine pyRevit tears the IronPython engine down at
+# that point: the window survives as a CLR object and its handlers still
+# update the UI, but every ExternalEvent carrying a Revit API call is
+# raised into a dead engine and silently never delivers.
+#
+# The symptom is a button that appears to work and then waits forever,
+# with no error anywhere. It cost the beam tool a release candidate to
+# find, because the setting lives in bundle.yaml and reading only the
+# script cannot reveal it.
+engine:
+  persistent: true
