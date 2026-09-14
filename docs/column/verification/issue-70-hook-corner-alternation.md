@@ -13,6 +13,24 @@ corner per level. Option A (one set) wins on every measured axis. One
 | Writes | all inside rolled-back `SubTransaction`s — model left with **0** rebar |
 | Date | 2026-09-14 |
 
+> ## ⚠️ CORRECTION (from #78) — read before copying any coordinate here
+>
+> Every experiment on this page used **`RebarHookOrientation.Right`**, which
+> #78 later proved bends the 135° hook **out of the concrete core**: the free
+> end lands at `v = -351.4` against a tie half-height of 260 mm, projecting
+> 91 mm into cover and air. **Column ties must use `Left`** (derived from the
+> loop's winding, not hardcoded).
+>
+> This page's **conclusions stand** — rotation storage, element counts,
+> timings and the layout-change corruption do not depend on hook orientation.
+> But the hook coordinates below describe an incorrectly oriented hook and
+> must not be treated as a model of correct detailing.
+>
+> **Superseded outcome:** §6.3 requires an **adjacent** corner (owner's
+> ruling, 2026-09-14), which the 180° rotation on this page does **not**
+> deliver — it gives the diagonal. A reflection does, on the same
+> one-set/one-element terms. See `issue-78-mirrored-tie-adjacent-corner.md`.
+
 ---
 
 ## 1. The API surface (by reflection, not by memory)
