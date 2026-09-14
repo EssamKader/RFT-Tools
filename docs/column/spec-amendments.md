@@ -36,6 +36,8 @@ API mechanics, reuse) without changing the spec text.
 | R9 | §6.3 — is an adjacent corner actually buildable? | **Yes, no amendment needed.** `MoveBarInSet` accepts a **reflection** and stores it (`Determinant = -1`, `HasReflection` preserved). Mirror plane normal = `HandOrientation` through the tie centre gives `SW → SE` — adjacent — on **one** rebar set, `Quantity` intact. The mirrored 135° hook stays geometrically correct: its tail remains inside the core. | #78 |
 | R10 | §7 — which `RebarHookOrientation` for a tie? | **`Left`**, derived from the loop's winding rather than hardcoded. `Right` bends the 135° hook **out of the core** — free end 91 mm beyond the tie, in cover and air. Found while proving R9; it invalidates the hook *coordinates* (not the conclusions) in #70's write-up. | #78 |
 | R11 | §6.2 — do overlapping closed subset ties actually work? | **Yes.** An inner tie wrapping the 4 intermediate bars was created alongside the outer perimeter tie: **2 `Rebar` elements, one per tie definition**, each independently reflectable for §6.3 (`Determinant = -1`), hook still inside its own loop. Output contract is therefore a **list** of `(subset → rectangle, layout, rotation map)` — not one privileged "main tie" plus extras. Note both ties **share one `RebarShape`** (same shape code, different dimensions), so tie ROLE cannot be read back from `GetShapeId()`. | Q9 |
+| R12 | §0/C2 — multi-storey columns. | **Refuse.** Both a single element spanning several storeys *and* a multi-select of columns. Detection (verified live): count levels whose elevation lies **strictly between** the column's base and top — zero ⇒ single storey. The refusal names the intervening levels. | #73 |
+| R13 | §0/C3 — non-rectangular sections. | **Refuse.** Detection (verified live): the solid has **exactly four vertical planar faces** with normals in two antiparallel perpendicular pairs. Deliberately **family-agnostic** — it does not read the `b`/`h` type parameters, whose names #69 flagged as family-specific. A circular section yields a `CylindricalFace`; an L-shape yields six vertical planar faces. | #73 |
 
 ## Open questions raised by implementation work
 
@@ -46,8 +48,8 @@ the affected code is written.
 | # | Section | Question | Status |
 |---|---|---|---|
 | Q1 | §6.2 | Tie topology: auto-derived, or user-picked from templates? | **CLOSED** → R4 (#71) |
-| Q2 | §6.3 | Diagonal (180°) or adjacent hook corner? | **CLOSED** → R8: adjacent required. Feasibility now open in #78 |
-| Q3 | §0 | What the tool DOES with an out-of-scope column. | **PARTLY CLOSED** → R5/R6 settle **C1**. **C2** (stacked multi-select) and **C3** (non-rectangular) still open (#73) — working assumption is refuse for both, not yet confirmed |
+| Q2 | §6.3 | Diagonal (180°) or adjacent hook corner? | **CLOSED** → R8 (adjacent required, #70) and R9 (proven buildable, #78) |
+| Q3 | §0 | What the tool DOES with an out-of-scope column. | **CLOSED** → R5/R6 (C1), R12 (C2), R13 (C3) — #73 |
 | Q4 | §7 | Tie bar steel grade vs the 135° hook default. | **CLOSED** → R7 (#74) |
 | Q5 | §1 | Cover must be an editable input. The test column's `Rebar Cover - Top Face` was **unset** (`-1`), so a per-face read cannot assume all three cover parameters resolve. | open (#69) |
 | Q6 | §9 | **Roof / top-storey column.** §9 protrudes `L_s` above the top support "to connect with the next story" — a roof column has none, so bars would project out of the slab. The closure rule at the roof slab is undefined. | open, **deferred by owner** (#77) |
