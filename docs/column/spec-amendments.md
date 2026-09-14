@@ -35,6 +35,7 @@ API mechanics, reuse) without changing the spec text.
 | R8 | §6.3 — diagonal (180°) or adjacent hook corner? | **Adjacent is required**; the spec's NE → NW example is the rule, not an illustration. Consequence: no *rotation* can produce it on a rectangular tie, so a **mirror** must be investigated before any placer work. | #70 → #78 |
 | R9 | §6.3 — is an adjacent corner actually buildable? | **Yes, no amendment needed.** `MoveBarInSet` accepts a **reflection** and stores it (`Determinant = -1`, `HasReflection` preserved). Mirror plane normal = `HandOrientation` through the tie centre gives `SW → SE` — adjacent — on **one** rebar set, `Quantity` intact. The mirrored 135° hook stays geometrically correct: its tail remains inside the core. | #78 |
 | R10 | §7 — which `RebarHookOrientation` for a tie? | **`Left`**, derived from the loop's winding rather than hardcoded. `Right` bends the 135° hook **out of the core** — free end 91 mm beyond the tie, in cover and air. Found while proving R9; it invalidates the hook *coordinates* (not the conclusions) in #70's write-up. | #78 |
+| R11 | §6.2 — do overlapping closed subset ties actually work? | **Yes.** An inner tie wrapping the 4 intermediate bars was created alongside the outer perimeter tie: **2 `Rebar` elements, one per tie definition**, each independently reflectable for §6.3 (`Determinant = -1`), hook still inside its own loop. Output contract is therefore a **list** of `(subset → rectangle, layout, rotation map)` — not one privileged "main tie" plus extras. Note both ties **share one `RebarShape`** (same shape code, different dimensions), so tie ROLE cannot be read back from `GetShapeId()`. | Q9 |
 
 ## Open questions raised by implementation work
 
@@ -52,7 +53,7 @@ the affected code is written.
 | Q6 | §9 | **Roof / top-storey column.** §9 protrudes `L_s` above the top support "to connect with the next story" — a roof column has none, so bars would project out of the slab. The closure rule at the roof slab is undefined. | open, **deferred by owner** (#77) |
 | Q7 | §6.3 | Can `MoveBarInSet` accept a **reflection**, and is a **mirrored 135° hook** legal? | **CLOSED** → R9/R10 (#78) |
 | Q8 | §6.3 | Only the `hand`-normal mirror plane (SW→SE) was tested. Mirroring about the `face` normal (SW→NW) is the other adjacent move, untested. Should alternation use one plane throughout, or alternate between both across four levels? §6.3 requires only "a different corner" each level, so the spec does not decide this. | open |
-| Q9 | §6.2 | Every tie experiment so far used the **outer perimeter** tie only. No inner subset tie has ever been created; its behaviour under reflection, and under `MoveBarInSet` at all, is **assumed, not observed**. | open |
+| Q9 | §6.2 | Every tie experiment so far used the **outer perimeter** tie only. No inner subset tie had ever been created. | **CLOSED** → R11 |
 
 ### Inherited, consciously
 
