@@ -837,12 +837,21 @@ def test_the_xaml_carries_no_other_relative_uri():
     rewritten to an absolute URI before WPF ever sees it.
     """
     text = io.open(XAML_PATH, encoding="utf-8").read()
+    # Every XAML attribute that takes a URI, not just Source: a
+    # Window Icon is the one most likely to be added without thinking
+    # about where it resolves from, and it fails identically.
+    #
     # The lookbehind keeps ContentSource="Header" out of it -- a
     # ControlTemplate binding, not a URI.
-    sources = re.findall(r'(?<![A-Za-z])Source="([^"]+)"', text)
+    URI_ATTRS = r"(?<![A-Za-z])(?:Source|UriSource|Icon|BaseUri)"
+    sources = re.findall(URI_ATTRS + r'="([^"]+)"', text)
     relative = [
         s for s in sources
-        if s != SHARED_STYLES_FILENAME and "://" not in s and not s.startswith("/")
+        if s != SHARED_STYLES_FILENAME
+        and "://" not in s            # absolute, resolves without a BaseUri
+        and not s.startswith("/")
+        and not s.startswith("pack:")
+        and not s.startswith("{")     # a binding or a StaticResource
     ]
     assert not relative, (
         "these relative URIs cannot resolve in a window loaded from a "
