@@ -66,6 +66,8 @@ COL_SKETCH = "RFT.lib/rft/ui/column_sketch.py"
 COL_SKETCH_PAL = "RFT.lib/rft/ui/column_sketch_palette.py"
 TY = "tests/test_column_layout.py::"
 TK = "tests/test_column_sketch.py::"
+COL_TIES = "RFT.lib/rft/core/column_ties.py"
+TT = "tests/test_column_ties.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -227,6 +229,43 @@ CASES = [
     (COL_BUNDLE, '  persistent: true', '  persistent: false',
      TC + "test_the_modeless_window_declares_a_persistent_engine",
      "the persistent engine turned off (silent dead ExternalEvents)"),
+
+    # ---- #89: the tie topology ----------------------------------
+
+    (COL_TIES, '    if narrow >= minimum:',
+     '    if True:',
+     TT + "test_the_narrow_case_is_decided_by_the_MEASURED_bend_diameter",
+     "A1 disabled -- an unbendable loop offered to Revit"),
+
+    (COL_TIES, '    return bend_diameter_mm + tie_dia_mm',
+     '    return 10.0 * tie_dia_mm',
+     TT + "test_the_threshold_is_bend_plus_tie",
+     "the bend diameter guessed as a multiple instead of read"),
+
+    (COL_TIES, '        restrained = [bar.index for bar in layout.bars',
+     '        restrained = [bar.index for bar in bars',
+     TT + "test_a_tie_corner_restrains_a_bar_it_does_not_ENCLOSE",
+     "a bar at a tie corner missed because the subset omits it"),
+
+    (COL_TIES, '            restrained = [bars[0].index, bars[-1].index]',
+     '            restrained = [b.index for b in bars]',
+     TT + "test_a_cross_tie_restrains_only_its_two_ends",
+     "a cross-tie credited with restraining every bar it spans"),
+
+    (COL_TIES, '        if len(run) > 1]',
+     '        if len(run) > 99]',
+     TT + "test_the_alternate_tier_refuses_two_untied_bars_IN_A_ROW",
+     "consecutive untied bars accepted as alternating"),
+
+    (COL_TIES, '            if upper - lower > MAX_TIE_BRANCH_SPACING_MM:',
+     '            if False:',
+     TT + "test_the_branch_spacing_limit_bites_on_a_bare_perimeter",
+     "the 300 mm tie-branch limit never checked"),
+
+    (COL_TIES, '    subsets = []',
+     '    subsets = []  # noqa',
+     TT + "test_a_subset_wraps_around_the_perimeter",
+     "(anchor sentinel -- proves the parser file is the one mutated)"),
 
     # ---- #90: the perimeter model and the sketch ----------------
 
