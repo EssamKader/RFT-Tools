@@ -247,8 +247,8 @@ CASES = [
      TT + "test_a_tie_corner_restrains_a_bar_it_does_not_ENCLOSE",
      "a bar at a tie corner missed because the subset omits it"),
 
-    (COL_TIES, '            restrained = [bars[0].index, bars[-1].index]',
-     '            restrained = [b.index for b in bars]',
+    (COL_TIES, '        restrained = [bars[0].index, bars[-1].index]',
+     '        restrained = [b.index for b in bars]',
      TT + "test_a_cross_tie_restrains_only_its_two_ends",
      "a cross-tie credited with restraining every bar it spans"),
 
@@ -262,10 +262,10 @@ CASES = [
      TT + "test_the_branch_spacing_limit_bites_on_a_bare_perimeter",
      "the 300 mm tie-branch limit never checked"),
 
-    (COL_TIES, '    subsets = []',
-     '    subsets = []  # noqa',
+    (COL_TIES, '    return [(subset.start_index + offset) % bar_count',
+     '    return [(subset.start_index + offset)',
      TT + "test_a_subset_wraps_around_the_perimeter",
-     "(anchor sentinel -- proves the parser file is the one mutated)"),
+     "a subset that cannot cross bar 0 (one face unexpressible)"),
 
     # ---- #90: the perimeter model and the sketch ----------------
 
@@ -299,8 +299,8 @@ CASES = [
      TK + "test_a_section_6_1_violation_is_drawn_in_the_FAIL_style",
      "a 6.1 violation drawn as if it complied"),
 
-    (COL_SKETCH, '            style="bar_corner" if bar.is_corner else "bar_main"))',
-     '            style="bar_main"))',
+    (COL_SKETCH, '            style = "bar_corner"',
+     '            style = "bar_main"',
      TK + "test_corner_bars_are_drawn_in_their_OWN_style",
      "corner bars drawn as if they will not move (R15)"),
 
