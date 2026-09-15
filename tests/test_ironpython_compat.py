@@ -33,9 +33,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # import it -- and a walk of the UI extension alone would then have
 # covered five files instead of thirty-one, silently, while staying green.
 # Every check in this module is only as wide as this list.
-UI_EXT_ROOT = os.path.join(REPO_ROOT, "SimpleBeamRFT.extension")
+# #87 added the second UI extension. Every extension is listed, because
+# the same trap applies one element later: the column script was real
+# IronPython code for a whole ticket while this walk still covered only
+# the beam's, and an f-string in it would have shipped green.
+UI_EXT_ROOTS = (
+    os.path.join(REPO_ROOT, "SimpleBeamRFT.extension"),
+    os.path.join(REPO_ROOT, "ColumnRFT.extension"),
+)
 LIB_EXT_ROOT = os.path.join(REPO_ROOT, "RFT.lib")
-LOADED_ROOTS = (UI_EXT_ROOT, LIB_EXT_ROOT)
+LOADED_ROOTS = UI_EXT_ROOTS + (LIB_EXT_ROOT,)
 
 # PEP 263: the cookie must appear on line 1 or line 2 to be honoured.
 CODING_RE = re.compile(r"coding[:=]\s*([-\w.]+)")

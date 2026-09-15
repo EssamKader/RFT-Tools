@@ -43,6 +43,16 @@ SPACING = "RFT.lib/rft/core/spacing.py"
 SKETCH_PALETTE = "RFT.lib/rft/ui/sketch_palette.py"
 SHARED_STYLES = "RFT.lib/rft/ui/shared_styles.py"
 STYLES_XAML = "RFT.lib/SharedStyles.xaml"
+
+# ---- #87: the second element -------------------------------------
+COL_DIR = ("ColumnRFT.extension/RFT-Tools.tab/"
+           "Columns.panel/ColumnRFT.pushbutton/")
+COL_XAML = COL_DIR + "ColumnWindow.xaml"
+COL_SCRIPT = COL_DIR + "script.py"
+COL_BUNDLE = COL_DIR + "bundle.yaml"
+COL_RULES = "RFT.lib/rft/core/column_host_rules.py"
+TC = "tests/test_column_xaml.py::"
+TR = "tests/test_column_host_rules.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -163,6 +173,57 @@ CASES = [
      "tests/test_ui_shared_styles.py::"
      "test_a_duplicated_placeholder_is_refused_loudly",
      "a duplicated merge slipping through as one"),
+
+    # ---- #87: the column window ---------------------------------
+
+    (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',
+     '',
+     TC + "test_every_window_merges_the_shared_palette",
+     "the COLUMN window no longer merging the shared palette"),
+
+    (COL_XAML, '                            <Button x:Name=\"pick_column_btn\"',
+     '                            <Button Click=\"on_pick_click\" x:Name=\"pick_column_btn\"',
+     TC + "test_no_window_declares_an_event_handler_in_the_markup",
+     "a Click handler in markup a string load cannot resolve"),
+
+    (COL_XAML, '<TabItem Header=\"Review\" x:Name=\"review_tab\" IsEnabled=\"False\">',
+     '<TabItem Header=\"Review\" x:Name=\"review_tab\">',
+     TC + "test_every_gated_tab_in_the_xaml_starts_disabled",
+     "a tab shipping enabled before any column is accepted"),
+
+    (COL_SCRIPT, '        self._reset_column_state()\n\n        column = revit.pick_element(',
+     '        column = revit.pick_element(',
+     TC + "test_the_state_reset_runs_before_the_pick_not_after",
+     "stale read-outs surviving a refused re-pick"),
+
+    (COL_SCRIPT, '        except ColumnHostError as refusal:',
+     '        except NotImplementedError as refusal:',
+     TC + "test_a_refused_column_is_not_reported_as_a_failure",
+     "an out-of-scope column reported to the user as a crash"),
+
+    (COL_SCRIPT, '"section_source_tb", "cover_source_tb",',
+     '"section_source_tb",',
+     TC + "test_every_readout_is_cleared_on_a_re_pick",
+     "a read-out that keeps the PREVIOUS column value"),
+
+    (COL_SCRIPT, '        self._dispatch_to_revit_context(self._pick_column_in_context,\n                                        \"Pick column\")',
+     '        self._pick_column_in_context()',
+     TC + "test_the_pick_handler_does_no_revit_work_directly",
+     "Revit work done straight from a modeless click handler"),
+
+    (COL_BUNDLE, '  persistent: true', '  persistent: false',
+     TC + "test_the_modeless_window_declares_a_persistent_engine",
+     "the persistent engine turned off (silent dead ExternalEvents)"),
+
+    (COL_RULES, '    if len(vertical) != 4:',
+     '    if len(vertical) < 4:',
+     TR + "test_the_i_section_is_refused_on_its_face_COUNT",
+     "an I-section accepted as rectangular (its normals match)"),
+
+    (COL_RULES, '        base_source=(SOURCE_LEVEL_ELEVATION if base_face_z_mm is None\n                     else SOURCE_SUPPORT_FACE),',
+     '        base_source=SOURCE_SUPPORT_FACE,',
+     TR + "test_a_missing_base_support_is_normal_and_falls_back_to_the_level",
+     "a level elevation reported as a measured support face"),
 
     (SHARED_STYLES, 'return "file:///" + _quote(normalised, safe="/:")',
      'return "file:///" + normalised',

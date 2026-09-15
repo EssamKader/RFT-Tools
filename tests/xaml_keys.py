@@ -35,6 +35,18 @@ BEAM_PUSHBUTTON_DIR = os.path.join(
 )
 BEAM_XAML_PATH = os.path.join(BEAM_PUSHBUTTON_DIR, "SimpleBeamWindow.xaml")
 
+COLUMN_PUSHBUTTON_DIR = os.path.join(
+    REPO_ROOT,
+    "ColumnRFT.extension", "RFT-Tools.tab",
+    "Columns.panel", "ColumnRFT.pushbutton",
+)
+COLUMN_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "ColumnWindow.xaml")
+
+#: Every window that merges the shared palette. Guards iterate this so a
+#: THIRD element cannot ship a window nobody is checking -- the failure
+#: #86 exists to prevent, one element later.
+WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH)
+
 SHARED_STYLES_PATH = shared_styles_path()
 
 _X_KEY = re.compile(r'x:Key="([A-Za-z0-9_]+)"')
