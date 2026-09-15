@@ -491,9 +491,40 @@
             </TabItem>
 
             <TabItem Header="Review" x:Name="review_tab" IsEnabled="False">
-                <TextBlock Margin="14" TextWrapping="Wrap"
-                           Foreground="{StaticResource InkMuted}"
-                           Text="The Review report is issue #91, and the sketch is #90."/>
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal">
+                        <Button x:Name="build_report_btn" Content="Build report"
+                                Padding="12,5,12,5"/>
+                        <TextBlock x:Name="review_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="12,6,0,0"
+                                   Text="Apply the bar and tie inputs first."/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" Margin="0,8,0,6" TextWrapping="Wrap"
+                               Foreground="{StaticResource InkMuted}"
+                               Text="Read this before placing. Every number here comes from the same computation the placer will use, so the page and the model cannot disagree."/>
+
+                    <!-- A read-only TextBox, not a TextBlock: the report is
+                         meant to be selected and copied into a transmittal,
+                         and a TextBlock cannot be. Monospace because the tie
+                         level table is columnar and proportional digits
+                         destroy it. -->
+                    <TextBox Grid.Row="2" x:Name="report_tb"
+                             IsReadOnly="True" AcceptsReturn="True"
+                             FontFamily="Consolas" FontSize="11"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             Background="{StaticResource SurfaceTint}"
+                             BorderBrush="{StaticResource BorderSubtle}"
+                             Text=""/>
+                </Grid>
             </TabItem>
         </TabControl>
 

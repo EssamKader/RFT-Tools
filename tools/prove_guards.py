@@ -57,6 +57,10 @@ COL_INPUTS = "RFT.lib/rft/core/column_inputs.py"
 COL_SPACING = "RFT.lib/rft/core/column_spacing.py"
 TI = "tests/test_column_inputs.py::"
 TS = "tests/test_column_spacing.py::"
+COL_LEVELS = "RFT.lib/rft/core/column_tie_levels.py"
+COL_REPORT = "RFT.lib/rft/core/column_report.py"
+TL = "tests/test_column_tie_levels.py::"
+TP = "tests/test_column_report.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -218,6 +222,43 @@ CASES = [
     (COL_BUNDLE, '  persistent: true', '  persistent: false',
      TC + "test_the_modeless_window_declares_a_persistent_engine",
      "the persistent engine turned off (silent dead ExternalEvents)"),
+
+    # ---- #91: the report and the tie ladder ---------------------
+
+    (COL_LEVELS, '    levels = [TieLevel(index=i, z_mm=z, zone=zone, mirrored=bool(i % 2))',
+     '    levels = [TieLevel(index=i, z_mm=z, zone=zone, mirrored=True)',
+     TL + "test_section_6_3_alternates_every_other_level",
+     "every tie mirrored, so the hook corner never moves"),
+
+    (COL_LEVELS, '    middle_step = span / interval_count',
+     '    middle_step = middle_zone_spacing_mm',
+     TL + "test_the_middle_run_is_divided_EQUALLY_and_under_the_cap",
+     "the middle run stepped from one end, leaving a ragged last bay"),
+
+    (COL_LEVELS, '    z = clear_height_mm - first_tie_offset_mm',
+     '    z = clear_height_mm - confinement_spacing_mm',
+     TL + "test_the_first_tie_sits_at_exactly_50_from_each_support_face",
+     "the top first tie no longer 50 mm from the top face"),
+
+    (COL_LEVELS, '    if 2.0 * l0_mm >= clear_height_mm:',
+     '    if False:',
+     TL + "test_a_column_shorter_than_two_confinement_zones_is_refused",
+     "a silently empty middle zone on a short column"),
+
+    (COL_REPORT, '        outstanding_section(),',
+     '',
+     TP + "test_the_report_says_its_positions_are_IDEALISED",
+     "the page dropping what it cannot yet claim"),
+
+    (COL_REPORT, '% _mm(plan.confinement_spacing_mm))',
+     '% _mm(plan.s0_mm))',
+     TP + "test_the_spacing_section_reads_the_built_values_not_the_limits",
+     "the report showing a code limit where the built value belongs"),
+
+    (COL_SCRIPT, '                                plan.confinement_spacing_mm,',
+     '                                plan.s0_mm,',
+     TC + "test_the_tie_ladder_is_built_from_the_BUILT_spacings",
+     "the ladder drawn from code limits instead of built spacings"),
 
     # ---- #88: the inputs ----------------------------------------
 

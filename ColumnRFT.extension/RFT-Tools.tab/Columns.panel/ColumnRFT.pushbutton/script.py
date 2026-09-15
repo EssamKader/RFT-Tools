@@ -45,7 +45,11 @@ from rft.core.column_inputs import (
     splice_length,
     splice_length_report_line,
 )
-from rft.core.column_spacing import MODE_AUTO, MODE_MANUAL, spacing_plan
+from rft.core.column_report import build_report, render
+from rft.core.column_spacing import (
+    FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
+)
+from rft.core.column_tie_levels import tie_levels
 from rft.revit.bar_types import (
     bar_type_diameter_mm, bar_type_options, hook_angle_deg,
     hook_type_options, list_stirrup_hook_types,
@@ -71,7 +75,8 @@ PROVENANCE_NAMES = ("section_source_tb", "cover_source_tb", "base_source_tb",
                     "top_source_tb", "clear_height_source_tb", "notes_tb",
                     "total_bars_source_tb", "ls_source_tb", "l0_source_tb",
                     "s0_source_tb", "spacing_flags_tb",
-                    "longitudinal_status_tb", "ties_status_tb")
+                    "longitudinal_status_tb", "ties_status_tb",
+                    "report_tb")
 
 #: Read-outs on the two input tabs. Cleared with the rest on a re-pick:
 #: a new column changes L0, S0 and the middle-zone maximum, so leaving
@@ -134,6 +139,7 @@ class ColumnWindow(forms.WPFWindow):
         self.apply_ties_btn.Click += self.on_apply_ties_click
         self.mode_a_rb.Checked += self.on_spacing_mode_changed
         self.mode_b_rb.Checked += self.on_spacing_mode_changed
+        self.build_report_btn.Click += self.on_build_report_click
 
         # Filled once, from the module that owns the choice, so the label
         # and the parse can never disagree about what "diameters" means.
@@ -152,6 +158,7 @@ class ColumnWindow(forms.WPFWindow):
         self.longitudinal = None
         self.splice = None
         self.spacing = None
+        self.ladder = None
         self._api_call_in_flight = False
         self._reset_column_state()
 
@@ -178,6 +185,8 @@ class ColumnWindow(forms.WPFWindow):
         self.longitudinal = None
         self.splice = None
         self.spacing = None
+        self.ladder = None
+        self.review_status_tb.Text = "Apply the bar and tie inputs first."
 
     # ---------------------------------------------------------- dispatch
     def _dispatch_to_revit_context(self, func, action_label):
@@ -475,7 +484,21 @@ class ColumnWindow(forms.WPFWindow):
             self.ties_status_tb.Text = str(ex)
             return
 
+        try:
+            # Built from the plan's BUILT spacings, never the code
+            # limits: in Mode B those differ, and a ladder drawn from
+            # the maximums would list ties at positions nothing will
+            # occupy.
+            ladder = tie_levels(extent.clear_height_mm, plan.l0_mm,
+                                plan.confinement_spacing_mm,
+                                plan.middle_zone_spacing_mm,
+                                FIRST_TIE_OFFSET_MM)
+        except ValueError as ex:
+            self.ties_status_tb.Text = str(ex)
+            return
+
         self.spacing = plan
+        self.ladder = ladder
         self.l0_tb.Text = "{:.0f} mm".format(plan.l0_mm)
         self.l0_source_tb.Text = "max of " + ", ".join(
             "{} {:.0f}".format(c.label, c.value_mm) for c in plan.l0_candidates)
@@ -498,7 +521,42 @@ class ColumnWindow(forms.WPFWindow):
                " {} value(s) exceed the code maximum and will be built as "
                "entered.".format(len(plan.flags))))
 
+    def on_build_report_click(self, sender, args):
+        """Render the page. No Revit work -- every value is already read.
+
+        Refuses to render a PARTIAL report rather than filling the gaps
+        with blanks: a page with missing sections is still read as the
+        page, and this one's whole purpose is being trusted before Place.
+        """
+        missing = [label for label, value in (
+            ("a picked column", self.column_data),
+            ("the Longitudinal bars tab (press Apply)", self.longitudinal),
+            ("the Ties tab (press Apply)", self.spacing)) if value is None]
+        if missing:
+            self.review_status_tb.Text = (
+                "Cannot build the report yet -- still needed: %s."
+                % "; ".join(missing))
+            return
+
+        bar_type_name = self._selected_bar_type_name(self.main_bar_type_cb)
+        bar_diameter_mm = self._selected_bar_diameter_mm()
+        self.report_tb.Text = render(build_report(
+            self.column_data, self.longitudinal, self.splice,
+            splice_length_report_line(self.splice, bar_diameter_mm),
+            bar_type_name, bar_diameter_mm, self.spacing, self.ladder))
+        self.review_status_tb.Text = (
+            "Built from the same values the placer will use."
+            + ("" if not self.spacing.flags else
+               "  %d spacing flag(s) -- see the report."
+               % len(self.spacing.flags)))
+
     # ------------------------------------------------------- selections
+    def _selected_bar_type_name(self, combo):
+        index = combo.SelectedIndex
+        if index < 0 or index >= len(self.bar_type_options):
+            return "(none selected)"
+        return self.bar_type_options[index][0].split("  --  ")[0]
+
     def _selected_ls_mode(self):
         index = self.ls_mode_cb.SelectedIndex
         if index < 0:
