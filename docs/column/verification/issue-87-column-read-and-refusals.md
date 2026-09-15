@@ -126,7 +126,46 @@ localised and renameable.
 
 ---
 
-## 4. Still unverified
+## 4. The window itself, constructed on the host
+
+The composed `ColumnWindow.xaml` — placeholder `Source` rewritten to the
+real palette path — parsed and constructed in Revit's own WPF:
+
+```
+COLUMN WINDOW CONSTRUCTED: Detail Column  880x680
+merged dictionaries = 1
+all 22 x:Name controls resolved
+  longitudinal_tab ships IsEnabled=False
+  ties_tab         ships IsEnabled=False
+  review_tab       ships IsEnabled=False
+  SkyBlue #FF87CEEB   SkyBlueDeep #FF1F6F94
+  InkMuted #FF5A6B75  SurfaceWhite #FFFFFFFF
+ReadOut / ReadOutSource styles found: True / True
+tab count = 4
+```
+
+That also closes #86's third acceptance line: a **second** window resolves
+the same keys from the same file.
+
+### ⚠️ A `Click="handler"` attribute throws at parse time
+
+The first attempt carried `Click="on_pick_click"` in the markup, the way a
+compiled WPF application would. It fails:
+
+```
+PARSE FAILED: XamlParseException: 'Failed to create a 'Click' from the text
+'on_pick_click'.' Line number '142' and line position '57'.
+|| INNER: Cannot bind to the target method because its signature or security
+transparency is not compatible with that of the delegate type.
+```
+
+A window loaded from a **string** has no code behind, so WPF has nowhere to
+resolve the name. The beam window has always wired handlers in Python
+(`self.pick_btn.Click += self.on_pick_click`); this is why, written down.
+The markup parsed as XML perfectly, so only a host could have found it —
+hence a guard over both windows.
+
+## 5. Still unverified
 
 - **Only one non-rectangular family** was tested, and only as a temporary
   instance. Circular columns (a genuinely curved vertical face) and L- or
