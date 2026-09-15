@@ -52,3 +52,44 @@ constraints that implies — the PEP 263 encoding cookie, no f-strings, no
 Python-3-only stdlib — are enforced by
 `tests/test_ironpython_compat.py`, which walks this folder and the UI
 extension.
+
+---
+
+## `SharedStyles.xaml` — the one file that is not Python
+
+`RFT.lib/SharedStyles.xaml` holds the RFT colour palette: thirteen
+`SolidColorBrush` entries and nothing else. Every element's window merges
+it, so a colour change repaints every tool and no two windows can drift
+(#86).
+
+It sits **beside** `rft/`, in the `.lib` folder itself, for the same
+reason rule 2 above puts the package there — that directory is what
+pyRevit adds to the path.
+
+**But that path is Python's, not WPF's.** Nothing resolves this file by
+name, and a window cannot simply write `Source="SharedStyles.xaml"` and
+expect it to load. Two facts decide the mechanism, and both are the
+opposite of the obvious guess:
+
+1. **The merge must happen before the parse, not after.** pyRevit's own
+   `WPFWindow.merge_resource_dict` runs *after* `wpf.LoadComponent`, which
+   is right for localisation strings (looked up later, through
+   `FindResource`) and useless for brushes — `{StaticResource}` resolves
+   *during* the parse, and a window's `Style` setters resolve it eleven
+   times before `LoadComponent` returns.
+2. **The URI must be absolute.** A relative one resolves against the
+   loading file's `BaseUri`, i.e. the pushbutton folder — which would
+   demand a copy of the palette beside every window.
+
+So the window's markup carries a fixed placeholder `Source`,
+`rft.ui.shared_styles` rewrites it to an absolute `file:///` URI derived
+from its own location, and the window is loaded from the resulting
+**string** (`literal_string=True`).
+
+The cost of loading from a string is that there is no `BaseUri` at all,
+so **a window XAML may carry no other relative URI** — no image, no
+icon, no second dictionary. That is guarded per window
+(`tests/test_simple_beam_xaml.py::test_the_xaml_carries_no_other_relative_uri`),
+along with "the merge line is still there" and "no local brush shadows a
+shared one", because each of those leaves the file well formed and every
+other test green while breaking the window on a live host.
