@@ -248,6 +248,15 @@ def test_the_pick_handler_does_no_revit_work_directly():
         assert forbidden not in body, (
             "on_pick_click calls %s directly; it must go through "
             "_dispatch_to_revit_context." % forbidden)
+    # Naming the forbidden calls is not enough, and tools/prove_guards.py
+    # proved it: replacing the dispatch with a plain
+    # self._pick_column_in_context() mentions none of them and still runs
+    # every one of them outside Revit's API context. So the handler must
+    # POSITIVELY go through the dispatcher.
+    assert "_dispatch_to_revit_context" in body, (
+        "on_pick_click must dispatch through _dispatch_to_revit_context; "
+        "calling the worker directly runs PickObject outside Revit's API "
+        "context, where it raises.")
 
 
 def test_dispatched_work_cannot_fail_silently():
