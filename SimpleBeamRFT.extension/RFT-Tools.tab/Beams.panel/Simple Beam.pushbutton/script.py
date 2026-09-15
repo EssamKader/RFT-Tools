@@ -153,6 +153,7 @@ from rft.ui.sketch_layout import (
     place_labels,
 )
 from rft.ui.sketch_palette import brush_key_for_style
+from rft.ui.shared_styles import window_xaml
 
 # #49 (U5) -- the renderer's ONLY WPF imports for the live sketch. These
 # are plain WPF/CLR types (Line/Ellipse/Polygon/TextBlock/Points), not the
@@ -399,10 +400,23 @@ class SimpleBeamWindow(forms.WPFWindow):
     not built yet -- this ticket places nothing, per its own scope."""
 
     def __init__(self):
-        # Bare filename: WPFWindow._determine_xaml resolves it against
-        # EXEC_PARAMS.command_path, the folder this script sits in --
-        # confirmed by the #42 spike, not re-derived here.
-        forms.WPFWindow.__init__(self, "SimpleBeamWindow.xaml")
+        # #86: loaded as a STRING, not as a filename, because the shared
+        # palette's absolute location has to be substituted into the
+        # markup before WPF parses it -- see rft.ui.shared_styles for why
+        # a merge after LoadComponent (pyRevit's own route) is too late.
+        #
+        # That trades away WPFWindow._determine_xaml, which resolved a
+        # bare filename against EXEC_PARAMS.command_path, so the path is
+        # derived here instead. Same folder, same four-dirname idiom as
+        # _loaded_version above.
+        forms.WPFWindow.__init__(
+            self,
+            window_xaml(os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "SimpleBeamWindow.xaml",
+            )),
+            literal_string=True,
+        )
 
         # #61's test cycle: the loaded build was INVISIBLE. The window
         # title read "Detail Beam" on every version (the rc3 rename

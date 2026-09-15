@@ -1,0 +1,60 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Issue #86. The RFT palette, declared ONCE for every element's
+         window. It lived inside SimpleBeamWindow.xaml until a second
+         element needed it; copying the block would have left the guard
+         test (tests/test_ui_sketch_palette.py) watching one file while
+         two drifted.
+
+         Colours are byte identical to the beam window's #60 block. A
+         change here repaints every RFT tool, which is the point.
+
+         This file sits in RFT.lib rather than beside a window because a
+         .lib extension folder is on every UI extension's path. That path
+         is PYTHON's, not WPF's, so nothing resolves this file by name -
+         rft.ui.shared_styles derives its absolute location and rewrites
+         the window's placeholder Source into a file:/// URI before the
+         XAML is parsed. See that module for why a merge after load
+         (pyRevit's own merge_resource_dict) is too late.
+
+         Two of these are deliberately NOT brand colours: a window where
+         everything is sky blue cannot show alarm, so warnings stay amber
+         and failures stay red. -->
+
+    <SolidColorBrush x:Key="SurfaceWhite" Color="#FFFFFFFF"/>
+    <!-- Very pale sky, for grounds that must recede: the inactive tab
+         strip and the diagram backgrounds. -->
+    <SolidColorBrush x:Key="SurfaceTint" Color="#FFF2F9FD"/>
+    <SolidColorBrush x:Key="SurfaceDisabled" Color="#FFEDF1F3"/>
+
+    <!-- Sky blue itself. The SELECTED tab takes this, which is the
+         specific thing #60 asks for. It is light, so text on it is INK,
+         not white - white on #87CEEB is unreadable at 12pt and would
+         have been the obvious mistake. -->
+    <SolidColorBrush x:Key="SkyBlue" Color="#FF87CEEB"/>
+    <SolidColorBrush x:Key="SkyBlueHover" Color="#FFD6EEF9"/>
+    <!-- The deeper tone carries section headings, where sky blue itself
+         would be too faint against white to read as emphasis. -->
+    <SolidColorBrush x:Key="SkyBlueDeep" Color="#FF1F6F94"/>
+    <SolidColorBrush x:Key="BorderSubtle" Color="#FFC9DFEA"/>
+
+    <SolidColorBrush x:Key="InkPrimary" Color="#FF1B2A33"/>
+    <SolidColorBrush x:Key="InkMuted" Color="#FF5A6B75"/>
+    <!-- Disabled must stay LEGIBLE, not vanish: the beam's Crack bars tab
+         is disabled until h > 700, so this state is on screen routinely
+         rather than exceptionally. -->
+    <SolidColorBrush x:Key="InkDisabled" Color="#FF8A9AA4"/>
+
+    <SolidColorBrush x:Key="WarningAmber" Color="#FFB05A00"/>
+    <SolidColorBrush x:Key="DangerRed" Color="#FFB00000"/>
+    <!-- #49 (U5): the live sketch's ONLY "complies" colour. None of the
+         brushes above is green, and the notation SVG
+         (docs/beam/ui/sketch-notation.svg) uses green specifically for a
+         passing dimension and for crack/skin bars: see
+         rft.ui.sketch_palette, which is the one place a style key is
+         mapped to a brush NAME (never a WPF object) so the mapping
+         itself is testable under plain CPython. -->
+    <SolidColorBrush x:Key="PassGreen" Color="#FF2E7D32"/>
+
+</ResourceDictionary>

@@ -176,7 +176,9 @@ def test_the_suite_declares_every_third_party_module_it_imports():
         "yaml",         # installed by CI (the bundle.yaml guard)
         "Autodesk",     # faked in tests/fake_revit_api.py, never installed
     }
-    LOCAL = {"rft", "fake_revit_api", "conftest"}
+    # Test-suite modules of our own, importable because conftest.py puts
+    # tests/ on sys.path. Not installable and not meant to be.
+    LOCAL = {"rft", "fake_revit_api", "conftest", "xaml_keys"}
     stdlib = set(sys.stdlib_module_names)
 
     found = {}

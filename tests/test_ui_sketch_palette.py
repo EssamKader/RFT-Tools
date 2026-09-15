@@ -10,23 +10,16 @@ at paint time on a live host -- the same class of defect
 already guards for every other ``StaticResource`` in the file).
 """
 
-import io
-import os
-import re
-
 from rft.ui import sketch
 from rft.ui.sketch_palette import STYLE_BRUSH_KEYS, brush_key_for_style
-
-XAML_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "SimpleBeamRFT.extension", "RFT-Tools.tab",
-    "Beams.panel", "Simple Beam.pushbutton", "SimpleBeamWindow.xaml",
-)
+from xaml_keys import BEAM_XAML_PATH, resolvable_keys
 
 
 def _declared_xaml_brush_keys():
-    text = io.open(XAML_PATH, encoding="utf-8").read()
-    return set(re.findall(r'x:Key="([A-Za-z0-9_]+)"', text))
+    """#86: the brushes moved to RFT.lib/SharedStyles.xaml, so "declared"
+    now spans the window plus the dictionary it merges -- and only when it
+    actually merges it. See tests/xaml_keys.py."""
+    return resolvable_keys(BEAM_XAML_PATH)
 
 
 def test_every_sketch_style_key_has_a_brush_mapping():
@@ -50,7 +43,8 @@ def test_every_mapped_brush_is_declared_in_the_xaml():
     missing = sorted(set(STYLE_BRUSH_KEYS.values()) - declared)
     assert not missing, (
         "these brush names are used by the sketch palette but never "
-        "declared with x:Key in SimpleBeamWindow.xaml, which throws "
+        "declared with x:Key in SimpleBeamWindow.xaml nor in the shared "
+        "palette it merges, which throws "
         "'Cannot find resource' at paint time on a live host: %s" % missing
     )
 
