@@ -4,8 +4,11 @@ tooltip: >-
   column: longitudinal bars as a single perimeter layout, confinement-zone
   and middle-zone ties, and the inner ties that restrain intermediate bars.
 
-  NOT YET IMPLEMENTED. This button is a placeholder while the column spec's
-  open decisions are resolved. It refuses rather than doing anything.
+  PLACES NOTHING YET (issue #87). The window picks a column, refuses the
+  ones out of scope with the reason, and shows what it read: section, the
+  cover read FROM the element, and the clear height measured to the
+  support face. The bar inputs (#88), tie topology (#89), sketch (#90) and
+  Review report (#91) are separate tickets and their tabs are disabled.
 
   SCOPE, when it ships: one segment only. Foundation starter bars/dowels
   (C1), multi-storey stacks beyond the one top-of-support splice (C2) and

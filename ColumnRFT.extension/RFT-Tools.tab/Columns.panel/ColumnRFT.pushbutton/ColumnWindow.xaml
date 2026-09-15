@@ -1,0 +1,280 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Detail Column"
+        Height="680" Width="880"
+        MinHeight="520" MinWidth="640"
+        WindowStartupLocation="CenterScreen"
+        SizeToContent="Manual">
+
+    <!-- #86: the palette is NOT declared here. It lives in
+         RFT.lib/SharedStyles.xaml, the same file the beam window merges,
+         so the two tools cannot drift apart.
+
+         The Source below is a PLACEHOLDER. rft.ui.shared_styles rewrites
+         it to an absolute file:/// URI before this markup is parsed. That
+         has to happen before the parse and not after, because every
+         {StaticResource} in the styles below is resolved DURING the parse
+         and StaticResource does not do forward references.
+
+         Loading from a string leaves BaseUri null, so this must stay the
+         only relative URI in the file. -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="SharedStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Tab chrome, copied in SHAPE from the beam window but not in
+                 substance: the brushes come from the shared palette, so a
+                 colour change repaints both. A Style is not shared, because
+                 a Style describes the controls of the window it belongs to
+                 (see tests/test_ui_shared_styles.py). -->
+            <Style TargetType="{x:Type TabItem}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="TabChrome"
+                                    Background="{StaticResource SurfaceTint}"
+                                    BorderBrush="{StaticResource BorderSubtle}"
+                                    BorderThickness="1,1,1,0"
+                                    Margin="0,0,2,0" Padding="14,7,14,7">
+                                <ContentPresenter ContentSource="Header"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SkyBlue}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource InkPrimary}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsSelected" Value="False"/>
+                                        <Condition Property="IsMouseOver" Value="True"/>
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SkyBlueHover}"/>
+                                </MultiTrigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SurfaceDisabled}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource InkDisabled}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SectionHeading" TargetType="{x:Type TextBlock}">
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Foreground" Value="{StaticResource SkyBlueDeep}"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+                <Setter Property="Margin" Value="0,10,0,4"/>
+            </Style>
+
+            <!-- A READ-OUT, not an input. #87 is explicit that the cover
+                 display "must not look like an input" (A2: cover is read
+                 from the element, never typed), and the same applies to
+                 every derived number on this tab. No box, no border, no
+                 white ground: a TextBlock that reads as text. -->
+            <Style x:Key="ReadOut" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkPrimary}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <Style x:Key="ReadOutLabel" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="Margin" Value="0,2,10,2"/>
+            </Style>
+
+            <!-- Where a read-out's PROVENANCE is shown. R5/R6: "2700 from a
+                 soffit" and "2700 from a level elevation" are different
+                 claims, and the window says which. -->
+            <Style x:Key="ReadOutSource" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="FontStyle" Value="Italic"/>
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <Style TargetType="{x:Type ComboBox}">
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="Padding" Value="3,2,3,2"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- The ground lives on the root Grid, not on the Window element: a
+         Window's own attributes resolve BEFORE Window.Resources exists, so
+         a StaticResource up there throws at load. The beam tool paid for
+         this once (rc6) and the guard that caught it applies here too. -->
+    <Grid Margin="8" Background="{StaticResource SurfaceWhite}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Margin="2,0,2,8" TextWrapping="Wrap"
+                   Text="Detail Column -- pick a column on the first tab. Every other tab stays disabled until a column is accepted: an out-of-scope column is refused with the reason, not detailed halfway."/>
+
+        <TabControl x:Name="tabs" Grid.Row="1"
+                    Background="{StaticResource SurfaceWhite}"
+                    BorderBrush="{StaticResource BorderSubtle}">
+
+            <TabItem Header="Column &amp; Materials">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Column"/>
+                        <StackPanel Orientation="Horizontal">
+                            <!-- No Click attribute. Handlers are wired in
+                                 script.py (self.pick_column_btn.Click += ...),
+                                 which is the beam window's pattern: a window
+                                 loaded from a STRING has no code behind, so a
+                                 Click="name" attribute throws
+                                 "Failed to create a 'Click' from the text" at
+                                 parse time. Observed live on Revit 2024. -->
+                            <Button x:Name="pick_column_btn" Content="Pick column..."
+                                    Padding="12,5,12,5"/>
+                            <TextBlock x:Name="column_status_tb"
+                                       Style="{StaticResource ReadOut}"
+                                       Margin="12,6,0,2"
+                                       Text="No column picked yet."/>
+                        </StackPanel>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Family and type"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="type_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Section b x h"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="section_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" x:Name="section_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Narrow / wide"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="narrow_wide_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2"
+                                       Style="{StaticResource ReadOutSource}"
+                                       Text="narrow governs S0 (section 4), wide governs L0 (section 3)"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Cover (other faces)"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="cover_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="3" Grid.Column="2" x:Name="cover_source_tb"
+                                       Style="{StaticResource ReadOutSource}"
+                                       Text="read from the element, never typed (amendment A2)"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Base"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" x:Name="base_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="4" Grid.Column="2" x:Name="base_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Top"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="top_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="5" Grid.Column="2" x:Name="top_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Clear height Hc"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="clear_height_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="6" Grid.Column="2" x:Name="clear_height_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+                        </Grid>
+
+                        <TextBlock x:Name="notes_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="0,8,0,0" Text=""/>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Materials"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="260"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Longitudinal bar type"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="main_bar_type_cb" IsEnabled="False"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Tie bar type"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="tie_bar_type_cb" IsEnabled="False"/>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Longitudinal bars" x:Name="longitudinal_tab" IsEnabled="False">
+                <TextBlock Margin="14" TextWrapping="Wrap"
+                           Foreground="{StaticResource InkMuted}"
+                           Text="Section 1 bar counts per face and the splice length Ls are issue #88. This tab is deliberately empty rather than absent, so the window's shape is the shape it will keep."/>
+            </TabItem>
+
+            <TabItem Header="Ties" x:Name="ties_tab" IsEnabled="False">
+                <TextBlock Margin="14" TextWrapping="Wrap"
+                           Foreground="{StaticResource InkMuted}"
+                           Text="Section 7 hook dropdowns, section 8 Mode A/B spacing and the section 6.2 tie topology are issues #88 and #89. #89 is blocked on open question Q11."/>
+            </TabItem>
+
+            <TabItem Header="Review" x:Name="review_tab" IsEnabled="False">
+                <TextBlock Margin="14" TextWrapping="Wrap"
+                           Foreground="{StaticResource InkMuted}"
+                           Text="The Review report is issue #91, and the sketch is #90."/>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock x:Name="status_tb" Grid.Row="2" Margin="2,8,2,0"
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource InkMuted}"
+                   Text="ready"/>
+    </Grid>
+</Window>
