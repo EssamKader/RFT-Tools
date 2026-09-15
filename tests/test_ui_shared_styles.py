@@ -23,7 +23,9 @@ from rft.ui.shared_styles import (
     shared_styles_path,
     window_xaml,
 )
-from xaml_keys import BEAM_XAML_PATH, SHARED_STYLES_PATH, declared_keys_in
+from xaml_keys import (
+    BEAM_XAML_PATH, REPO_ROOT, SHARED_STYLES_PATH, declared_keys_in,
+)
 
 # The palette as #60 shipped it, transcribed from the beam window before
 # the move. Hard-coded rather than read back from the file, because a test
@@ -105,14 +107,23 @@ def test_resolve_replaces_the_placeholder_with_an_absolute_uri():
 
 
 def test_the_uri_percent_encodes_spaces():
-    """This repository's own path is full of them. An unencoded space is
+    """This repository's own path is full of them -- ".../04.ESSAM-SUMMER
+    2026/10. BIM & POWER BI COURSE-V2/..." -- and an unencoded space is
     where a URI silently becomes a different URI.
+
+    Built from the real repo root rather than from a literal "C:\\...":
+    production is Windows, CI is Linux, and a hard-coded drive letter is
+    not absolute there, so os.path.abspath prepends the runner's cwd and
+    the test fails on a URI that is perfectly correct. What is being
+    checked is the ENCODING, which is the same on both.
     """
-    uri = file_uri(os.path.join("C:" + os.sep, "BIM & POWER BI", "a.xaml"))
+    uri = file_uri(os.path.join(REPO_ROOT, "BIM & POWER BI", "a.xaml"))
     assert " " not in uri
     assert "&" not in uri, "an unencoded & opens an entity reference in XAML"
-    assert uri.startswith("file:///C:/")
+    assert "BIM%20%26%20POWER%20BI" in uri
+    assert uri.startswith("file:///")
     assert uri.endswith("/a.xaml")
+    assert "\\" not in uri, "a Windows separator is not a URI separator"
 
 
 def test_a_missing_placeholder_is_refused_loudly():
