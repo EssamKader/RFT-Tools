@@ -493,20 +493,41 @@ def test_the_section_8_flags_actually_reach_the_screen():
     the user's manual value as a visible flag", and a plan whose flags
     stay in memory is silent compliance wearing a warning's clothes.
 
-    tools/prove_guards.py found this gap -- blanking the assignment broke
-    nothing, because the only test watching the flags was the pure one,
-    which the UI cannot affect.
+    Checked on the ASSIGNMENT's own subtree, not on the function's text.
+    tools/prove_guards.py refused two weaker versions of this guard: the
+    mutant replaces the assignment with an empty string while the status
+    line two lines below still says "plan.flags", so both "does the
+    function mention flags" and "does it touch spacing_flags_tb" stay
+    true. Only the value being assigned distinguishes them.
     """
-    called, _literals = _code_of("on_apply_ties_click")
-    assert "spacing_flags_tb" in called, (
-        "on_apply_ties_click never writes the flags to the window")
-    assert "flags" in called, (
-        "the flags are never read off the plan")
-    body = re.search(r"def on_apply_ties_click\(.*?\n(.*?)\n    # ---",
-                     _script(), re.DOTALL).group(1)
-    assert "plan.flags" in body, (
-        "the displayed flags must come from the plan the placer will use, "
-        "not from a second computation")
+    assigned = _assigned_value_names("spacing_flags_tb")
+    assert assigned is not None, (
+        "nothing assigns to self.spacing_flags_tb.Text")
+    assert "flags" in assigned, (
+        "the flag line is assigned something that never reads the plan's "
+        "flags, so a Mode B violation is computed and then shown to "
+        "nobody")
+
+
+def _assigned_value_names(control_name):
+    """Every name appearing in the value assigned to
+    ``self.<control_name>.Text``, or ``None`` if nothing assigns to it.
+    """
+    for node in ast.walk(ast.parse(_script())):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if (isinstance(target, ast.Attribute) and target.attr == "Text"
+                    and isinstance(target.value, ast.Attribute)
+                    and target.value.attr == control_name):
+                names = set()
+                for inner in ast.walk(node.value):
+                    if isinstance(inner, ast.Name):
+                        names.add(inner.id)
+                    elif isinstance(inner, ast.Attribute):
+                        names.add(inner.attr)
+                return names
+    return None
 
 
 def test_the_placer_facing_fields_are_what_the_window_shows():
