@@ -41,6 +41,8 @@ REPORT = "RFT.lib/rft/ui/report.py"
 GUARDS = "RFT.lib/rft/core/guards.py"
 SPACING = "RFT.lib/rft/core/spacing.py"
 SKETCH_PALETTE = "RFT.lib/rft/ui/sketch_palette.py"
+SHARED_STYLES = "RFT.lib/rft/ui/shared_styles.py"
+STYLES_XAML = "RFT.lib/SharedStyles.xaml"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -118,10 +120,54 @@ CASES = [
      "test_the_window_element_itself_uses_no_static_resource",
      "StaticResource back on the Window element (the rc6 crash)"),
 
-    (XAML, "<!-- #60: the palette, declared ONCE.",
-     "<!-- #60: the palette, declared ONCE and never -- ever -- twice.",
+    (XAML, "<!-- #86: the palette is no longer declared here.",
+     "<!-- #86: the palette is no longer declared here -- it moved.",
      "test_no_xaml_comment_contains_a_double_hyphen",
      "a double hyphen inside a XAML comment"),
+
+    # ---- #86: the shared palette -------------------------------------
+    # Every case below leaves the XAML well formed and every OTHER test
+    # green, and breaks the window only on a live host.
+
+    (XAML, '                <ResourceDictionary Source="SharedStyles.xaml"/>\n',
+     '',
+     T + "test_the_window_merges_the_shared_palette",
+     "the window no longer merging the shared palette"),
+
+    (XAML, '        <ResourceDictionary>\n',
+     '        <ResourceDictionary>\n'
+     '            <SolidColorBrush x:Key="SkyBlue" Color="#FF87CEEB"/>\n',
+     T + "test_the_window_declares_no_palette_brush_of_its_own",
+     "a local brush shadowing the shared one (the drift #86 removes)"),
+
+    (XAML, '        SizeToContent=\"Manual\">',
+     '        SizeToContent=\"Manual\" Icon=\"beam.png\">',
+     T + "test_the_xaml_carries_no_other_relative_uri",
+     "a relative URI that cannot resolve in a string-loaded window"),
+
+    (STYLES_XAML, '<SolidColorBrush x:Key="SkyBlue" Color="#FF87CEEB"/>',
+     '<SolidColorBrush x:Key="SkyBlue" Color="#FF87CEEC"/>',
+     "tests/test_ui_shared_styles.py::"
+     "test_every_colour_survived_the_move_byte_for_byte",
+     "a colour that changed while being moved"),
+
+    (STYLES_XAML, '</ResourceDictionary>',
+     '    <Style x:Key="SectionHeading" TargetType="TextBlock"/>\n'
+     '</ResourceDictionary>',
+     "tests/test_ui_shared_styles.py::"
+     "test_the_shared_palette_declares_nothing_but_brushes",
+     "a window Style leaking into the shared palette"),
+
+    (SHARED_STYLES, "    if occurrences != 1:",
+     "    if occurrences < 1:",
+     "tests/test_ui_shared_styles.py::"
+     "test_a_duplicated_placeholder_is_refused_loudly",
+     "a duplicated merge slipping through as one"),
+
+    (SHARED_STYLES, 'return "file:///" + _quote(normalised, safe="/:")',
+     'return "file:///" + normalised',
+     "tests/test_ui_shared_styles.py::test_the_uri_percent_encodes_spaces",
+     "an unencoded space or ampersand in the palette URI"),
 
     (SCRIPT, "core_plan.innermost_layer_offset_mm(\n                    geometry[\"cover_top_mm\"]",
      "_face(True).layers[-1].offset_mm  # (\n                    geometry[\"cover_top_mm\"]",

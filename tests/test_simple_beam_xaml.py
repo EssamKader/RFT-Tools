@@ -28,6 +28,11 @@ SCRIPT_PATH = os.path.join(PUSHBUTTON_DIR, "script.py")
 
 X_NAME = "{http://schemas.microsoft.com/winfx/2006/xaml}Name"
 
+from rft.ui.shared_styles import PLACEHOLDER_SOURCE, SHARED_STYLES_FILENAME
+from xaml_keys import (
+    SHARED_STYLES_PATH, declared_keys_in, merges_shared_styles, resolvable_keys,
+)
+
 # Attribute names script.py reads/writes as ``self.<name>`` that are
 # NOT ``x:Name`` WPF elements -- ordinary Python state, or attributes of
 # ``self.selection``/other non-window objects that the same "self."
@@ -766,15 +771,84 @@ def test_every_static_resource_reference_is_defined():
     """The same class of failure, generalised: any StaticResource whose
     key is never declared throws only when the window is constructed, on a
     live host, with a stack trace forty frames deep.
+
+    #86 widened "declared" to span the merged palette as well as this
+    file. It is still one question -- will WPF find the key while parsing
+    this window -- but the answer now lives in two files, so it is asked
+    through ``tests/xaml_keys.py`` rather than scraped here.
     """
     text = io.open(XAML_PATH, encoding="utf-8").read()
     used = set(re.findall(r"\{StaticResource\s+([A-Za-z0-9_]+)\s*\}", text))
-    declared = set(re.findall(r'x:Key="([A-Za-z0-9_]+)"', text))
+    declared = resolvable_keys(XAML_PATH)
     assert used, "no StaticResource references found -- pattern broken?"
     missing = sorted(used - declared)
     assert not missing, (
         "these StaticResource keys are referenced but never declared with "
-        "x:Key, which throws at window construction: %s" % missing
+        "x:Key -- neither here nor in the shared palette this window "
+        "merges -- which throws at window construction: %s" % missing
+    )
+
+
+def test_the_window_merges_the_shared_palette():
+    """#86. Every brush this window paints with now lives in
+    ``RFT.lib/SharedStyles.xaml``, reachable only because the markup
+    carries the placeholder ``Source`` that ``rft.ui.shared_styles``
+    rewrites into an absolute file:/// URI before the parse.
+
+    Delete that one line and the file still parses as XML, still declares
+    every Style, and still passes every other test here -- then throws
+    "Cannot find resource named 'InkMuted'" the first time the button is
+    pressed. This is the guard for the line itself.
+    """
+    assert merges_shared_styles(io.open(XAML_PATH, encoding="utf-8").read()), (
+        "SimpleBeamWindow.xaml no longer merges the shared palette "
+        "(expected %r inside ResourceDictionary.MergedDictionaries). "
+        "Without it none of its brushes resolve." % PLACEHOLDER_SOURCE
+    )
+
+
+def test_the_window_declares_no_palette_brush_of_its_own():
+    """The drift #86 exists to prevent, caught in the act.
+
+    Re-declaring a brush here would shadow the shared one -- a merged
+    dictionary loses to a local key -- so the beam window would silently
+    stop following the palette while every other test stayed green. The
+    colours would agree on the day of the copy and diverge on the first
+    change after it.
+    """
+    local = declared_keys_in(io.open(XAML_PATH, encoding="utf-8").read())
+    shared = declared_keys_in(io.open(SHARED_STYLES_PATH, encoding="utf-8").read())
+    shadowed = sorted(local & shared)
+    assert not shadowed, (
+        "these keys are declared BOTH here and in RFT.lib/SharedStyles.xaml: "
+        "%s. A local key wins over a merged dictionary, so this window would "
+        "quietly stop tracking the shared palette." % shadowed
+    )
+
+
+def test_the_xaml_carries_no_other_relative_uri():
+    """#86's cost, made visible.
+
+    The window is loaded from a STRING (``literal_string=True``), which is
+    what lets the palette's absolute path be substituted in first. A
+    string has no ``BaseUri``, so every OTHER relative URI in the file --
+    an image, a font, a second dictionary -- would resolve against nothing
+    and throw at load. The placeholder is the one exception, because it is
+    rewritten to an absolute URI before WPF ever sees it.
+    """
+    text = io.open(XAML_PATH, encoding="utf-8").read()
+    # The lookbehind keeps ContentSource="Header" out of it -- a
+    # ControlTemplate binding, not a URI.
+    sources = re.findall(r'(?<![A-Za-z])Source="([^"]+)"', text)
+    relative = [
+        s for s in sources
+        if s != SHARED_STYLES_FILENAME and "://" not in s and not s.startswith("/")
+    ]
+    assert not relative, (
+        "these relative URIs cannot resolve in a window loaded from a "
+        "string -- there is no BaseUri to resolve them against: %s. Either "
+        "make them absolute at runtime the way rft.ui.shared_styles does, "
+        "or embed the asset." % relative
     )
 
 
