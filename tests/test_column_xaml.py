@@ -487,6 +487,28 @@ def test_a_section_8_flag_is_amber_not_red():
     assert "DangerRed" not in flags.group(0)
 
 
+def test_the_section_8_flags_actually_reach_the_screen():
+    """Computing the flags and never showing them is section 8's exact
+    failure mode: the spec requires the code limit displayed "ALONGSIDE
+    the user's manual value as a visible flag", and a plan whose flags
+    stay in memory is silent compliance wearing a warning's clothes.
+
+    tools/prove_guards.py found this gap -- blanking the assignment broke
+    nothing, because the only test watching the flags was the pure one,
+    which the UI cannot affect.
+    """
+    called, _literals = _code_of("on_apply_ties_click")
+    assert "spacing_flags_tb" in called, (
+        "on_apply_ties_click never writes the flags to the window")
+    assert "flags" in called, (
+        "the flags are never read off the plan")
+    body = re.search(r"def on_apply_ties_click\(.*?\n(.*?)\n    # ---",
+                     _script(), re.DOTALL).group(1)
+    assert "plan.flags" in body, (
+        "the displayed flags must come from the plan the placer will use, "
+        "not from a second computation")
+
+
 def test_the_placer_facing_fields_are_what_the_window_shows():
     """Section 8's single-source rule reaching the UI: the two "to build"
     read-outs must come from the plan's built fields, not from s0_mm and

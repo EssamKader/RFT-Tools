@@ -259,7 +259,7 @@ CASES = [
 
     (COL_SCRIPT, '        self.spacing_flags_tb.Text = \"\".join(f.message for f in plan.flags)',
      '        self.spacing_flags_tb.Text = \"\"',
-     TS + "test_mode_b_builds_the_USER_value_and_flags_it",
+     TC + "test_the_section_8_flags_actually_reach_the_screen",
      "section 8 flags computed and then never shown"),
 
     (COL_XAML,
