@@ -112,6 +112,23 @@ def grade_for_role(role):
     return ROLE_GRADE[role]
 
 
+def format_role_picker_label(role_label, grade):
+    """The shape of a role picker's label: "<role> -- <grade>".
+
+    Extracted for #88 so the column tool's three roles carry IDENTICAL
+    labelling without importing this module's beam ROLE_* tables, which
+    the column reuse audit marks do-not-reuse. The grade VOCABULARY and
+    this format are genuinely shared -- same steel, named the same way;
+    the role tables are not, and mixing two elements' roles in one dict is
+    what the workspace rules forbid.
+
+    A function rather than a format string constant, so a caller cannot
+    accidentally pass the two arguments in the wrong order and still get
+    something that looks right.
+    """
+    return "{} -- {}".format(role_label, grade)
+
+
 def role_picker_label(role):
     """The label A42 requires each role's ``RebarBarType`` picker to carry
     -- built from ``ROLE_GRADE`` so it can never drift from the mapping,
@@ -120,7 +137,7 @@ def role_picker_label(role):
     moment of choosing, since the grade can no longer be checked
     afterwards from the selected type itself.
     """
-    return "{} -- {}".format(ROLE_LABEL[role], ROLE_GRADE[role])
+    return format_role_picker_label(ROLE_LABEL[role], ROLE_GRADE[role])
 
 
 def role_grade_report_line(role, bar_type_name):
