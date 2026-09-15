@@ -490,6 +490,44 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- #90. A FIFTH tab: #87 described a four-tab shell, and this
+                 is an addition to it rather than a rearrangement. The cross
+                 section and the zone strip share no scale, so they get two
+                 canvases rather than one overlay that would misrepresent
+                 both. -->
+            <TabItem Header="Sketch" x:Name="sketch_tab" IsEnabled="False">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="200"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Grid.Column="0"
+                            BorderBrush="{StaticResource BorderSubtle}"
+                            BorderThickness="1"
+                            Background="{StaticResource SurfaceWhite}">
+                        <Canvas x:Name="section_canvas" ClipToBounds="True"/>
+                    </Border>
+
+                    <Border Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
+                            BorderBrush="{StaticResource BorderSubtle}"
+                            BorderThickness="1"
+                            Background="{StaticResource SurfaceWhite}">
+                        <Canvas x:Name="strip_canvas" ClipToBounds="True"/>
+                    </Border>
+
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                               x:Name="sketch_captions_tb"
+                               Margin="0,8,0,0" TextWrapping="Wrap"
+                               Foreground="{StaticResource InkMuted}"
+                               Text=""/>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Review" x:Name="review_tab" IsEnabled="False">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
