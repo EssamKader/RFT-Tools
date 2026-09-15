@@ -257,7 +257,7 @@ CASES = [
      TS + "test_a_tighter_manual_spacing_is_not_flagged",
      "a conservative spacing flagged as a violation"),
 
-    (COL_SCRIPT, '        self.spacing_flags_tb.Text = \"\".join(f.message for f in plan.flags)',
+    (COL_SCRIPT, '        self.spacing_flags_tb.Text = \"\\n\".join(f.message for f in plan.flags)',
      '        self.spacing_flags_tb.Text = \"\"',
      TC + "test_the_section_8_flags_actually_reach_the_screen",
      "section 8 flags computed and then never shown"),
