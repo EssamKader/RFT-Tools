@@ -1,0 +1,251 @@
+# -*- coding: utf-8 -*-
+"""The Review report (issue #91) — the page read before pressing Place.
+
+PURE. Values in, lines of text out. No Revit, no WPF: the report is a list
+of ``(heading, [lines])`` sections and the window renders it, so the whole
+page is testable under plain CPython and the wording is checkable line by
+line.
+
+## The rule the page exists to keep
+
+The report and the placer are fed by the SAME computation engine
+(`REUSE_GUIDELINES.md` §1), so they cannot disagree. Everything here is
+read off a ``SpacingPlan``, a ``TieLadder`` and the host read -- nothing is
+recomputed. A number this module derived itself would be a second source
+of truth wearing the report's authority.
+
+## What this module deliberately does NOT claim
+
+Two of #91's three headline items cannot be written yet, and they are
+STATED as missing rather than omitted:
+
+1. **As-built bar positions (R15).** #80 measured a corner bar asked for
+   `-167.55` landing at `-164.02`: it binds to the tie's bend, the
+   position cannot be dictated (``SetDistanceToTargetRebar`` throws on a
+   ``HookBend`` target), and it must be read back AFTER placement. There
+   is no placer yet, so there is nothing to read back. The report says
+   the coordinates it shows are idealised and will move.
+
+2. **Loop vs cross-tie per restrained bar (A1).** Which bars get a closed
+   loop and which get a cross-tie is section 6.2's topology, which is
+   issue #89 and blocked on Q11. The report names that rather than
+   guessing a topology.
+
+Silence on either would read as "there is nothing to say", which is the
+failure `REUSE_GUIDELINES.md` §3 exists to prevent.
+
+`rft.ui.report` is not reused -- beam sections, faces and zones
+throughout. What transfers is ``rft.ui.derivation``'s *pattern*: state the
+derivation in words beside the number.
+"""
+
+from collections import namedtuple
+
+from .column_spacing import MODE_MANUAL
+
+ReportSection = namedtuple("ReportSection", "heading lines")
+
+#: Marks a line the engineer must act on or accept -- the Mode B flags and
+#: the two "not available yet" statements. The window paints these; the
+#: prefix is here so the report reads the same as plain text.
+FLAG_PREFIX = "!! "
+NOTE_PREFIX = "-- "
+
+
+def _mm(value):
+    return "%.0f mm" % value
+
+
+def host_section(data):
+    """What was read off the element, with where each number came from.
+
+    R5/R6: "2700 from a soffit" and "2700 from a level elevation" are
+    different claims, so the source travels with every one of them. A2:
+    cover is labelled as READ, never as an input, because it is not one.
+    """
+    section = data["section"]
+    extent = data["extent"]
+    base_name, base_z = data["base_level"]
+    top_name, top_z = data["top_level"]
+    lines = [
+        "Column %s -- %s : %s" % (data["element_id"], data["family_name"],
+                                  data["type_name"]),
+        "Section b x h: %s x %s (b along HandOrientation, h along "
+        "FacingOrientation, both from the type parameters -- never the "
+        "bounding box)" % (_mm(section.b_mm), _mm(section.h_mm)),
+        "Governing dimensions: narrow %s governs S0 (section 4), wide %s "
+        "governs L0 (section 3)" % (_mm(section.narrow_mm),
+                                    _mm(section.wide_mm)),
+        "Cover: %s -- READ from the element's 'Rebar Cover - Other Faces' "
+        "(cover type '%s'). Amendment A2: never typed into this tool, "
+        "never defaulted to 25." % (_mm(data["cover_mm"]),
+                                    data["cover_type_name"]),
+        "Base: %s, from the %s (level %s at %s)"
+        % (_mm(extent.base_z_mm), extent.base_source, base_name, _mm(base_z)),
+        "Top: %s, from the %s (level %s at %s)"
+        % (_mm(extent.top_z_mm), extent.top_source, top_name, _mm(top_z)),
+        "Clear height Hc: %s -- measured top to base, NOT the Length "
+        "parameter, which reads level to level and differs by the slab "
+        "thickness." % (_mm(extent.clear_height_mm)),
+    ]
+    if extent.base_source != "support face":
+        lines.append(
+            NOTE_PREFIX + "No support element was found below this column, "
+            "so the base datum is the level elevation (R6). That is normal "
+            "for a ground-floor column -- case C1, foundation dowels out of "
+            "scope.")
+    if not data["top_face_cover_is_set"]:
+        lines.append(
+            NOTE_PREFIX + "'Rebar Cover - Top Face' is not set on this "
+            "element. Nothing here depends on it; reported because open "
+            "question Q5 has not been answered.")
+    return ReportSection("Column", lines)
+
+
+def longitudinal_section(bars, splice, bar_type_name, bar_diameter_mm,
+                         splice_line):
+    """Section 1's counts and section 9's `L_s`.
+
+    R5's ruling is stated OUT LOUD: there is no bottom `L_s`. Its absence
+    on a ground-floor column is a decision, and an unexplained absence
+    reads as an omission every time somebody checks the drawing.
+    """
+    return ReportSection("Longitudinal bars", [
+        "Bar type: %s (diameter %.2f mm, read from the type -- a bar "
+        "type's NAME routinely disagrees with its diameter)"
+        % (bar_type_name, bar_diameter_mm),
+        "Bars per b-face: %d (including its two corner bars)"
+        % bars.count_b_face,
+        "Bars per h-face: %d (including its two corner bars)"
+        % bars.count_h_face,
+        "Total: %d bars -- 2 x (%d + %d) - 4. The four corner bars are "
+        "SHARED between faces and counted once, not twice."
+        % (bars.total_count, bars.count_b_face, bars.count_h_face),
+        splice_line,
+        "Splice position: the lap starts at the TOP FACE of the support "
+        "and lies inside the upper segment's lower L0. Section 9's "
+        "constructability override -- a conscious deviation from the "
+        "mid-height rule, to match floor-by-floor pouring joints.",
+        "No bottom Ls. Bars start at this floor level and protrude Ls "
+        "above the top support only (R5). The absence at the base is a "
+        "ruling, not an omission.",
+    ])
+
+
+def spacing_section(plan):
+    """Sections 3, 4, 5 and 8, with the minima that governed each.
+
+    Mode B's flags appear HERE, beside the limit they exceed, because
+    section 8 requires the code-calculated limit shown "ALONGSIDE the
+    user's manual value". A flag on a different page is a flag that gets
+    read after the fact.
+    """
+    lines = [
+        "Confinement zone L0: %s -- max of %s (section 3)"
+        % (_mm(plan.l0_mm),
+           ", ".join("%s %s" % (c.label, _mm(c.value_mm))
+                     for c in plan.l0_candidates)),
+        "Code maximum S0: %s -- governed by '%s', the smallest of %s "
+        "(section 4)"
+        % (_mm(plan.s0_mm), plan.s0_governing_label,
+           ", ".join(_mm(c.value_mm) for c in plan.s0_candidates)),
+        "Middle-zone maximum: %s -- 2 x S0 (section 5). There is no "
+        "independent 150 mm cap here; that figure belongs to a different "
+        "rule." % _mm(plan.middle_zone_max_mm),
+        "First tie: exactly 50 mm from each support face (section 4) -- a "
+        "placement, not a maximum.",
+    ]
+    if plan.mode == MODE_MANUAL:
+        lines.append(
+            "Spacing mode: B (manual override). The values below are the "
+            "ones that will be BUILT.")
+    else:
+        lines.append(
+            "Spacing mode: A (auto). The code maximums above are the "
+            "values that will be built.")
+    lines.append("Confinement spacing to be built: %s"
+                 % _mm(plan.confinement_spacing_mm))
+    lines.append("Middle-zone spacing to be built: %s"
+                 % _mm(plan.middle_zone_spacing_mm))
+    for flag in plan.flags:
+        lines.append(FLAG_PREFIX + flag.message)
+    return ReportSection("Tie spacing", lines)
+
+
+def tie_level_section(ladder):
+    """The ladder, and which levels section 6.3 mirrors.
+
+    Levels are listed rather than summarised: the count and the mirror
+    pattern are the two things an engineer checks against a section, and
+    "16 ties, alternating" cannot be checked against anything.
+    """
+    lines = [
+        "%d tie levels: %d in the bottom confinement zone, %d in the "
+        "middle, %d in the top." % (len(ladder.levels), ladder.bottom_count,
+                                    ladder.middle_count, ladder.top_count),
+        "Middle-zone ties are divided EQUALLY at %s, which is at or under "
+        "the maximum -- rather than stepped from one end and left with a "
+        "short final bay." % _mm(ladder.middle_spacing_mm),
+        "Hook corner alternates between consecutive levels (section 6.3). "
+        "Mirrored levels are marked M.",
+    ]
+    for level in ladder.levels:
+        lines.append("  %2d  %8s  %-22s %s"
+                     % (level.index, _mm(level.z_mm), level.zone,
+                        "M" if level.mirrored else ""))
+    lines.append(
+        NOTE_PREFIX + "The alternation is ONE rebar set plus a per-bar "
+        "transform, applied after the final layout is set. Any later "
+        "layout change silently scrambles it unless the whole mirror map "
+        "is reset and re-applied (issue #70).")
+    return ReportSection("Tie levels", lines)
+
+
+def outstanding_section():
+    """What this report cannot yet say, said plainly.
+
+    Both entries are #91 requirements that depend on work that does not
+    exist. Omitting them would make the page look complete, and a report
+    that looks complete is trusted as complete.
+    """
+    return ReportSection("Not yet reported", [
+        NOTE_PREFIX + "AS-BUILT POSITIONS (R15). Bar coordinates shown "
+        "anywhere in this tool are IDEALISED. A corner bar binds to the "
+        "tie's bend and moves: one measured live was asked for -167.55 and "
+        "landed at -164.02, and the position cannot be dictated. Real "
+        "positions must be read back after placement, and nothing is "
+        "placed yet.",
+        NOTE_PREFIX + "LOOP vs CROSS-TIE per restrained bar (A1). Which "
+        "bars get a closed loop, and which get a cross-tie because the "
+        "bend will not form, is section 6.2's tie topology -- issue #89, "
+        "blocked on open question Q11. Not guessed here.",
+    ])
+
+
+def build_report(data, bars, splice, splice_line, bar_type_name,
+                 bar_diameter_mm, plan, ladder):
+    """The whole page, in order.
+
+    Every argument is a value some other module already decided. This
+    function chooses wording and order and nothing else -- which is what
+    keeps it incapable of disagreeing with the placer.
+    """
+    return [
+        host_section(data),
+        longitudinal_section(bars, splice, bar_type_name, bar_diameter_mm,
+                             splice_line),
+        spacing_section(plan),
+        tie_level_section(ladder),
+        outstanding_section(),
+    ]
+
+
+def render(sections):
+    """Sections to plain text, for the window and for a copy-paste."""
+    out = []
+    for section in sections:
+        out.append(section.heading.upper())
+        out.append("-" * len(section.heading))
+        out.extend(section.lines)
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"

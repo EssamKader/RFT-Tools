@@ -360,8 +360,28 @@ def test_every_readout_is_cleared_on_a_re_pick():
         "so the fields in them keep the previous column's values: %s"
         % unused)
     written = set(re.findall(r"self\.([a-z_]+_tb)\.Text = ", script))
-    # The two status lines are messages, not column read-outs.
-    written -= {"status_tb", "column_status_tb"}
+
+    # Status LINES carry a message rather than a column value, so they
+    # are not listed -- but they must still be reset, or the last
+    # column's "Applied." survives into the next pick. So they are
+    # excused from the lists and held to the reset instead.
+    status_lines = set(name for name in written
+                       if name.endswith("status_tb"))
+    # The window-level status line belongs to the dispatcher, which
+    # overwrites it on every action ("Pick column -- waiting for
+    # Revit..."). It is not column state.
+    status_lines.discard("status_tb")
+    # Reset either by a direct assignment, or by being named in one of
+    # the lists the reset loops over with getattr -- both clear it, and
+    # a check that only saw the literal assignment would demand the
+    # lists be abandoned.
+    not_reset = sorted(
+        name for name in status_lines
+        if ("self.%s.Text" % name) not in reset and name not in listed)
+    assert not not_reset, (
+        "these status lines are written on one column and never reset "
+        "for the next: %s" % not_reset)
+    written -= status_lines | {"status_tb"}
     missing = sorted(written - listed)
     assert not missing, (
         "these read-outs are populated on pick but never cleared on the "
@@ -555,3 +575,50 @@ def test_the_corner_sharing_convention_is_stated_in_the_WINDOW():
     text = read(COLUMN_XAML_PATH)
     assert "INCLUDES the two corner bars" in text
     assert "counted once in the total" in text
+
+
+# --------------------------------------------------------------------- #
+# #91 -- the Review report
+
+
+def test_the_tie_ladder_is_built_from_the_BUILT_spacings():
+    """Not from s0_mm and the middle-zone maximum, which are the CODE
+    LIMITS. In Mode B they differ, and a ladder drawn from the maximums
+    lists ties at positions nothing will occupy -- on the page an engineer
+    reads to decide whether to place.
+    """
+    called, _literals = _code_of("on_apply_ties_click")
+    assert "tie_levels" in called, "the ladder is never built"
+    body = re.search(r"ladder = tie_levels\((.*?)\)", _script(),
+                     re.DOTALL).group(1)
+    assert "confinement_spacing_mm" in body and "middle_zone_spacing_mm" in body
+    assert "s0_mm" not in body, (
+        "the ladder must follow what will be built, not the code limit")
+    assert "middle_zone_max_mm" not in body
+
+
+def test_the_report_refuses_to_render_a_PARTIAL_page():
+    """A page with missing sections is still read as the page, and this
+    one's whole purpose is being trusted before Place. It names what is
+    still needed instead of filling the gaps with blanks.
+    """
+    body = re.search(r"def on_build_report_click\(.*?\n(.*?)\n    # ---",
+                     _script(), re.DOTALL).group(1)
+    assert "missing" in body and "return" in body, (
+        "nothing stops a report being rendered from half-filled state")
+    for required in ("column_data", "self.longitudinal", "self.spacing"):
+        assert required in body, (
+            "%s is never checked before rendering" % required)
+
+
+def test_the_report_is_selectable_so_it_can_leave_the_window():
+    """A report that cannot be copied is a report that gets retyped. It is
+    a read-only TextBox rather than a TextBlock for that reason, and
+    monospaced because the tie level table is columnar.
+    """
+    text = read(COLUMN_XAML_PATH)
+    box = re.search(r'<TextBox[^>]*x:Name="report_tb".*?/>', text, re.DOTALL)
+    assert box, "report_tb is not a TextBox"
+    assert 'IsReadOnly="True"' in box.group(0)
+    assert "Consolas" in box.group(0), (
+        "proportional digits destroy the tie level table")
