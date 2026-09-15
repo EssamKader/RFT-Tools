@@ -709,3 +709,90 @@ def test_the_two_canvases_are_separate():
     """
     names = _x_names(COLUMN_XAML_PATH)
     assert {"section_canvas", "strip_canvas"} <= names
+
+
+# --------------------------------------------------------------------- #
+# #89 -- the tie topology control
+
+
+def test_the_topology_is_ENTERED_never_derived():
+    """R4 and R17. The tool validates what the engineer states; it does
+    not pick a covering. Section 6.1 admits many valid ones and the spec
+    has no rule to choose between them, so deriving would mean inventing
+    the rule.
+    """
+    called, _literals = _code_of("on_apply_ties_click")
+    assert "parse_tie_subsets" in called, "the stated subsets are never read"
+    assert "validate_ties" in called, "the stated subsets are never validated"
+    for forbidden in ("derive_ties", "suggest_ties", "auto_ties"):
+        assert forbidden not in _script(), (
+            "%s would be the tool choosing a covering" % forbidden)
+
+
+def test_the_bend_diameter_is_READ_from_the_bar_type():
+    """A1. The live model's 10M reads 40.00 mm against a 9.50 mm bar and
+    its 19M reads 115.00 against 19.10 -- 4.2x against 6.0x. A constant
+    multiplier would be wrong across most of the range, and being wrong
+    here offers Revit a loop it refuses with a modal dialog.
+    """
+    called, literals = _code_of("_selected_tie_bend_diameter_mm")
+    assert "bar_type_bend_diameter_mm" in called
+    body = re.search(r"def _selected_tie_bend_diameter_mm\(.*?\n(.*?)\n    def ",
+                     _script(), re.DOTALL).group(1)
+    for multiplier in ("* 4", "* 6", "* 8", "* 10"):
+        assert multiplier not in body, (
+            "the bend diameter must be read, not multiplied out of the bar "
+            "diameter")
+
+
+def test_a_refused_topology_is_shown_and_does_not_look_like_a_flag():
+    """Section 6.1's refusal and section 8's Mode B flags are different
+    things: one declines to place, the other warns and then places. They
+    must not share a colour.
+    """
+    text = read(COLUMN_XAML_PATH)
+    findings = re.search(r'x:Name="tie_findings_tb".*?/>', text, re.DOTALL)
+    flags = re.search(r'x:Name="spacing_flags_tb".*?/>', text, re.DOTALL)
+    assert findings and flags
+    assert "DangerRed" in findings.group(0)
+    assert "WarningAmber" in flags.group(0)
+
+
+def test_the_tie_box_says_how_bars_are_NUMBERED():
+    """A subset is "bar 8, six bars". Without knowing where bar 0 is and
+    which way the numbering runs, that is not an instruction anyone can
+    follow -- and the answer is on a different tab.
+    """
+    text = read(COLUMN_XAML_PATH)
+    assert "first bar index" in text
+    assert "anticlockwise from the bottom-left corner" in text
+    assert "Sketch tab" in text
+
+
+def test_the_ties_tab_refuses_before_the_bars_exist():
+    """A tie arrangement is stated in bar indices. Applying it before the
+    Longitudinal tab has built the perimeter would index into nothing.
+    """
+    body = re.search(r"def on_apply_ties_click\(.*?\n(.*?)\n    # ---",
+                     _script(), re.DOTALL).group(1)
+    assert "self.layout is None" in body
+    assert "Longitudinal bars tab first" in body
+
+
+def test_a_tie_parse_error_does_not_discard_the_spacing():
+    """The spacing is resolved before the topology, so a typo in the tie
+    box does not throw away numbers the engineer just entered.
+    """
+    body = re.search(r"def on_apply_ties_click\(.*?\n(.*?)\n    # ---",
+                     _script(), re.DOTALL).group(1)
+    assert body.index("spacing_plan") < body.index("parse_tie_subsets")
+
+
+def test_the_report_and_the_sketch_get_the_SAME_resolved_ties():
+    """One resolution, two consumers. Resolving twice is how the page and
+    the picture come to disagree about which tie is a cross-tie.
+    """
+    script = _script()
+    assert script.count("resolve_ties(") == 1, (
+        "the ties must be resolved once and shared")
+    assert "self.ties" in script

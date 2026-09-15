@@ -69,10 +69,14 @@ from rft.core.column_report import build_report, render
 from rft.core.column_spacing import (
     FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
 )
+from rft.core.column_ties import (
+    is_blocking, parse_tie_subsets, resolve_ties, tie_report_lines,
+    validate as validate_ties,
+)
 from rft.core.column_tie_levels import tie_levels
 from rft.revit.bar_types import (
-    bar_type_diameter_mm, bar_type_options, hook_angle_deg,
-    hook_type_options, list_stirrup_hook_types,
+    bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
+    hook_angle_deg, hook_type_options, list_stirrup_hook_types,
 )
 from rft.revit.column_host import ColumnHostError, read_column
 from rft.revit.units import internal_to_mm
@@ -114,7 +118,7 @@ PROVENANCE_NAMES = ("section_source_tb", "cover_source_tb", "base_source_tb",
                     "total_bars_source_tb", "ls_source_tb", "l0_source_tb",
                     "s0_source_tb", "spacing_flags_tb",
                     "longitudinal_status_tb", "ties_status_tb",
-                    "report_tb")
+                    "report_tb", "tie_findings_tb")
 
 #: Read-outs on the two input tabs. Cleared with the rest on a re-pick:
 #: a new column changes L0, S0 and the middle-zone maximum, so leaving
@@ -203,6 +207,8 @@ class ColumnWindow(forms.WPFWindow):
         self.spacing = None
         self.ladder = None
         self.layout = None
+        self.ties = None
+        self.tie_findings = []
         self._api_call_in_flight = False
         self._reset_column_state()
 
@@ -231,6 +237,8 @@ class ColumnWindow(forms.WPFWindow):
         self.spacing = None
         self.ladder = None
         self.layout = None
+        self.ties = None
+        self.tie_findings = []
         self.review_status_tb.Text = "Apply the bar and tie inputs first."
         self._clear_canvases()
 
@@ -514,6 +522,11 @@ class ColumnWindow(forms.WPFWindow):
         if self.column_data is None:
             self.ties_status_tb.Text = "Pick a column first."
             return
+        if self.layout is None:
+            self.ties_status_tb.Text = (
+                "Apply the Longitudinal bars tab first -- a tie arrangement "
+                "is stated in bar indices, and there are no bars yet.")
+            return
         section = self.column_data["section"]
         extent = self.column_data["extent"]
         mode = MODE_MANUAL if self.mode_b_rb.IsChecked else MODE_AUTO
@@ -551,8 +564,25 @@ class ColumnWindow(forms.WPFWindow):
             self.ties_status_tb.Text = str(ex)
             return
 
+        # Section 6.2's topology, as STATED. Resolved after the spacing
+        # so a parse error in the tie box does not throw away a valid
+        # spacing the engineer just entered.
+        try:
+            subsets = parse_tie_subsets(self.tie_subsets_tb.Text)
+            ties = resolve_ties(subsets, self.layout,
+                                self._selected_tie_diameter_mm(),
+                                self._selected_bar_diameter_mm(),
+                                self._selected_tie_bend_diameter_mm())
+        except ValueError as ex:
+            self.ties_status_tb.Text = str(ex)
+            return
+        findings = validate_ties(self.layout, ties)
+
         self.spacing = plan
         self.ladder = ladder
+        self.ties = ties
+        self.tie_findings = findings
+        self.tie_findings_tb.Text = "\n".join(f.message for f in findings)
         self.l0_tb.Text = "{:.0f} mm".format(plan.l0_mm)
         self.l0_source_tb.Text = "max of " + ", ".join(
             "{} {:.0f}".format(c.label, c.value_mm) for c in plan.l0_candidates)
@@ -574,7 +604,10 @@ class ColumnWindow(forms.WPFWindow):
             "Applied (Mode {}).".format(plan.mode)
             + ("" if not plan.flags else
                " {} value(s) exceed the code maximum and will be built as "
-               "entered.".format(len(plan.flags))))
+               "entered.".format(len(plan.flags)))
+            + ("" if not is_blocking(findings) else
+               "  Section 6.1 REFUSES this tie arrangement -- see below.")
+            + ("  No inner ties stated." if not subsets else ""))
 
     def on_build_report_click(self, sender, args):
         """Render the page. No Revit work -- every value is already read.
@@ -598,7 +631,9 @@ class ColumnWindow(forms.WPFWindow):
         self.report_tb.Text = render(build_report(
             self.column_data, self.longitudinal, self.splice,
             splice_length_report_line(self.splice, bar_diameter_mm),
-            bar_type_name, bar_diameter_mm, self.spacing, self.ladder))
+            bar_type_name, bar_diameter_mm, self.spacing, self.ladder,
+            findings=self.tie_findings,
+            tie_lines=tie_report_lines(self.ties) if self.ties else []))
         self.review_status_tb.Text = (
             "Built from the same values the placer will use."
             + ("" if not self.spacing.flags else
@@ -633,9 +668,9 @@ class ColumnWindow(forms.WPFWindow):
         self._render(self.section_canvas, cross_section_shapes(
             section.b_mm, section.h_mm, self.column_data["cover_mm"],
             self._selected_tie_diameter_mm(), self._selected_bar_diameter_mm(),
-            self.layout))
-        self.sketch_captions_tb.Text = "\n".join(
-            cross_section_captions(self.layout, tier_summary(self.layout)))
+            self.layout, self.ties or ()))
+        self.sketch_captions_tb.Text = "\n".join(cross_section_captions(
+            self.layout, tier_summary(self.layout), self.ties or ()))
 
         if self.spacing is not None and self.ladder is not None:
             self._render(self.strip_canvas, zone_strip_shapes(
@@ -755,6 +790,21 @@ class ColumnWindow(forms.WPFWindow):
 
     def _selected_tie_diameter_mm(self):
         return self._diameter_of(self.tie_bar_type_cb)
+
+    def _selected_tie_bend_diameter_mm(self):
+        """The tie type's own ``StirrupTieBendDiameter``.
+
+        A1 reads it, never assumes it: the live model's 10M is 40.00 mm
+        against a 9.50 mm bar (4.2x) while its 19M is 115.00 against 19.10
+        (6.0x). A constant multiplier would be wrong across most of the
+        range, and being wrong here means offering a loop Revit will
+        refuse with a modal dialog.
+        """
+        index = self.tie_bar_type_cb.SelectedIndex
+        if index < 0 or index >= len(self.bar_type_options):
+            return None
+        _label, bar_type = self.bar_type_options[index]
+        return bar_type_bend_diameter_mm(bar_type, internal_to_mm)
 
     def _diameter_of(self, combo):
         """The selected type's ACTUAL diameter, from the type.

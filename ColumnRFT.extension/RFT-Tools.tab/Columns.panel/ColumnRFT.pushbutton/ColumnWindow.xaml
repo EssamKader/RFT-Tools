@@ -395,6 +395,33 @@
                         </Grid>
 
                         <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Tie arrangement (section 6.2)"/>
+                        <!-- R17: the engineer STATES the topology and the tool
+                             validates it. A text box rather than a list widget
+                             with add/remove buttons - the whole arrangement is
+                             visible and editable at once, it pastes between
+                             columns, and it needs no widget state to stay in
+                             step with the model. R17 chose subset entry because
+                             it has no catalogue to maintain; a control with its
+                             own hidden state would put one back. -->
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Text="One tie per line: the first bar index, then how many bars it encloses. The outer perimeter tie is implied and never typed. Bars are numbered anticlockwise from the bottom-left corner - see the Sketch tab."/>
+                        <TextBox x:Name="tie_subsets_tb"
+                                 Height="86" Margin="0,6,0,0"
+                                 AcceptsReturn="True"
+                                 FontFamily="Consolas" FontSize="11"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Text=""/>
+                        <!-- Section 6.1's verdict. Amber, not red: a refusal
+                             here is the tool declining to place, which is a
+                             different thing from the section 8 flags that are
+                             warned and then built. -->
+                        <TextBlock x:Name="tie_findings_tb"
+                                   Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Foreground="{StaticResource DangerRed}"
+                                   Text=""/>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
                                    Text="Spacing (section 8)"/>
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="mode_a_rb" Content="Mode A - auto"
