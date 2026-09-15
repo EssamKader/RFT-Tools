@@ -60,12 +60,15 @@ from rft.core.stirrups import centreline_leg_dimensions_mm, outer_leg_dimensions
 
 # --- the shape vocabulary ----------------------------------------------------
 
-SketchLine = namedtuple("SketchLine", ["u1", "v1", "u2", "v2", "style"])
-SketchCircle = namedtuple("SketchCircle", ["u", "v", "r", "style"])
-SketchText = namedtuple("SketchText", ["u", "v", "text", "style"])
-# ``points`` is a list of (u, v) pairs, implicitly closed (first and last
-# points are joined) -- matching WPF ``Polygon``, which closes itself.
-SketchPolygon = namedtuple("SketchPolygon", ["points", "style"])
+# Re-exported, not redefined. #90 moved the four shape types to
+# rft.ui.sketch_shapes so a column sketch speaks the same vocabulary
+# without importing this beam module -- and they are re-exported here so
+# nothing that already imports them from this module had to change. A
+# second definition would be two vocabularies that agree until one is
+# edited.
+from .sketch_shapes import (  # noqa: F401
+    SketchCircle, SketchLine, SketchPolygon, SketchText,
+)
 
 # The closed set of style keys this module ever emits. ``script.py``'s
 # renderer must declare a brush mapping for every one of these (a text

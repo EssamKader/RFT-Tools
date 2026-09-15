@@ -13,6 +13,32 @@ subset, each independently reflectable for §6.3's hook alternation.
 | Writes | inside a rolled-back `SubTransaction` — model left with **0** rebar |
 | Date | 2026-09-14 |
 
+> ## CORRECTION (from #90) - the tie figures below are OUTER FACES, not centrelines
+>
+> The layout block below labels `u = +/-185.0` as the OUTER tie
+> **centreline**. It is not. For a 450 wide column at cover 40,
+> `185.0 = 450/2 - 40`, which is the tie's **outer face**; the centreline
+> is half a tie diameter further in, at `450/2 - 40 - 9.5/2 = 180.25`.
+>
+> **`180.25` is what #80 MEASURED a tie landing at** for the same column
+> and the same cover (`issue-80-rebar-constraints-and-cover-clamp.md`
+> section 3), so the two documents disagreed by exactly `tie/2` and the
+> measured one is right.
+>
+> `CreateFromCurves` takes CENTRELINES, so the ties this page created were
+> built 4.75 mm outside their intended position. The page did not notice
+> because #80's other finding covers it: Revit **clamps** a tie to the
+> host's own cover, so the too-wide tie was silently pulled back to
+> 180.25 regardless. Two errors cancelling is not the same as being right,
+> and the next person to copy these numbers into a placer would get one
+> error without the other.
+>
+> **This page's CONCLUSIONS stand** - a second overlapping closed tie
+> creates, costs one element, and reflects for section 6.3. None of that
+> depends on the half-tie term. But the coordinates here must not be
+> treated as a worked example of tie geometry. `rft.core.column_layout.
+> tie_half_dimensions_mm` is the one that carries the term.
+
 ## Why this had to be tested
 
 Every earlier experiment (#70, #78) used the **outer perimeter tie only**. §6.2

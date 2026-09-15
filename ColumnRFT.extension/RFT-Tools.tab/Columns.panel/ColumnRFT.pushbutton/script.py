@@ -34,6 +34,25 @@ import os
 
 from pyrevit import forms, revit
 
+# The renderer's ONLY WPF imports. Plain WPF/CLR types, not the Revit API,
+# so constructing them needs no API context -- same as every other direct
+# control write in this file. Wrapped for the same reason the beam tool
+# wraps them: if this import ever fails on a live host, the WINDOW must
+# still open. The sketch is a verification surface, not a load-bearing
+# part of placement, and a column that cannot be drawn can still be
+# reviewed.
+try:
+    from System.Windows import Point
+    from System.Windows.Media import PointCollection
+    from System.Windows.Controls import TextBlock as WpfTextBlock
+    from System.Windows.Controls import Canvas as WpfCanvas
+    from System.Windows.Shapes import Ellipse as WpfEllipse
+    from System.Windows.Shapes import Line as WpfLine
+    from System.Windows.Shapes import Polygon as WpfPolygon
+    _WPF_SHAPES_AVAILABLE = True
+except Exception:
+    _WPF_SHAPES_AVAILABLE = False
+
 from rft.core.column_inputs import (
     DEFAULT_HOOK_ANGLE_DEG,
     LS_MODE_CHOICES,
@@ -45,6 +64,7 @@ from rft.core.column_inputs import (
     splice_length,
     splice_length_report_line,
 )
+from rft.core.column_layout import perimeter_bar_positions, tier_summary
 from rft.core.column_report import build_report, render
 from rft.core.column_spacing import (
     FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
@@ -56,14 +76,32 @@ from rft.revit.bar_types import (
 )
 from rft.revit.column_host import ColumnHostError, read_column
 from rft.revit.units import internal_to_mm
+from rft.ui.column_sketch import (
+    cross_section_captions, cross_section_shapes, zone_strip_shapes,
+)
+from rft.ui.column_sketch_palette import brush_key_for_style
 from rft.ui.inputs import parse_optional_positive_int, parse_positive_float
+from rft.ui.sketch_layout import LabelBox, estimate_text_size_px, place_labels
+from rft.ui.sketch_shapes import (
+    SketchCircle, SketchLine, SketchPolygon, SketchText,
+)
 from rft.ui.shared_styles import window_xaml
 
 #: Tabs that stay disabled until a column has been accepted. Named once,
 #: here, so "enable everything" and "disable everything" cannot drift
 #: apart -- the beam tool's A35 rule, applied before there is anything to
 #: enable.
-GATED_TAB_NAMES = ("longitudinal_tab", "ties_tab", "review_tab")
+GATED_TAB_NAMES = ("longitudinal_tab", "ties_tab", "review_tab",
+                   "sketch_tab")
+
+#: A bar's POSITION is exact; its drawn size is a symbol. Without a
+#: floor, a 16 mm bar on a 600 mm section fitted to this canvas is about
+#: two pixels across -- correct to scale, and invisible.
+MIN_BAR_RADIUS_PX = 3.0
+#: Must match rft.ui.sketch_layout's own default: that module estimates
+#: a label's width from this number, and an estimate made at one size
+#: and drawn at another clips the tails.
+SKETCH_FONT_SIZE_PX = 11.0
 
 #: Read-outs cleared on every pick. Listed rather than cleared one by one
 #: for the same reason: a field added to the XAML and forgotten here shows
@@ -140,6 +178,11 @@ class ColumnWindow(forms.WPFWindow):
         self.mode_a_rb.Checked += self.on_spacing_mode_changed
         self.mode_b_rb.Checked += self.on_spacing_mode_changed
         self.build_report_btn.Click += self.on_build_report_click
+        # The sketch redraws when the canvas is first sized, which is
+        # after the window is laid out -- a canvas has no ActualWidth
+        # before that, and scaling to zero draws nothing.
+        self.section_canvas.SizeChanged += self.on_canvas_size_changed
+        self.strip_canvas.SizeChanged += self.on_canvas_size_changed
 
         # Filled once, from the module that owns the choice, so the label
         # and the parse can never disagree about what "diameters" means.
@@ -159,6 +202,7 @@ class ColumnWindow(forms.WPFWindow):
         self.splice = None
         self.spacing = None
         self.ladder = None
+        self.layout = None
         self._api_call_in_flight = False
         self._reset_column_state()
 
@@ -186,7 +230,9 @@ class ColumnWindow(forms.WPFWindow):
         self.splice = None
         self.spacing = None
         self.ladder = None
+        self.layout = None
         self.review_status_tb.Text = "Apply the bar and tie inputs first."
+        self._clear_canvases()
 
     # ---------------------------------------------------------- dispatch
     def _dispatch_to_revit_context(self, func, action_label):
@@ -445,6 +491,13 @@ class ColumnWindow(forms.WPFWindow):
 
         self.longitudinal = counts
         self.splice = splice
+        # Section 2's perimeter, built from the same counts the report
+        # states -- so the sketch cannot draw a layout the page denies.
+        section = self.column_data["section"]
+        self.layout = perimeter_bar_positions(
+            section.b_mm, section.h_mm, self.column_data["cover_mm"],
+            self._selected_tie_diameter_mm(), bar_diameter_mm,
+            counts.count_b_face, counts.count_h_face)
         self.total_bars_tb.Text = "{}".format(counts.total_count)
         self.total_bars_source_tb.Text = (
             "2 x ({} + {}) - 4: the four corner bars are shared between "
@@ -454,6 +507,7 @@ class ColumnWindow(forms.WPFWindow):
         self.ls_source_tb.Text = splice_length_report_line(splice,
                                                            bar_diameter_mm)
         self.longitudinal_status_tb.Text = "Applied."
+        self.redraw_sketch()
 
     def on_apply_ties_click(self, sender, args):
         """Section 7's two hooks and section 8's spacing."""
@@ -515,6 +569,7 @@ class ColumnWindow(forms.WPFWindow):
         # Section 8: the flags are shown, and the values are still the ones
         # that will be built. Never "refused", never silently swallowed.
         self.spacing_flags_tb.Text = "\n".join(f.message for f in plan.flags)
+        self.redraw_sketch()
         self.ties_status_tb.Text = (
             "Applied (Mode {}).".format(plan.mode)
             + ("" if not plan.flags else
@@ -549,6 +604,138 @@ class ColumnWindow(forms.WPFWindow):
             + ("" if not self.spacing.flags else
                "  %d spacing flag(s) -- see the report."
                % len(self.spacing.flags)))
+
+    # --------------------------------------------------------- sketch
+    def on_canvas_size_changed(self, sender, args):
+        self.redraw_sketch()
+
+    def _clear_canvases(self):
+        for canvas in (self.section_canvas, self.strip_canvas):
+            canvas.Children.Clear()
+        self.sketch_captions_tb.Text = ""
+
+    def redraw_sketch(self):
+        """#90's acceptance: the sketch redraws as the inputs change.
+
+        Draws nothing and says nothing when there is nothing to draw --
+        a half-drawn section is a picture of a column that does not exist.
+        """
+        if not _WPF_SHAPES_AVAILABLE:
+            self.sketch_captions_tb.Text = (
+                "WPF shape types are unavailable in this engine, so the "
+                "sketch cannot draw. Everything else still works.")
+            return
+        self._clear_canvases()
+        if self.column_data is None or self.layout is None:
+            return
+
+        section = self.column_data["section"]
+        self._render(self.section_canvas, cross_section_shapes(
+            section.b_mm, section.h_mm, self.column_data["cover_mm"],
+            self._selected_tie_diameter_mm(), self._selected_bar_diameter_mm(),
+            self.layout))
+        self.sketch_captions_tb.Text = "\n".join(
+            cross_section_captions(self.layout, tier_summary(self.layout)))
+
+        if self.spacing is not None and self.ladder is not None:
+            self._render(self.strip_canvas, zone_strip_shapes(
+                self.column_data["extent"].clear_height_mm,
+                self.spacing.l0_mm, self.ladder))
+
+    def _render(self, canvas, shapes):
+        """Walk the shapes, map a style to a brush, draw. No arithmetic of
+        its own beyond fitting millimetres into pixels (A48).
+
+        SHAPE UNVERIFIED: ``FindResource``, ``Canvas.SetLeft/SetTop`` and
+        ``PointCollection`` are real WPF members, but this project has only
+        ever exercised them from the beam window. The failure mode is a
+        blank canvas, not a wrong number.
+        """
+        width_px = canvas.ActualWidth
+        height_px = canvas.ActualHeight
+        if width_px <= 1.0 or height_px <= 1.0:
+            return
+
+        us = []
+        vs = []
+        for shape in shapes:
+            if isinstance(shape, SketchPolygon):
+                us += [u for u, _v in shape.points]
+                vs += [v for _u, v in shape.points]
+            elif isinstance(shape, SketchLine):
+                us += [shape.u1, shape.u2]
+                vs += [shape.v1, shape.v2]
+            else:
+                us.append(shape.u)
+                vs.append(shape.v)
+        if not us:
+            return
+        span_u = max(max(us) - min(us), 1.0)
+        span_v = max(max(vs) - min(vs), 1.0)
+        margin = 18.0
+        scale = min((width_px - 2 * margin) / span_u,
+                    (height_px - 2 * margin) / span_v)
+        mid_u = (max(us) + min(us)) / 2.0
+        mid_v = (max(vs) + min(vs)) / 2.0
+
+        def to_px(u_mm, v_mm):
+            # v is flipped: millimetres run up, pixels run down.
+            return (width_px / 2.0 + (u_mm - mid_u) * scale,
+                    height_px / 2.0 - (v_mm - mid_v) * scale)
+
+        text_shapes = []
+        for shape in shapes:
+            brush = self.FindResource(brush_key_for_style(shape.style))
+            if isinstance(shape, SketchLine):
+                line = WpfLine()
+                line.X1, line.Y1 = to_px(shape.u1, shape.v1)
+                line.X2, line.Y2 = to_px(shape.u2, shape.v2)
+                line.Stroke = brush
+                line.StrokeThickness = 1.2
+                canvas.Children.Add(line)
+            elif isinstance(shape, SketchCircle):
+                x, y = to_px(shape.u, shape.v)
+                r_px = max(shape.r * scale, MIN_BAR_RADIUS_PX)
+                ellipse = WpfEllipse()
+                ellipse.Width = 2.0 * r_px
+                ellipse.Height = 2.0 * r_px
+                WpfCanvas.SetLeft(ellipse, x - r_px)
+                WpfCanvas.SetTop(ellipse, y - r_px)
+                ellipse.Fill = brush
+                canvas.Children.Add(ellipse)
+            elif isinstance(shape, SketchPolygon):
+                points = PointCollection()
+                for u_mm, v_mm in shape.points:
+                    x, y = to_px(u_mm, v_mm)
+                    points.Add(Point(x, y))
+                polygon = WpfPolygon()
+                polygon.Points = points
+                polygon.Stroke = brush
+                polygon.StrokeThickness = 1.2
+                canvas.Children.Add(polygon)
+            elif isinstance(shape, SketchText):
+                # Collected, not drawn: every label's position is decided
+                # together, below, so none is clipped and none lands on
+                # another.
+                text_shapes.append(shape)
+
+        boxes = []
+        for shape in text_shapes:
+            x, y = to_px(shape.u, shape.v)
+            text_width_px, text_height_px = estimate_text_size_px(
+                shape.text, SKETCH_FONT_SIZE_PX)
+            boxes.append(LabelBox(x - text_width_px / 2.0, y - text_height_px,
+                                  text_width_px, text_height_px))
+        placed = place_labels(boxes, width_px, height_px)
+        for shape, box in zip(text_shapes, placed):
+            text_block = WpfTextBlock()
+            text_block.Text = shape.text
+            text_block.FontSize = SKETCH_FONT_SIZE_PX
+            text_block.Foreground = self.FindResource(
+                brush_key_for_style(shape.style))
+            WpfCanvas.SetLeft(text_block, box.x)
+            WpfCanvas.SetTop(text_block, box.y)
+            canvas.Children.Add(text_block)
 
     # ------------------------------------------------------- selections
     def _selected_bar_type_name(self, combo):

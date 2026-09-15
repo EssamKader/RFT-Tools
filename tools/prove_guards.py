@@ -61,6 +61,11 @@ COL_LEVELS = "RFT.lib/rft/core/column_tie_levels.py"
 COL_REPORT = "RFT.lib/rft/core/column_report.py"
 TL = "tests/test_column_tie_levels.py::"
 TP = "tests/test_column_report.py::"
+COL_PERIM = "RFT.lib/rft/core/column_layout.py"
+COL_SKETCH = "RFT.lib/rft/ui/column_sketch.py"
+COL_SKETCH_PAL = "RFT.lib/rft/ui/column_sketch_palette.py"
+TY = "tests/test_column_layout.py::"
+TK = "tests/test_column_sketch.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -222,6 +227,48 @@ CASES = [
     (COL_BUNDLE, '  persistent: true', '  persistent: false',
      TC + "test_the_modeless_window_declares_a_persistent_engine",
      "the persistent engine turned off (silent dead ExternalEvents)"),
+
+    # ---- #90: the perimeter model and the sketch ----------------
+
+    (COL_PERIM, '        clear = centre_to_centre - bar_dia_mm',
+     '        clear = centre_to_centre',
+     TY + "test_the_gap_is_CLEAR_distance_not_centre_to_centre",
+     "centre-to-centre reported as a clear distance (mis-tiers 6.1)"),
+
+    (COL_PERIM, '    ordered += [(u, -half_v) for u in us[:-1]]',
+     '    ordered += [(u, -half_v) for u in us]',
+     TY + "test_the_four_corner_bars_appear_ONCE_each",
+     "a corner bar placed twice (eight corners in the model)"),
+
+    (COL_PERIM, '    if clear_mm <= TIER_ALTERNATE_MAX_MM:',
+     '    if clear_mm <= TIER_EVERY_BAR_MAX_MM:',
+     TY + "test_the_tier_boundaries_are_inclusive_upward",
+     "section 6.1 tier 1 widened to swallow tier 2"),
+
+    (COL_PERIM, '    return TIER_EXCEEDED',
+     '    return TIER_EVERY_BAR',
+     TY + "test_a_bare_four_bar_column_exceeds_every_tier",
+     "a gap no tier covers reported as compliant"),
+
+    (COL_PERIM, '    return (b_mm / 2.0 - cover_mm - tie_dia_mm / 2.0,',
+     '    return (b_mm / 2.0 - cover_mm,',
+     TY + "test_the_tie_centreline_carries_the_HALF_TIE_term",
+     "the tie outer face used as its centreline (#67 error)"),
+
+    (COL_SKETCH, '    return "dimension_fail" if tier == TIER_EXCEEDED else "dimension_pass"',
+     '    return "dimension_pass"',
+     TK + "test_a_section_6_1_violation_is_drawn_in_the_FAIL_style",
+     "a 6.1 violation drawn as if it complied"),
+
+    (COL_SKETCH, '            style="bar_corner" if bar.is_corner else "bar_main"))',
+     '            style="bar_main"))',
+     TK + "test_corner_bars_are_drawn_in_their_OWN_style",
+     "corner bars drawn as if they will not move (R15)"),
+
+    (COL_SKETCH_PAL, '    "dimension_fail": "DangerRed",',
+     '    "dimension_fail": "NoSuchBrush",',
+     TK + "test_every_mapped_brush_exists_in_the_SHARED_palette",
+     "a sketch brush the shared palette never declares"),
 
     # ---- #91: the report and the tie ladder ---------------------
 

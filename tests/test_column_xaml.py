@@ -46,6 +46,26 @@ def _x_names(path):
                if X_NAME in element.attrib)
 
 
+def _reset_body(script):
+    """``_reset_column_state``'s body, PLUS the bodies of the private
+    helpers it calls.
+
+    #90 cleared the sketch caption inside ``_clear_canvases`` rather than
+    inline, and a guard reading only the reset's own text called that a
+    field nobody clears. Demanding everything be inline would be the
+    guard dictating the shape of the code it watches; following one level
+    of calls is what "is this actually reset" means.
+    """
+    body = re.search(r"def _reset_column_state\(.*?\n(.*?)\n    # ---",
+                     script, re.DOTALL).group(1)
+    for helper_name in set(re.findall(r"self\.(_[a-z_]+)\(", body)):
+        found = re.search(r"def %s\(.*?\n(.*?)\n    (?:def |# ---)"
+                          % helper_name, script, re.DOTALL)
+        if found:
+            body += "\n" + found.group(1)
+    return body
+
+
 def _code_of(function_name):
     """``(names called, string literals)`` inside one function, DOCSTRING
     EXCLUDED.
@@ -351,8 +371,7 @@ def test_every_readout_is_cleared_on_a_re_pick():
     # ...and each of those tuples must actually be cleared. A list that
     # exists but is never iterated in the reset is worse than no list:
     # it reads, to the next person, as though the clearing is handled.
-    reset = re.search(r"def _reset_column_state\(.*?\n(.*?)\n    # ---",
-                      script, re.DOTALL).group(1)
+    reset = _reset_body(script)
     unused = sorted(name for name, _ in groups
                     if name != "GATED_TAB_NAMES" and name not in reset)
     assert not unused, (
@@ -382,7 +401,11 @@ def test_every_readout_is_cleared_on_a_re_pick():
         "these status lines are written on one column and never reset "
         "for the next: %s" % not_reset)
     written -= status_lines | {"status_tb"}
-    missing = sorted(written - listed)
+    # A field is cleared either by being in one of the lists, or by a
+    # direct assignment in the reset (possibly inside a helper it
+    # calls). Both clear it; only "cleared nowhere" is a defect.
+    cleared_directly = set(re.findall(r"self\.([a-z_]+_tb)\.Text = ", reset))
+    missing = sorted(written - listed - cleared_directly)
     assert not missing, (
         "these read-outs are populated on pick but never cleared on the "
         "next one, so they would show the previous column's value: %s"
@@ -622,3 +645,67 @@ def test_the_report_is_selectable_so_it_can_leave_the_window():
     assert 'IsReadOnly="True"' in box.group(0)
     assert "Consolas" in box.group(0), (
         "proportional digits destroy the tie level table")
+
+
+# --------------------------------------------------------------------- #
+# #90 -- the live sketch
+
+
+def test_the_sketch_redraws_from_BOTH_apply_handlers():
+    """#90's acceptance: the sketch redraws as inputs change. Bar counts
+    change the cross-section; the tie spacing changes the zone strip. A
+    redraw on only one leaves the other stale and believable.
+    """
+    for handler in ("on_apply_longitudinal_click", "on_apply_ties_click"):
+        called, _literals = _code_of(handler)
+        assert "redraw_sketch" in called, (
+            "%s does not redraw the sketch" % handler)
+
+
+def test_the_renderer_computes_no_POSITIONS_of_its_own():
+    """A48, applied to a second element. The renderer fits millimetres
+    into pixels and nothing else -- every coordinate arrives decided, from
+    the same modules the report reads, so the sketch cannot draw a layout
+    the page denies.
+    """
+    called, _literals = _code_of("_render")
+    for forbidden in ("perimeter_bar_positions", "tie_levels", "spacing_plan",
+                      "bar_centre_offset_mm", "tie_half_dimensions_mm"):
+        assert forbidden not in called, (
+            "_render calls %s; it must receive shapes, not build them"
+            % forbidden)
+
+
+def test_the_sketch_uses_the_COLUMN_palette_not_the_beams():
+    """rft.ui.sketch_palette is guarded both ways against the BEAM's style
+    keys, so a column key added to it fails the beam's own test. The
+    brushes are shared (#86); the mappings are per-element.
+    """
+    tree = ast.parse(_script())
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            modules.add(node.module or "")
+    assert "rft.ui.column_sketch_palette" in modules
+    assert "rft.ui.sketch_palette" not in modules
+
+
+def test_the_window_still_opens_when_the_WPF_shapes_are_missing():
+    """The sketch is a verification surface, not a load-bearing part of
+    placement. A column that cannot be DRAWN can still be reviewed, so an
+    import failure must not take the window with it.
+    """
+    script = _script()
+    assert "_WPF_SHAPES_AVAILABLE = False" in script, (
+        "the WPF shape imports are not wrapped")
+    called, _literals = _code_of("redraw_sketch")
+    assert "_WPF_SHAPES_AVAILABLE" in called, (
+        "redraw_sketch does not check whether the shape types loaded")
+
+
+def test_the_two_canvases_are_separate():
+    """The cross-section and the zone strip share no scale. One canvas
+    with both would misrepresent whichever lost the fit.
+    """
+    names = _x_names(COLUMN_XAML_PATH)
+    assert {"section_canvas", "strip_canvas"} <= names
