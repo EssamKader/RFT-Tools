@@ -236,13 +236,21 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
+                            <!-- The labels carry the GRADE R7 requires, filled
+                                 from rft.core.column_inputs.role_picker_label
+                                 rather than typed here. The grade cannot be
+                                 checked afterwards from the selected type, so
+                                 it has to be in front of the engineer at the
+                                 moment of choosing. -->
                             <TextBlock Grid.Row="0" Grid.Column="0"
+                                       x:Name="main_bar_role_lbl"
                                        Text="Longitudinal bar type"
                                        Style="{StaticResource ReadOutLabel}"/>
                             <ComboBox Grid.Row="0" Grid.Column="1"
                                       x:Name="main_bar_type_cb" IsEnabled="False"/>
 
                             <TextBlock Grid.Row="1" Grid.Column="0"
+                                       x:Name="tie_bar_role_lbl"
                                        Text="Tie bar type"
                                        Style="{StaticResource ReadOutLabel}"/>
                             <ComboBox Grid.Row="1" Grid.Column="1"
@@ -254,15 +262,232 @@
             </TabItem>
 
             <TabItem Header="Longitudinal bars" x:Name="longitudinal_tab" IsEnabled="False">
-                <TextBlock Margin="14" TextWrapping="Wrap"
-                           Foreground="{StaticResource InkMuted}"
-                           Text="Section 1 bar counts per face and the splice length Ls are issue #88. This tab is deliberately empty rather than absent, so the window's shape is the shape it will keep."/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Bars per face (section 1)"/>
+                        <!-- The corner-sharing statement is on screen, not
+                             only in the docstring. The four faces SHARE their
+                             corner bars, so a count that includes them is the
+                             only one that reads off a drawing - and the total
+                             below is what proves it was understood. -->
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Text="Each count INCLUDES the two corner bars that face shares with its neighbours. The four corners are counted once in the total, not twice."/>
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       x:Name="b_face_lbl"
+                                       Text="Bars per b-face (incl. corners)"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="b_face_count_tb" Text="3"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       x:Name="h_face_lbl"
+                                       Text="Bars per h-face (incl. corners)"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1"
+                                     x:Name="h_face_count_tb" Text="4"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Total longitudinal bars"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1"
+                                       x:Name="total_bars_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2"
+                                       x:Name="total_bars_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Splice length Ls (section 9)"/>
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Text="NEVER auto-calculated. Ls varies with tension and compression zones, so the tool applies exactly what is entered here."/>
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ls"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="ls_value_tb" Text="40"/>
+                            <ComboBox Grid.Row="0" Grid.Column="2"
+                                      x:Name="ls_mode_cb"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Ls applied"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       x:Name="ls_applied_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="1" Grid.Column="3"
+                                       x:Name="ls_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+                        </Grid>
+
+                        <Button x:Name="apply_longitudinal_btn"
+                                Content="Apply" Margin="0,12,0,0"
+                                HorizontalAlignment="Left" Padding="12,5,12,5"/>
+                        <TextBlock x:Name="longitudinal_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="0,6,0,0" Text=""/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Ties" x:Name="ties_tab" IsEnabled="False">
-                <TextBlock Margin="14" TextWrapping="Wrap"
-                           Foreground="{StaticResource InkMuted}"
-                           Text="Section 7 hook dropdowns, section 8 Mode A/B spacing and the section 6.2 tie topology are issues #88 and #89. #89 is blocked on open question Q11."/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Hook types (section 7)"/>
+                        <!-- TWO dropdowns, structurally separate, so one
+                             selection can never silently apply to the other
+                             role. Both OPEN at 135 degrees - a default, not a
+                             requirement: the user may pick any hook type the
+                             project carries. -->
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Text="Two independent choices. Both open at 135 degrees, which is a default and not a requirement - any hook type in the project may be selected for either role."/>
+
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="300"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Main outer tie hook"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="outer_hook_cb"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Inner tie hook"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="inner_hook_cb"/>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Spacing (section 8)"/>
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="mode_a_rb" Content="Mode A - auto"
+                                         IsChecked="True" Margin="0,0,18,0"/>
+                            <RadioButton x:Name="mode_b_rb" Content="Mode B - manual"/>
+                        </StackPanel>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Confinement zone L0"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       x:Name="l0_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2"
+                                       x:Name="l0_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Code maximum S0"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       x:Name="s0_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2"
+                                       x:Name="s0_source_tb"
+                                       Style="{StaticResource ReadOutSource}" Text=""/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Confinement spacing to build"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1"
+                                     x:Name="manual_confinement_tb"
+                                     Text="" IsEnabled="False"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2"
+                                       x:Name="confinement_built_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Middle-zone spacing to build"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1"
+                                     x:Name="manual_middle_tb"
+                                     Text="" IsEnabled="False"/>
+                            <TextBlock Grid.Row="3" Grid.Column="2"
+                                       x:Name="middle_built_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="Middle-zone maximum"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1"
+                                       x:Name="middle_max_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                            <TextBlock Grid.Row="4" Grid.Column="2"
+                                       Style="{StaticResource ReadOutSource}"
+                                       Text="2 x S0 (section 5). There is deliberately no 150 mm cap here."/>
+                        </Grid>
+
+                        <!-- The section 8 flags. Amber, never red: a Mode B
+                             violation is WARNED and then BUILT, so painting it
+                             as a failure would misdescribe what happens next. -->
+                        <TextBlock x:Name="spacing_flags_tb"
+                                   Margin="0,10,0,0" TextWrapping="Wrap"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource WarningAmber}"
+                                   Text=""/>
+
+                        <Button x:Name="apply_ties_btn"
+                                Content="Apply" Margin="0,12,0,0"
+                                HorizontalAlignment="Left" Padding="12,5,12,5"/>
+                        <TextBlock x:Name="ties_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="0,6,0,0" Text=""/>
+
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Margin="0,14,0,0"
+                                   Text="Tie topology (section 6.2 - which bars each closed loop wraps) is issue #89, blocked on open question Q11."/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Review" x:Name="review_tab" IsEnabled="False">

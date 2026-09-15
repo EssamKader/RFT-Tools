@@ -53,6 +53,10 @@ COL_BUNDLE = COL_DIR + "bundle.yaml"
 COL_RULES = "RFT.lib/rft/core/column_host_rules.py"
 TC = "tests/test_column_xaml.py::"
 TR = "tests/test_column_host_rules.py::"
+COL_INPUTS = "RFT.lib/rft/core/column_inputs.py"
+COL_SPACING = "RFT.lib/rft/core/column_spacing.py"
+TI = "tests/test_column_inputs.py::"
+TS = "tests/test_column_spacing.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -214,6 +218,55 @@ CASES = [
     (COL_BUNDLE, '  persistent: true', '  persistent: false',
      TC + "test_the_modeless_window_declares_a_persistent_engine",
      "the persistent engine turned off (silent dead ExternalEvents)"),
+
+    # ---- #88: the inputs ----------------------------------------
+
+    (COL_INPUTS, '    total = 2 * (count_b_face + count_h_face) - 4',
+     '    total = 2 * (count_b_face + count_h_face)',
+     TI + "test_the_four_corner_bars_are_counted_ONCE_not_twice",
+     "the four corner bars counted twice (eight corners in Revit)"),
+
+    (COL_INPUTS, '        if value < MIN_BARS_PER_FACE:',
+     '        if value < 1:',
+     TI + "test_a_face_cannot_carry_fewer_than_its_two_shared_corners",
+     "a face with fewer bars than the corners it shares"),
+
+    (COL_INPUTS, '            length_mm=float(entered_value) * float(bar_diameter_mm),',
+     '            length_mm=float(entered_value),',
+     TI + "test_ls_as_a_multiplier_uses_the_TYPE_diameter_not_the_name",
+     "an Ls multiplier that never multiplies"),
+
+    (COL_SPACING, '    best = min(c.value_mm for c in candidates)',
+     '    best = max(c.value_mm for c in candidates)',
+     TS + "test_s0_on_the_live_column_and_which_term_governs",
+     "S0 taking the LARGEST candidate (under-confining the column)"),
+
+    (COL_SPACING, '    return MIDDLE_ZONE_MULTIPLIER * _positive(s0_mm, \"S0\")',
+     '    return min(MIDDLE_ZONE_MULTIPLIER * _positive(s0_mm, \"S0\"), 150.0)',
+     TS + "test_middle_zone_is_twice_s0_with_no_150_cap",
+     "the 150 mm cap section 5 exists to remove, put back"),
+
+    (COL_SPACING,
+     '        built_confinement = _positive(manual_confinement_mm,',
+     '        built_confinement = s0.s0_mm  #',
+     TS + "test_mode_b_builds_the_USER_value_and_flags_it",
+     "Mode B silently building the code limit instead of the input"),
+
+    (COL_SPACING, '        if value_mm > limit_mm:',
+     '        if value_mm != limit_mm:',
+     TS + "test_a_tighter_manual_spacing_is_not_flagged",
+     "a conservative spacing flagged as a violation"),
+
+    (COL_SCRIPT, '        self.spacing_flags_tb.Text = \"\\n\".join(f.message for f in plan.flags)',
+     '        self.spacing_flags_tb.Text = \"\"',
+     TC + "test_the_section_8_flags_actually_reach_the_screen",
+     "section 8 flags computed and then never shown"),
+
+    (COL_XAML,
+     '                                   Foreground=\"{StaticResource WarningAmber}\"',
+     '                                   Foreground=\"{StaticResource DangerRed}\"',
+     TC + "test_a_section_8_flag_is_amber_not_red",
+     "a warn-but-place flag painted as a refusal"),
 
     (COL_RULES, '    if len(vertical) != 4:',
      '    if len(vertical) < 4:',

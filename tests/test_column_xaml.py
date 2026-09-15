@@ -13,6 +13,7 @@ third element inherits them by being added to that tuple instead of by
 somebody remembering to copy a test.
 """
 
+import ast
 import io
 import os
 import re
@@ -43,6 +44,37 @@ def _x_names(path):
     tree = ET.fromstring(read(path).encode("utf-8"))
     return set(element.attrib[X_NAME] for element in tree.iter()
                if X_NAME in element.attrib)
+
+
+def _code_of(function_name):
+    """``(names called, string literals)`` inside one function, DOCSTRING
+    EXCLUDED.
+
+    Four guards in this project have now failed against their own
+    explanation -- a test that forbids a string, in a function whose
+    docstring explains why that string is forbidden, flags itself. Reading
+    the parsed code instead of the raw text ends the class of problem
+    rather than each instance of it.
+    """
+    for node in ast.walk(ast.parse(_script())):
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            body = node.body
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                body = body[1:]           # drop the docstring
+            called, literals = set(), []
+            for statement in body:
+                for inner in ast.walk(statement):
+                    if isinstance(inner, ast.Name):
+                        called.add(inner.id)
+                    elif isinstance(inner, ast.Attribute):
+                        called.add(inner.attr)
+                    elif (isinstance(inner, ast.Constant)
+                          and isinstance(inner.value, str)):
+                        literals.append(inner.value)
+            return called, literals
+    raise AssertionError("no function named %r in script.py" % function_name)
 
 
 def test_the_column_xaml_parses():
@@ -304,11 +336,29 @@ def test_every_readout_is_cleared_on_a_re_pick():
     READOUT_NAMES keeps the old column's number.
     """
     script = _script()
+    # Every module-level *_NAMES tuple, discovered rather than listed:
+    # #88 added a third one (DERIVED_NAMES) and this guard caught the
+    # omission, which is the point -- but only because it was edited.
+    # Discovering them means a FOURTH list is covered on the day it is
+    # written.
+    groups = re.findall(r"^([A-Z_]+_NAMES) = \(([^)]*)\)", script,
+                        re.MULTILINE)
+    assert groups, "no *_NAMES tuples found -- pattern broken?"
     listed = set()
-    for group in re.findall(r"(?:READOUT_NAMES|PROVENANCE_NAMES) = \(([^)]*)\)",
-                            script):
-        listed |= set(re.findall(r'"([a-z_]+)"', group))
-    assert listed, "READOUT_NAMES did not parse -- pattern broken?"
+    for name, body in groups:
+        listed |= set(re.findall(r'"([a-z_]+)"', body))
+
+    # ...and each of those tuples must actually be cleared. A list that
+    # exists but is never iterated in the reset is worse than no list:
+    # it reads, to the next person, as though the clearing is handled.
+    reset = re.search(r"def _reset_column_state\(.*?\n(.*?)\n    # ---",
+                      script, re.DOTALL).group(1)
+    unused = sorted(name for name, _ in groups
+                    if name != "GATED_TAB_NAMES" and name not in reset)
+    assert not unused, (
+        "these read-out lists are never cleared in _reset_column_state, "
+        "so the fields in them keep the previous column's values: %s"
+        % unused)
     written = set(re.findall(r"self\.([a-z_]+_tb)\.Text = ", script))
     # The two status lines are messages, not column read-outs.
     written -= {"status_tb", "column_status_tb"}
@@ -345,3 +395,163 @@ def test_the_window_is_never_shown_modally():
     calls = re.findall(r"\.ShowDialog\s*\(", _script())
     assert not calls, "the window must never be shown modally"
     assert "window.show()" in _script()
+
+
+# --------------------------------------------------------------------- #
+# #88 -- the inputs
+
+
+def test_the_two_hook_dropdowns_are_structurally_separate():
+    """Section 7 keeps them separate "so one dropdown's selection can never
+    silently apply to the other role".
+
+    Two `Items` collections, filled from the same option list -- which is
+    deliberate duplication, not an oversight to be tidied into one shared
+    ItemsSource. A shared source is one binding away from a shared
+    selection.
+    """
+    script = _script()
+    assert "outer_hook_cb" in script and "inner_hook_cb" in script
+    for forbidden in ("ItemsSource", "self.inner_hook_cb.SelectedIndex = "
+                                      "self.outer_hook_cb.SelectedIndex"):
+        assert forbidden not in script, (
+            "%s couples the two hook dropdowns; section 7 requires them "
+            "independent." % forbidden)
+
+
+def test_the_column_tool_never_imports_the_beam_135_degree_GUARD():
+    """The beam REFUSES anything but 135; column section 7 DEFAULTS to it
+    and permits any available hook type. Importing that guard here would
+    refuse what this spec allows -- the reuse audit's clearest
+    do-not-reuse.
+    """
+    tree = ast.parse(_script())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            imported |= set(a.name for a in node.names)
+    assert "hook_angle_guard_message" not in imported
+    assert "HOOK_ANGLE_REQUIRED_DEG" not in imported
+
+
+def test_the_default_hook_is_chosen_by_ANGLE_not_by_name():
+    """Names lie: the live model carries a `Stirrup/Tie - 45` whose stored
+    style is 0, and a `Standard - 135 deg.` in the wrong family. A
+    substring match on "135" believes them.
+    """
+    called, literals = _code_of("_default_hook_candidates")
+    assert "hook_angle_deg" in called, (
+        "the default must be matched on the angle read back off the type")
+    assert not [s for s in literals if "135" in s], (
+        "a string literal containing 135 means the label text is being "
+        "matched, which trusts the type's name")
+
+
+def test_the_manual_spacing_boxes_ship_disabled():
+    """An editable box whose value is ignored is a lie the window tells
+    every time Mode A is selected. They open disabled, and only Mode B
+    enables them.
+    """
+    tree = ET.fromstring(read(COLUMN_XAML_PATH).encode("utf-8"))
+    found = 0
+    for element in tree.iter():
+        if element.attrib.get(X_NAME) in ("manual_confinement_tb",
+                                          "manual_middle_tb"):
+            found += 1
+            assert element.attrib.get("IsEnabled") == "False", (
+                "%s ships enabled in Mode A" % element.attrib[X_NAME])
+    assert found == 2, "both manual spacing boxes must exist"
+    assert "def on_spacing_mode_changed" in _script(), (
+        "nothing re-enables them when Mode B is selected")
+
+
+def test_mode_a_is_the_one_checked_at_load():
+    tree = ET.fromstring(read(COLUMN_XAML_PATH).encode("utf-8"))
+    checked = [e.attrib[X_NAME] for e in tree.iter()
+               if e.attrib.get(X_NAME) in ("mode_a_rb", "mode_b_rb")
+               and e.attrib.get("IsChecked") == "True"]
+    assert checked == ["mode_a_rb"], (
+        "Mode A (auto) is the default; opening in manual would ask the "
+        "engineer for numbers before showing them the code maximums")
+
+
+def test_a_section_8_flag_is_amber_not_red():
+    """"Warn but place". A Mode B violation is flagged and then BUILT, so
+    painting it in DangerRed would describe a refusal that does not
+    happen -- and the beam palette keeps red for failures on purpose.
+    """
+    text = read(COLUMN_XAML_PATH)
+    flags = re.search(r'x:Name="spacing_flags_tb".*?/>', text, re.DOTALL)
+    assert flags, "spacing_flags_tb not found"
+    assert "WarningAmber" in flags.group(0)
+    assert "DangerRed" not in flags.group(0)
+
+
+def test_the_section_8_flags_actually_reach_the_screen():
+    """Computing the flags and never showing them is section 8's exact
+    failure mode: the spec requires the code limit displayed "ALONGSIDE
+    the user's manual value as a visible flag", and a plan whose flags
+    stay in memory is silent compliance wearing a warning's clothes.
+
+    Checked on the ASSIGNMENT's own subtree, not on the function's text.
+    tools/prove_guards.py refused two weaker versions of this guard: the
+    mutant replaces the assignment with an empty string while the status
+    line two lines below still says "plan.flags", so both "does the
+    function mention flags" and "does it touch spacing_flags_tb" stay
+    true. Only the value being assigned distinguishes them.
+    """
+    assigned = _assigned_value_names("spacing_flags_tb")
+    assert assigned is not None, (
+        "nothing assigns to self.spacing_flags_tb.Text")
+    assert "flags" in assigned, (
+        "the flag line is assigned something that never reads the plan's "
+        "flags, so a Mode B violation is computed and then shown to "
+        "nobody")
+
+
+def _assigned_value_names(control_name):
+    """Every name appearing in the value assigned to
+    ``self.<control_name>.Text``, or ``None`` if nothing assigns to it.
+    """
+    for node in ast.walk(ast.parse(_script())):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if (isinstance(target, ast.Attribute) and target.attr == "Text"
+                    and isinstance(target.value, ast.Attribute)
+                    and target.value.attr == control_name):
+                names = set()
+                for inner in ast.walk(node.value):
+                    if isinstance(inner, ast.Name):
+                        names.add(inner.id)
+                    elif isinstance(inner, ast.Attribute):
+                        names.add(inner.attr)
+                return names
+    return None
+
+
+def test_the_placer_facing_fields_are_what_the_window_shows():
+    """Section 8's single-source rule reaching the UI: the two "to build"
+    read-outs must come from the plan's built fields, not from s0_mm and
+    the middle-zone maximum -- which are the CODE LIMITS and differ in
+    Mode B, the only mode where it matters.
+    """
+    script = _script()
+    assert "plan.confinement_spacing_mm" in script
+    assert "plan.middle_zone_spacing_mm" in script
+    built = re.search(r"self\.confinement_built_tb\.Text = [^\n]*\n[^\n]*",
+                      script).group(0)
+    assert "confinement_spacing_mm" in built, (
+        "the 'to build' read-out must show what will be built, not the "
+        "code limit")
+
+
+def test_the_corner_sharing_convention_is_stated_in_the_WINDOW():
+    """The reuse audit calls corner double-counting "exactly the kind of
+    thing that would pass a unit test per-face and produce eight corner
+    bars in Revit". A convention only the docstring knows is a convention
+    the user cannot check.
+    """
+    text = read(COLUMN_XAML_PATH)
+    assert "INCLUDES the two corner bars" in text
+    assert "counted once in the total" in text
