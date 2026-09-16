@@ -43,6 +43,7 @@ RFT-Tools/
 │       └── ui/
 │
 ├── SimpleBeamRFT.extension/          ── ELEMENT: BEAM ──────────────────
+│   ├── CONTEXT.md                       standing rules for THIS tool
 │   └── RFT-Tools.tab/                   tab TITLE is shared; pyRevit merges
 │       └── Beams.panel/                 tabs by title across extensions
 │           └── Simple Beam.pushbutton/
@@ -62,7 +63,8 @@ RFT-Tools/
 │   ├── beam/                         amendments, verification, research
 │   ├── column/                       amendments, verification, reuse audit
 │   ├── deployment.md                 shared
-│   └── reuse-for-new-elements.md     shared — read before adding an element
+│   ├── reuse-for-new-elements.md     shared — read before adding an element
+│   └── token-efficient-expansion.md  shared — how a reuse answer is written once
 │
 ├── technical-material/               SOURCE documents (.docx / .pdf)
 │   ├── beam/

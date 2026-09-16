@@ -17,7 +17,11 @@ rectangular concrete beams.
 
 ## Read these before writing any code
 
-1. **`CONTEXT.md`** — the project's standing rules. Non-negotiable.
+1. **`CONTEXT.md`** — the repo-wide standing rules, and
+   **`SimpleBeamRFT.extension/CONTEXT.md`** — the beam tool's own (spec is the
+   source of truth, pyRevit-only, no live host, `SHAPE UNVERIFIED`). Both
+   non-negotiable. Do **not** read `ColumnRFT.extension/` — this agent
+   implements beam tickets.
 2. **`specs/beam-rft-detailing.md`** — the user story your ticket implements,
    with its acceptance criteria.
 3. **`technical-material/beam/beam_rebar_detailing_spec_v2.docx`** — the
