@@ -156,6 +156,12 @@ class FakeXYZ(object):
 
 
 FakeXYZ.BasisZ = FakeXYZ(0.0, 0.0, 1.0)
+# The column adapter fires rays along +X (the view self-test) and along
+# -Z (the downward support search), so both the axis constants and unary
+# negation are real API surface it depends on.
+FakeXYZ.BasisX = FakeXYZ(1.0, 0.0, 0.0)
+FakeXYZ.BasisY = FakeXYZ(0.0, 1.0, 0.0)
+FakeXYZ.__neg__ = lambda self: FakeXYZ(-self.X, -self.Y, -self.Z)
 
 
 class FakeUV(object):
@@ -200,24 +206,41 @@ class FakeRebarCoverType(object):
     object ``RebarHostData.GetCoverType(Reference)`` returns DIRECTLY
     (confirmed live, issue #23/#30 -- NOT an ``ElementId`` needing a
     ``doc.GetElement`` round trip, which was this project's earlier,
-    now-corrected assumption). ``CoverDistance`` is confirmed live;
-    ``Id``/``Name`` are the standard ``Element`` members, not independently
-    probed but not a new assumption either. The live model carried two
+    now-corrected assumption). ``CoverDistance`` is confirmed live. The live model carried two
     DIFFERENT ``RebarCoverType`` elements sharing the identical ``Name``
     (``"Interior (framing, columns)"``, 38.1 mm and 40 mm) -- callers must
     compare by ``Id``, never ``Name``; this fake supports constructing two
     such distinct-id, same-name instances for exactly that test.
+
+    **DELIBERATELY HAS NO READABLE ``.Name``** (#106), for the same reason
+    ``FakeRebarBarType`` does not. ``RebarCoverType`` derives from
+    ``ElementType``, which re-declares ``Name`` with a setter and no
+    getter; IronPython exposes only the most-derived property, so the read
+    raises ``AttributeError``.
+
+    An earlier version of this fake set ``self.Name = name``, and its own
+    docstring called that "not independently probed but not a new
+    assumption either". It WAS a new assumption and it was wrong --
+    ``column/v0.1.0-rc1`` died on its first live click reading exactly
+    this. Verified live afterwards: ``Name`` declared by ``ElementType``,
+    ``CanRead=False``, while ``SYMBOL_NAME_PARAM`` returns the identical
+    string C# ``Element.Name`` gives.
     """
 
     _next_id = [1]
 
     def __init__(self, cover_distance_internal, name=None, id_value=None):
         self.CoverDistance = cover_distance_internal
-        self.Name = name
+        self._name = name
         if id_value is None:
             id_value = FakeRebarCoverType._next_id[0]
             FakeRebarCoverType._next_id[0] += 1
         self.Id = FakeElementId(id_value)
+
+    def get_Parameter(self, built_in):
+        if built_in is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
+            return FakeStringParameter(self._name)
+        return None
 
 
 class FakeLine(object):
@@ -230,8 +253,22 @@ class FakeElementId(object):
     def __init__(self, value=-1):
         self.value = value
 
+    @property
+    def IntegerValue(self):
+        """What ``read_column`` puts in its result, and what a fake
+        document keys on. The real member; ``value`` is this fake's own."""
+        return self.value
+
     def __eq__(self, other):
         return isinstance(other, FakeElementId) and other.value == self.value
+
+    def __hash__(self):
+        # Defining __eq__ without __hash__ makes a class unhashable in
+        # Python 3, and a fake document keyed by ElementId needs both.
+        return hash(self.value)
+
+    def __repr__(self):
+        return "FakeElementId({!r})".format(self.value)
 
 
 FakeElementId.InvalidElementId = FakeElementId(-1)
@@ -275,6 +312,9 @@ class FakeBuiltInCategory(object):
     OST_StructuralColumns = object()
     OST_Walls = object()
     OST_StructuralFraming = object()
+    OST_Floors = object()
+    OST_StructuralFoundation = object()
+    OST_Levels = object()
 
 
 class FakeFilteredElementCollector(object):
@@ -498,6 +538,13 @@ class FakeBuiltInParameter(object):
     # RebarHookType -- the only route to a name from IronPython, since
     # ``.Name`` is hidden behind ElementType (see FakeRebarBarType).
     SYMBOL_NAME_PARAM = object()
+    # The column adapter's reads (#106). Each is exercised live.
+    CLEAR_COVER_OTHER = object()
+    CLEAR_COVER_TOP = object()
+    FAMILY_BASE_LEVEL_PARAM = object()
+    FAMILY_TOP_LEVEL_PARAM = object()
+    FAMILY_BASE_LEVEL_OFFSET_PARAM = object()
+    FAMILY_TOP_LEVEL_OFFSET_PARAM = object()
 
 
 class FakeOptions(object):
@@ -582,6 +629,316 @@ class FakeGeometryInstance(object):
         )
 
 
+# ===================================================================== #
+# The column adapter (#106)
+#
+# Every shape below is either verified live in this session or carries a
+# SHAPE UNVERIFIED note. The two that cost a release candidate each are
+# the ones with no readable ``.Name`` and the one whose ``Location.Point``
+# reports Z = 0 whatever storey it stands on.
+# ===================================================================== #
+
+
+class FakeGenericList(object):
+    """``System.Collections.Generic.List[T]``, as IronPython sees it.
+
+    ``DB.List[DB.BuiltInCategory]`` does NOT exist -- an earlier version of
+    the adapter tried it and failed. The real import is
+    ``from System.Collections.Generic import List``, and the subscript
+    returns a constructible type.
+    """
+
+    def __init__(self, items=None):
+        self._items = list(items or [])
+
+    def __class_getitem__(cls, _item_type):
+        return cls
+
+    def __getitem__(self, index):
+        return self._items[index]
+
+    def Add(self, item):
+        self._items.append(item)
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def __len__(self):
+        return len(self._items)
+
+
+class FakeBoundingBox(object):
+    """``get_BoundingBox(None)`` -- the column's own vertical extent.
+
+    The ONLY trustworthy source for where a column is vertically. See
+    ``FakeColumnLocation``.
+    """
+
+    def __init__(self, min_xyz, max_xyz):
+        self.Min = min_xyz
+        self.Max = max_xyz
+
+
+class FakeColumnLocation(object):
+    """``LocationPoint``. **Z is 0 whatever storey the column stands on.**
+
+    VERIFIED LIVE (#107), on four columns in the test model::
+
+        421967  Zspan    0..3000   Location.Point.Z = 0
+        422078  Zspan 3000..6000   Location.Point.Z = 0   <-- upper storey
+        422316  Zspan    0..3000   Location.Point.Z = 0
+        422840  Zspan 3000..6000   Location.Point.Z = 0   <-- upper storey
+
+    This fake reproduces that deliberately: a fake that put the real
+    elevation here would let a ray built from ``Location.Point.Z`` pass
+    every test and still fire at the project base on a host.
+    """
+
+    def __init__(self, point):
+        self.Point = point
+
+
+class FakeFamily(object):
+    """``Family``. Its ``Name`` IS readable -- declared by ``Element``.
+
+    VERIFIED LIVE: ``Name`` decl=``Element``, ``CanRead=True``, returning
+    ``"M_Concrete-Rectangular-Column"``. Its ``SYMBOL_NAME_PARAM`` exists
+    but is EMPTY, which is why the adapter must NOT route it through
+    ``element_name`` -- doing so degrades a working name to a placeholder.
+    That mistake was made and reverted while fixing #105.
+    """
+
+    _next_id = [9000]
+
+    def __init__(self, name):
+        self.Name = name
+        self.Id = FakeElementId(FakeFamily._next_id[0])
+        FakeFamily._next_id[0] += 1
+
+    def get_Parameter(self, built_in):
+        if built_in is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
+            return FakeStringParameter("")     # present, and empty
+        return None
+
+
+class FakeFamilySymbol(object):
+    """``FamilySymbol``. **NO READABLE ``.Name``** -- an ``ElementType``.
+
+    VERIFIED LIVE: ``Name`` decl=``ElementType``, ``CanRead=False``, while
+    ``Element.Name`` in C# reads ``"450 x 600mm"`` and
+    ``SYMBOL_NAME_PARAM`` returns the identical string.
+    """
+
+    def __init__(self, name, family_name="M_Concrete-Rectangular-Column",
+                 parameters=None):
+        self._name = name
+        self.Family = FakeFamily(family_name)
+        self._parameters = dict(parameters or {})
+
+    def get_Parameter(self, built_in):
+        if built_in is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
+            return FakeStringParameter(self._name)
+        return None
+
+    def LookupParameter(self, name):
+        if name not in self._parameters:
+            return None
+        return FakeDoubleParameter(self._parameters[name])
+
+
+class FakeDoubleParameter(object):
+    def __init__(self, value):
+        self._value = value
+
+    def AsDouble(self):
+        return self._value
+
+
+class FakeElementIdParameter(object):
+    """A parameter holding an ``ElementId`` -- covers, levels, offsets."""
+
+    def __init__(self, element_id):
+        self._element_id = element_id
+
+    def AsElementId(self):
+        return self._element_id
+
+    def AsDouble(self):
+        return 0.0
+
+
+class FakeLevel(object):
+    """``Level``. ``Name`` readable -- declared by ``Element`` (verified
+    live: ``CanRead=True``, ``"Level 1"``)."""
+
+    def __init__(self, name, elevation_internal):
+        self.Name = name
+        self.Elevation = elevation_internal
+        self._category = FakeBuiltInCategory.OST_Levels
+
+
+class FakeView3D(object):
+    """``View3D``. ``Name`` readable -- declared by ``Element``.
+
+    ``IsTemplate`` is what the adapter filters on. Whether the view can
+    actually SEE anything is not a property -- it is decided by firing a
+    ray, which is what ``FakeReferenceIntersector`` models.
+    """
+
+    def __init__(self, name, is_template=False, blind=False):
+        self.Name = name
+        self.IsTemplate = is_template
+        #: Not a Revit member. Drives FakeReferenceIntersector so a test
+        #: can build the `Analytical Model` case -- a view whose settings
+        #: are identical and which returns nothing.
+        self.blind = blind
+
+
+class FakeSolid(object):
+    def __init__(self, faces, volume=1.0):
+        self.Faces = list(faces)
+        self.Volume = volume
+
+
+class FakePlanarFace(object):
+    def __init__(self, normal):
+        self.FaceNormal = normal
+
+
+class FakeCurvedFace(object):
+    """Anything that is not a ``PlanarFace``. The adapter counts these."""
+
+    def __init__(self):
+        self.FaceNormal = None
+
+
+class FakeViewDetailLevel(object):
+    Fine = object()
+
+
+class FakeFindReferenceTarget(object):
+    Element = object()
+
+
+class FakeElementCategoryFilter(object):
+    def __init__(self, category):
+        self.category = category
+
+
+class FakeElementMulticategoryFilter(object):
+    def __init__(self, categories):
+        self.categories = list(categories)
+
+
+class FakeReferenceWithContext(object):
+    """What ``ReferenceIntersector.Find`` returns per hit."""
+
+    def __init__(self, element_id, global_z):
+        self._reference = FakeHitReference(element_id, global_z)
+
+    def GetReference(self):
+        return self._reference
+
+
+class FakeHitReference(object):
+    def __init__(self, element_id, global_z):
+        self.ElementId = element_id
+        self.GlobalPoint = FakeXYZ(0.0, 0.0, global_z)
+
+
+class FakeReferenceIntersector(object):
+    """``ReferenceIntersector``, driven by a per-test scenario.
+
+    The real object's answer depends on the VIEW, which is the finding
+    #69 rested on and #107 nearly foundered on: two 3D views with identical
+    ``GetCategoryHidden``, ``ViewTemplateId`` and ``IsSectionBoxActive``
+    return different results. There is no property to inspect, so the
+    adapter fires a ray -- and this fake models exactly that.
+
+    ``HITS`` is a list of ``(predicate, hits)``. The first predicate that
+    accepts ``(view, origin, direction)`` supplies the hits. A blind view
+    always yields nothing, whatever the ray.
+    """
+
+    HITS = []
+
+    def __init__(self, element_filter, target, view):
+        self.filter = element_filter
+        self.target = target
+        self.view = view
+        self.FindReferencesInRevitLinks = True
+
+    def _hits(self, origin, direction):
+        if getattr(self.view, "blind", False):
+            return []
+        for predicate, hits in FakeReferenceIntersector.HITS:
+            result = predicate(self.view, origin, direction)
+            if result is not None:
+                return result
+        return []
+
+    def Find(self, origin, direction):
+        return self._hits(origin, direction)
+
+    def FindNearest(self, origin, direction):
+        hits = self._hits(origin, direction)
+        return hits[0] if hits else None
+
+
+class FakeColumn(object):
+    """A structural column, as the adapter reads one.
+
+    Defaults are the live 450 x 600 on Level 2 that this session detailed:
+    unflipped, axis-aligned, spanning 3000-6000 mm, with its
+    ``Location.Point.Z`` at 0 exactly as the real one reports.
+    """
+
+    def __init__(self, document=None, symbol=None, solid=None,
+                 base_z_internal=0.0, top_z_internal=3000.0 / 304.8,
+                 mirrored=False, hand_flipped=False, facing_flipped=False,
+                 parameters=None, element_id=421967, bounding_box=True):
+        self.Document = document
+        self.Symbol = symbol if symbol is not None else FakeFamilySymbol(
+            "450 x 600mm",
+            parameters={"b": 450.0 / 304.8, "h": 600.0 / 304.8})
+        self.Id = FakeElementId(element_id)
+        self.Mirrored = mirrored
+        self.HandFlipped = hand_flipped
+        self.FacingFlipped = facing_flipped
+        self.HandOrientation = FakeXYZ(1.0, 0.0, 0.0)
+        self.FacingOrientation = FakeXYZ(0.0, 1.0, 0.0)
+        # Z = 0 on purpose. See FakeColumnLocation.
+        self.Location = FakeColumnLocation(FakeXYZ(0.0, 0.0, 0.0))
+        self._solid = solid
+        self._box = FakeBoundingBox(
+            FakeXYZ(-0.75, -0.75, base_z_internal),
+            FakeXYZ(0.75, 0.75, top_z_internal)) if bounding_box else None
+        self._parameters = dict(parameters or {})
+        self._category = FakeBuiltInCategory.OST_StructuralColumns
+
+    def get_BoundingBox(self, _view):
+        return self._box
+
+    def get_Geometry(self, _options):
+        return [] if self._solid is None else [self._solid]
+
+    def get_Parameter(self, built_in):
+        return self._parameters.get(built_in)
+
+
+class FakeDocument(object):
+    """Only ``GetElement``; collectors read the module-level ``_ITEMS``."""
+
+    def __init__(self, elements=None):
+        self._elements = dict(elements or {})
+
+    def GetElement(self, element_id):
+        if element_id is None:
+            return None
+        return self._elements.get(getattr(element_id, "IntegerValue",
+                                          element_id))
+
+
 def install():
     db = types.ModuleType("Autodesk.Revit.DB")
     structure = types.ModuleType("Autodesk.Revit.DB.Structure")
@@ -609,6 +966,32 @@ def install():
     structure.Rebar = FakeRebar
     structure.RebarBarType = FakeRebarBarType
     structure.RebarHookType = FakeRebarHookType
+
+    # The column adapter (#106)
+    db.Level = FakeLevel
+    db.View3D = FakeView3D
+    db.View = FakeView3D
+    db.Solid = FakeSolid
+    db.PlanarFace = FakePlanarFace
+    db.ViewDetailLevel = FakeViewDetailLevel
+    db.FindReferenceTarget = FakeFindReferenceTarget
+    db.ElementCategoryFilter = FakeElementCategoryFilter
+    db.ElementMulticategoryFilter = FakeElementMulticategoryFilter
+    db.ReferenceIntersector = FakeReferenceIntersector
+    db.FamilyInstance = FakeColumn
+    db.FamilySymbol = FakeFamilySymbol
+    db.Family = FakeFamily
+    structure.RebarCoverType = FakeRebarCoverType
+
+    generic = types.ModuleType("System.Collections.Generic")
+    collections_pkg = types.ModuleType("System.Collections")
+    system_pkg = types.ModuleType("System")
+    generic.List = FakeGenericList
+    collections_pkg.Generic = generic
+    system_pkg.Collections = collections_pkg
+    sys.modules["System"] = system_pkg
+    sys.modules["System.Collections"] = collections_pkg
+    sys.modules["System.Collections.Generic"] = generic
 
     revit_pkg.DB = db
     autodesk_pkg.Revit = revit_pkg
