@@ -180,3 +180,83 @@ def test_the_family_name_does_NOT_go_through_element_name():
     assert "element.Symbol.Family.Name" in source, (
         "the family name is read directly, because Family declares Name on "
         "Element where it is readable.")
+
+
+# ---------------------------------------------------------------------------
+# Ray origins: Location.Point.Z is not the column's elevation (rc2 defect)
+# ---------------------------------------------------------------------------
+#
+# Measured live on four columns in the test model, two of them standing on
+# Level 2 and spanning 3000-6000 mm:
+#
+#     421967  Zspan    0..3000   Location.Point.Z = 0
+#     422078  Zspan 3000..6000   Location.Point.Z = 0     <-- upper storey
+#     422316  Zspan    0..3000   Location.Point.Z = 0
+#     422840  Zspan 3000..6000   Location.Point.Z = 0     <-- upper storey
+#
+# Every ray built from ``Location.Point.Z`` therefore fires at roughly the
+# same height whatever column is picked. Two failures followed, and the
+# second is the one that matters:
+#
+#   * the view self-test's ray passed UNDERNEATH an upper-storey column and
+#     hit the one below, so every 3D view was declared blind and the tool
+#     refused a column it could see perfectly well;
+#   * the support search returned 2700 mm -- the GROUND floor's soffit --
+#     for a column whose real top support is at 5700 mm. A refusal is
+#     visible. A confident wrong elevation is not.
+
+
+def test_no_ray_origin_is_built_from_Location_Point_Z():
+    """The rc2 defect, stated as the rule that prevents it.
+
+    ``Location.Point`` is still read -- it carries the column's PLAN
+    position, which is correct and needed. What must never come from it is
+    a Z.
+    """
+    source = _source()
+    offenders = [line.strip() for line in source.splitlines()
+                 if "point.Z" in line and not line.strip().startswith("#")]
+    assert not offenders, (
+        "column_host.py builds a ray origin from {!r}. A structural "
+        "column's Location.Point reports Z = 0 whatever storey it stands "
+        "on (measured live on four columns), so this fires every ray at "
+        "the project base: it refused an upper-storey column as invisible "
+        "and reported the ground floor's soffit as its top support. Take "
+        "the height from vertical_extent_internal() instead."
+        .format(offenders))
+
+
+def test_the_vertical_extent_comes_from_the_bounding_box():
+    assert "box = element.get_BoundingBox(None)" in _source(), (
+        "vertical_extent_internal must read the column's own solid extent; "
+        "it is the only source in this module for where the column "
+        "actually is vertically.")
+
+
+def test_the_view_self_test_fires_at_the_column_s_mid_height():
+    """Mid-height, not either end: an origin at exactly ``max_z`` or
+    ``min_z`` sits on the boundary, and a face-grazing ray is the kind of
+    thing that works in one model and not the next."""
+    source = _source()
+    assert "probe_z = 0.5 * (min_z + max_z)" in source
+    assert "probe_z)" in source, (
+        "find_search_view must fire its self-test ray at the column's "
+        "mid-height so it meets the column wherever it stands.")
+
+
+def test_the_support_rays_start_inside_the_column_s_own_ends():
+    source = _source()
+    assert "origin = DB.XYZ(point.X, point.Y, max_z - inset)" in source, (
+        "the upward search must start just inside the column's own top, "
+        "so the first face it meets is the soffit supporting THIS column.")
+    assert "origin = DB.XYZ(point.X, point.Y, min_z + inset)" in source, (
+        "the downward search must start just inside the column's own base.")
+
+
+def test_a_short_column_cannot_invert_its_two_ray_origins():
+    """``_inset_internal`` scales down rather than letting the upward ray
+    start below the downward one -- which would search the wrong direction
+    at both ends and report two plausible, swapped elevations."""
+    assert "span / 4.0" in _source(), (
+        "the inset must scale with the column's span; a fixed clearance "
+        "inverts the two origins on a column shorter than four of them.")

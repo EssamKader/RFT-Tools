@@ -71,6 +71,49 @@ SUPPORT_CATEGORIES = (
 RAY_CLEARANCE_INTERNAL = 1.0  # feet, Revit internal units
 
 
+def vertical_extent_internal(element):
+    """``(min_z, max_z)`` of the column's own solid, in internal units.
+
+    **Every ray in this module starts from a height derived here, never
+    from ``Location.Point.Z``.** A structural column's ``Location.Point``
+    reports ``Z = 0`` no matter which storey it stands on -- measured live
+    on four columns, two of them spanning 3000-6000 mm and both reporting
+    ``Location.Point.Z == 0``.
+
+    That is not a quirk worth working around cleverly; it is simply a
+    different quantity. The insertion point carries the column's plan
+    position and its base LEVEL's origin, not its elevation.
+
+    Using it as a ray height made every search fire at roughly 1200 mm
+    above the project base regardless of the column picked, which is why
+    an upper-storey column was told "no 3D view can see" it (the self-test
+    ray passed underneath it and hit the column below) and why the support
+    search returned the GROUND floor's soffit, 2700 mm, for a column whose
+    real top support is at 5700 mm. The second failure is the dangerous
+    one: it is a plausible number, not an error.
+
+    Raises rather than guessing when there is no bounding box: a column
+    with no geometry is not something to detail against.
+    """
+    box = element.get_BoundingBox(None)
+    _require(box is not None,
+             "This column has no bounding box, so the height at which to "
+             "search for its supports cannot be established.")
+    return box.Min.Z, box.Max.Z
+
+
+def _inset_internal(min_z, max_z):
+    """How far inside each end of the column a vertical ray starts.
+
+    Normally the full clearance. On a column shorter than four clearances
+    the two origins would cross and the upward ray would start below the
+    downward one, so it is scaled to a quarter of the span instead --
+    short columns are unusual, silently inverted rays are not detectable.
+    """
+    span = max_z - min_z
+    return min(RAY_CLEARANCE_INTERNAL, span / 4.0)
+
+
 class ColumnHostError(Exception):
     """A column this tool will not detail, with the reason the user reads.
 
@@ -288,6 +331,8 @@ def find_search_view(doc, element):
     be a guess wearing a number's clothes.
     """
     point = element.Location.Point
+    min_z, max_z = vertical_extent_internal(element)
+    probe_z = 0.5 * (min_z + max_z)
     element_id = element.Id
     views = [view for view
              in DB.FilteredElementCollector(doc).OfClass(DB.View3D)
@@ -303,9 +348,12 @@ def find_search_view(doc, element):
             DB.ElementCategoryFilter(DB.BuiltInCategory.OST_StructuralColumns),
             DB.FindReferenceTarget.Element, view)
         intersector.FindReferencesInRevitLinks = False
+        # Mid-height of THIS column, so the ray meets it wherever it
+        # stands. The X offset clears the widest plausible section; the
+        # height is the half that used to be wrong.
         origin = DB.XYZ(point.X - 6.0 * RAY_CLEARANCE_INTERNAL,
                         point.Y,
-                        point.Z + 4.0 * RAY_CLEARANCE_INTERNAL)
+                        probe_z)
         hits = intersector.Find(origin, DB.XYZ.BasisX)
         for hit in hits:
             if hit.GetReference().ElementId == element_id:
@@ -343,11 +391,16 @@ def find_support_face_z_mm(doc, view, element, upward):
     intersector.FindReferencesInRevitLinks = False
 
     point = element.Location.Point
+    min_z, max_z = vertical_extent_internal(element)
+    inset = _inset_internal(min_z, max_z)
     if upward:
-        origin = DB.XYZ(point.X, point.Y, point.Z + RAY_CLEARANCE_INTERNAL)
+        # Just inside the column's own top, firing up: the first face met
+        # is the soffit of whatever supports it, which is what section 3
+        # measures to.
+        origin = DB.XYZ(point.X, point.Y, max_z - inset)
         direction = DB.XYZ.BasisZ
     else:
-        origin = DB.XYZ(point.X, point.Y, point.Z - RAY_CLEARANCE_INTERNAL)
+        origin = DB.XYZ(point.X, point.Y, min_z + inset)
         direction = -DB.XYZ.BasisZ
     nearest = intersector.FindNearest(origin, direction)
     if nearest is None:
