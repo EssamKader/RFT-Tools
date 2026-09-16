@@ -149,3 +149,60 @@ What follows for the implementation, and what does not:
   catalogue and cannot go stale — but it asks more of the user.
 
 Nothing here may be resolved by assumption.
+
+## R17 (#89) — Q11 ANSWERED: direct subset entry, no template catalogue
+
+**Owner ruling, 2026-09-15.** The tie topology control is **direct subset
+entry**: the engineer states each tie in §6.2's own terms — an initial bar
+index and how many bars it encloses — and §6.1 plus A1 validate whatever
+they build.
+
+A named-template picker was the alternative and was **rejected**, for the
+reason Q10 already gave: the catalogue does not exist, cannot be completed,
+and shipping one would mean inventing it.
+
+Two consequences worth stating, because they are why this option was the
+only one that could be chosen without regret:
+
+- Subset entry is **strictly more general**. A named template is a preset
+  that emits exactly these subsets, so a picker can be added later as a
+  convenience without changing the model underneath it. Nothing built now
+  is wasted if templates are ever wanted.
+- The control **cannot go stale**. A section nobody anticipated is
+  expressible on the day it is drawn, instead of being a feature request.
+
+Implemented in `rft.core.column_ties`.
+
+## R18 (#89) — Q13: §6.1 validates IDEALISED positions, and the reason is
+   not convenience
+
+Q13 asked whether §6.1's clear distance `x` is evaluated on idealised bar
+positions or on as-built ones, given R15's finding that a corner bar sits
+~3.5 mm inboard of its computed position once a tie exists.
+
+**Ruling: idealised, before placement — and it is the CONSERVATIVE choice,
+not merely the only available one.**
+
+Two facts settle it together:
+
+1. **As-built positions do not exist before placement.** #80 established
+   that the corner position cannot be dictated and that its closed form was
+   never derived: "the tool must read the value back rather than predict
+   it". A pre-placement validator has nothing else to read.
+2. **The snap only SHRINKS clear distances.** A corner bar moves inboard on
+   both axes, toward the section centroid. Its neighbours are mid-face bars
+   along the same faces, so the distance to each of them gets *smaller*, not
+   larger. On the live column: corner `(-167.55, -242.55)` → `(-164.02,
+   -239.02)`, and its clear distance to the mid-face bar at `(0, -242.55)`
+   falls from 167.55 to 164.06.
+
+So a validator reading idealised positions reports gaps that are **wider
+than reality** — it can demand restraint that turns out to be unnecessary,
+and it can never miss restraint that was needed. That is the safe direction,
+and it means this ruling does not have to be revisited when as-built
+read-back lands.
+
+**What still must happen after placement:** the Review report states
+as-built positions (R15), so a re-validation on read-back positions is a
+report-time check, not a gate. If it ever disagrees with the pre-placement
+result, it will disagree by being *less* demanding.

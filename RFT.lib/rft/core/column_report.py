@@ -16,23 +16,23 @@ of truth wearing the report's authority.
 
 ## What this module deliberately does NOT claim
 
-Two of #91's three headline items cannot be written yet, and they are
+One of #91's three headline items still cannot be written, and it is
 STATED as missing rather than omitted:
 
-1. **As-built bar positions (R15).** #80 measured a corner bar asked for
-   `-167.55` landing at `-164.02`: it binds to the tie's bend, the
-   position cannot be dictated (``SetDistanceToTargetRebar`` throws on a
-   ``HookBend`` target), and it must be read back AFTER placement. There
-   is no placer yet, so there is nothing to read back. The report says
-   the coordinates it shows are idealised and will move.
+**As-built bar positions (R15).** #80 measured a corner bar asked for
+`-167.55` landing at `-164.02`: it binds to the tie's bend, the position
+cannot be dictated (``SetDistanceToTargetRebar`` throws on a ``HookBend``
+target), and it must be read back AFTER placement. There is no placer
+yet, so there is nothing to read back. The report says the coordinates it
+shows are idealised and will move.
 
-2. **Loop vs cross-tie per restrained bar (A1).** Which bars get a closed
-   loop and which get a cross-tie is section 6.2's topology, which is
-   issue #89 and blocked on Q11. The report names that rather than
-   guessing a topology.
-
-Silence on either would read as "there is nothing to say", which is the
+Silence on that would read as "there is nothing to say", which is the
 failure `REUSE_GUIDELINES.md` §3 exists to prevent.
+
+#91's OTHER missing item -- loop vs cross-tie per restrained bar (A1) --
+is written now. #89 answered Q11, and :func:`tie_section` states per tie
+what it is, what it encloses, which bars it restrains, and for a
+cross-tie that the bend test is why.
 
 `rft.ui.report` is not reused -- beam sections, faces and zones
 throughout. What transfers is ``rft.ui.derivation``'s *pattern*: state the
@@ -42,6 +42,7 @@ derivation in words beside the number.
 from collections import namedtuple
 
 from .column_spacing import MODE_MANUAL
+from .column_ties import SEVERITY_BLOCKING
 
 ReportSection = namedtuple("ReportSection", "heading lines")
 
@@ -201,12 +202,41 @@ def tie_level_section(ladder):
     return ReportSection("Tie levels", lines)
 
 
-def outstanding_section():
-    """What this report cannot yet say, said plainly.
+def tie_section(findings, tie_lines):
+    """Section 6.2's topology as stated, and section 6.1's verdict on it.
 
-    Both entries are #91 requirements that depend on work that does not
-    exist. Omitting them would make the page look complete, and a report
-    that looks complete is trusted as complete.
+    #91 had to leave this saying "not guessed here". #89 answered Q11 --
+    the engineer states the subsets, the tool validates them -- so the
+    page can now say, per tie, what it is and which bars it holds.
+
+    The findings come first. A topology that section 6.1 refuses is the
+    thing to read, and putting it under a list of tie geometry is how it
+    gets skimmed past.
+    """
+    lines = []
+    for finding in findings:
+        prefix = FLAG_PREFIX if finding.severity == SEVERITY_BLOCKING \
+            else NOTE_PREFIX
+        lines.append(prefix + finding.message)
+    if not findings:
+        lines.append("Section 6.1: every requirement met by this "
+                     "arrangement.")
+    lines.append("")
+    lines.extend(tie_lines)
+    lines.append(
+        "Tie arrangement is STATED by the engineer, not derived (R4, R17). "
+        "Section 6.1 admits many valid coverings of one bar layout and the "
+        "spec has no rule to choose between them, so the tool validates "
+        "rather than invents.")
+    return ReportSection("Ties (section 6.2)", lines)
+
+
+def outstanding_section():
+    """What this report still cannot say, said plainly.
+
+    One entry now. #89 closed the other. Omitting what remains would make
+    the page look complete, and a report that looks complete is trusted as
+    complete -- so this section is asserted never to be empty.
     """
     return ReportSection("Not yet reported", [
         NOTE_PREFIX + "AS-BUILT POSITIONS (R15). Bar coordinates shown "
@@ -215,15 +245,17 @@ def outstanding_section():
         "landed at -164.02, and the position cannot be dictated. Real "
         "positions must be read back after placement, and nothing is "
         "placed yet.",
-        NOTE_PREFIX + "LOOP vs CROSS-TIE per restrained bar (A1). Which "
-        "bars get a closed loop, and which get a cross-tie because the "
-        "bend will not form, is section 6.2's tie topology -- issue #89, "
-        "blocked on open question Q11. Not guessed here.",
+        NOTE_PREFIX + "Section 6.1 is validated on those idealised "
+        "positions, and that is the CONSERVATIVE direction (R18): the snap "
+        "moves a corner bar toward its own neighbours, so real clear "
+        "distances are SMALLER than the ones checked. This can demand "
+        "restraint that proves unnecessary; it cannot miss restraint that "
+        "was needed.",
     ])
 
 
 def build_report(data, bars, splice, splice_line, bar_type_name,
-                 bar_diameter_mm, plan, ladder):
+                 bar_diameter_mm, plan, ladder, findings=(), tie_lines=()):
     """The whole page, in order.
 
     Every argument is a value some other module already decided. This
@@ -236,6 +268,7 @@ def build_report(data, bars, splice, splice_line, bar_type_name,
                              splice_line),
         spacing_section(plan),
         tie_level_section(ladder),
+        tie_section(list(findings), list(tie_lines)),
         outstanding_section(),
     ]
 

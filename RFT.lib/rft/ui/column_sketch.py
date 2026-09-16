@@ -24,13 +24,16 @@ Drawn: the concrete outline, the cover band, the outer tie, every
 longitudinal bar, section 6.1's clear distances coloured by tier, and a
 vertical strip showing the two `L0` zones and the middle run.
 
-**Not drawn: inner ties and cross-ties.** Which bars each closed loop
-wraps is section 6.2's topology -- issue #89, blocked on Q11 -- and R4
-settled that the USER selects it and section 6.1 validates, precisely
-because section 6.1 admits many valid coverings and the spec has no
-tie-break rule. Drawing a guessed topology would put a picture of one
-arbitrary choice in front of an engineer about to press Place. The sketch
-says so instead.
+Inner ties and cross-ties ARE drawn, as of #89 -- but only the ones the
+engineer stated. R4 settled that the user selects the topology and
+section 6.1 validates it, and R17 settled the control: direct subset
+entry. Nothing here derives a topology. With no subsets entered the
+sketch shows the perimeter tie alone, which is what the column actually
+has, and section 6.1's verdict says whether that is enough.
+
+A cross-tie is drawn as a single leg in its own colour, never as a thin
+rectangle: A1 makes it a cross-tie precisely because the rectangle cannot
+be bent, so drawing one would picture the thing Revit refuses.
 
 ## R15: these positions are IDEALISED, and the sketch says so
 
@@ -46,6 +49,7 @@ position and LABELS the corner bars as ones that will move.
 from ..core.column_layout import (
     TIER_ALTERNATE, TIER_EVERY_BAR, TIER_EXCEEDED,
 )
+from ..core.column_ties import KIND_CROSS_TIE, restrained_bar_indices
 from ..core.column_tie_levels import ZONE_MIDDLE
 from .sketch_shapes import SketchCircle, SketchLine, SketchPolygon, SketchText
 
@@ -58,8 +62,9 @@ STYLE_KEYS = frozenset([
     "concrete",         # the column outline
     "cover",            # the cover band, read from the element (A2)
     "tie_outer",        # the outer tie centreline rectangle
-    "tie_inner",        # an inner tie -- reserved for #89, not yet emitted
-    "cross_tie",        # a single-leg cross-tie -- reserved for #89 (A1)
+    "tie_inner",        # an inner tie the engineer stated (6.2)
+    "cross_tie",        # a single-leg cross-tie, where A1's bend test fails
+    "bar_unrestrained", # a bar no tie corner holds -- 6.1's actual subject
     "bar_main",         # a longitudinal bar
     "bar_corner",       # a corner bar, which R15 says will move
     "dimension",        # a neutral dimension or label
@@ -87,24 +92,44 @@ def _tier_style(tier):
 
 
 def cross_section_shapes(b_mm, h_mm, cover_mm, tie_dia_mm, bar_dia_mm,
-                         layout):
-    """The cross-section: concrete, cover, outer tie, bars, section 6.1
+                         layout, ties=()):
+    """The cross-section: concrete, cover, every tie, bars, section 6.1
     clear distances.
 
-    ``layout`` is a ``PerimeterLayout``. Nothing is recomputed from it --
-    positions, gaps and tiers all arrive decided.
+    ``layout`` is a ``PerimeterLayout`` and ``ties`` a list of
+    ``ResolvedTie``. Nothing is recomputed from either -- positions, gaps,
+    tiers, rectangles and the loop/cross-tie verdict all arrive decided.
     """
     shapes = [
         _rect(b_mm / 2.0, h_mm / 2.0, "concrete"),
         _rect(b_mm / 2.0 - cover_mm, h_mm / 2.0 - cover_mm, "cover"),
-        _rect(layout.tie_half_u_mm, layout.tie_half_v_mm, "tie_outer"),
     ]
 
+    # The ties the engineer stated, resolved. The first is always the
+    # perimeter; the rest are inner. Drawn BEFORE the bars so a bar is
+    # never hidden under a tie leg.
+    if ties:
+        for position, tie in enumerate(ties):
+            shapes.extend(_tie_shapes(tie, "tie_outer" if position == 0
+                                      else "tie_inner"))
+    else:
+        shapes.append(_rect(layout.tie_half_u_mm, layout.tie_half_v_mm,
+                            "tie_outer"))
+
+    restrained = restrained_bar_indices(ties) if ties else None
     radius = bar_dia_mm / 2.0
     for bar in layout.bars:
-        shapes.append(SketchCircle(
-            u=bar.u_mm, v=bar.v_mm, r=radius,
-            style="bar_corner" if bar.is_corner else "bar_main"))
+        if restrained is not None and bar.index not in restrained:
+            # Section 6.1's actual subject. A bar no tie corner holds is
+            # the thing the rule is about, so it is marked rather than
+            # left for the reader to work out from the tie rectangles.
+            style = "bar_unrestrained"
+        elif bar.is_corner:
+            style = "bar_corner"
+        else:
+            style = "bar_main"
+        shapes.append(SketchCircle(u=bar.u_mm, v=bar.v_mm, r=radius,
+                                   style=style))
 
     # Section 6.1's clear distances, drawn ON the gap they measure so a
     # violation is where the eye already is -- not in a legend.
@@ -124,25 +149,59 @@ def cross_section_shapes(b_mm, h_mm, cover_mm, tie_dia_mm, bar_dia_mm,
     return shapes
 
 
-def cross_section_captions(layout, tier_sentence):
+def _tie_shapes(tie, loop_style):
+    """One resolved tie: a rectangle, or -- where A1's bend test failed --
+    a single leg.
+
+    A cross-tie is NOT drawn as a thin rectangle. A1 makes it a cross-tie
+    because the rectangle cannot be bent, so drawing one would picture
+    exactly the geometry Revit refuses with a modal dialog.
+    """
+    if tie.kind == KIND_CROSS_TIE:
+        return [SketchLine(
+            u1=tie.centre_u_mm - tie.half_u_mm,
+            v1=tie.centre_v_mm - tie.half_v_mm,
+            u2=tie.centre_u_mm + tie.half_u_mm,
+            v2=tie.centre_v_mm + tie.half_v_mm,
+            style="cross_tie")]
+    return [SketchPolygon(points=[
+        (tie.centre_u_mm - tie.half_u_mm, tie.centre_v_mm - tie.half_v_mm),
+        (tie.centre_u_mm + tie.half_u_mm, tie.centre_v_mm - tie.half_v_mm),
+        (tie.centre_u_mm + tie.half_u_mm, tie.centre_v_mm + tie.half_v_mm),
+        (tie.centre_u_mm - tie.half_u_mm, tie.centre_v_mm + tie.half_v_mm),
+    ], style=loop_style)]
+
+
+def cross_section_captions(layout, tier_sentence, ties=()):
     """The words under the cross-section.
 
     Separate from the shapes because they are prose, not geometry, and
     because the two "we are not claiming this" lines must be impossible to
     drop by editing a drawing loop.
     """
-    return [
+    captions = [
         tier_sentence,
         "Corner bars are drawn at their COMPUTED positions. Each one will "
         "move roughly %.1f mm inboard once a tie exists, because it binds "
         "to the tie's bend (R15, measured). The exact landing cannot be "
         "predicted and must be read back after placement."
         % MEASURED_CORNER_SNAP_MM,
-        "Inner ties and cross-ties are NOT drawn. Which bars each closed "
-        "loop wraps is section 6.2's topology -- issue #89, blocked on "
-        "Q11 -- and R4 settled that the user selects it. A guessed "
-        "topology drawn here would be one arbitrary covering of many.",
     ]
+    if not ties:
+        captions.append(
+            "No inner ties stated. The perimeter tie alone is drawn, which "
+            "is what this column would have -- section 6.1's verdict above "
+            "says whether that is enough.")
+    else:
+        unrestrained = [bar.index for bar in layout.bars
+                        if bar.index not in restrained_bar_indices(ties)]
+        captions.append(
+            "%d tie(s) drawn, exactly as stated -- nothing here derives a "
+            "topology (R4, R17). Bars no tie corner holds are marked: %s."
+            % (len(ties),
+               ", ".join(str(i) for i in unrestrained) if unrestrained
+               else "none"))
+    return captions
 
 
 def zone_strip_shapes(clear_height_mm, l0_mm, ladder, strip_width_mm=120.0):

@@ -13,6 +13,7 @@ import pytest
 
 from rft.core.column_layout import perimeter_bar_positions, tier_summary
 from rft.core.column_spacing import FIRST_TIE_OFFSET_MM, MODE_AUTO, spacing_plan
+from rft.core.column_ties import TieSubset, resolve_ties
 from rft.core.column_tie_levels import tie_levels
 from rft.ui.column_sketch import (
     MEASURED_CORNER_SNAP_MM,
@@ -33,8 +34,19 @@ def layout(count_b=3, count_h=4):
     return perimeter_bar_positions(B, H, COVER, TIE, BAR, count_b, count_h)
 
 
-def section(count_b=3, count_h=4):
-    return cross_section_shapes(B, H, COVER, TIE, BAR, layout(count_b, count_h))
+#: One of the many valid coverings of the live layout.
+VALID_SUBSETS = [TieSubset(0, 4), TieSubset(0, 5), TieSubset(1, 5)]
+
+BEND = 40.0   # 10M StirrupTieBendDiameter, measured live
+
+
+def _ties(subsets, lay=None):
+    return resolve_ties(subsets, lay or layout(), TIE, BAR, BEND)
+
+
+def section(count_b=3, count_h=4, ties=()):
+    lay = layout(count_b, count_h)
+    return cross_section_shapes(B, H, COVER, TIE, BAR, lay, ties)
 
 
 def strip():
@@ -167,13 +179,37 @@ def test_the_sketch_applies_NO_correction_it_cannot_justify():
     assert not any(abs(c.u) == pytest.approx(164.02, abs=0.01) for c in circles)
 
 
-def test_the_captions_state_both_things_the_sketch_cannot_claim():
+def test_the_captions_still_state_what_the_POSITIONS_cannot_claim():
+    """R15 has not gone away. #89 removed the OTHER caption -- the one
+    saying inner ties could not be drawn -- because they can be now; this
+    one stays until as-built read-back exists.
+    """
     captions = cross_section_captions(layout(), tier_summary(layout()))
     joined = "\n".join(captions)
     assert "%.1f mm inboard" % MEASURED_CORNER_SNAP_MM in joined
     assert "read back after placement" in joined
-    assert "Inner ties and cross-ties are NOT drawn" in joined
-    assert "#89" in joined and "Q11" in joined
+
+
+def test_with_no_ties_stated_the_caption_says_so():
+    """Silence would read as "the ties are handled". The perimeter tie
+    alone IS what the column has, and section 6.1's verdict says whether
+    that is enough.
+    """
+    joined = "\n".join(cross_section_captions(layout(), tier_summary(layout())))
+    assert "No inner ties stated" in joined
+
+
+def test_the_caption_names_the_bars_no_tie_HOLDS():
+    resolved = _ties(VALID_SUBSETS)
+    joined = "\n".join(
+        cross_section_captions(layout(), tier_summary(layout()), resolved))
+    assert "nothing here derives a topology" in joined
+    assert "marked: none" in joined
+
+    bare = _ties([])
+    joined = "\n".join(
+        cross_section_captions(layout(), tier_summary(layout()), bare))
+    assert "marked: 1, 3, 4, 6, 8, 9" in joined
 
 
 def test_the_tier_sentence_is_on_the_sketch():
@@ -233,7 +269,64 @@ def test_the_sketch_imports_no_arithmetic_of_its_own():
     for node in ast.walk(ast.parse(io.open(path, encoding="utf-8").read())):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             imported |= set(alias.name for alias in node.names)
+    # KIND_CROSS_TIE is a constant and restrained_bar_indices is a set
+    # union over already-decided data. Neither computes a POSITION, which
+    # is what this guard is about -- and both arrive from the module that
+    # already made the decision.
     assert imported == {
         "TIER_ALTERNATE", "TIER_EVERY_BAR", "TIER_EXCEEDED", "ZONE_MIDDLE",
+        "KIND_CROSS_TIE", "restrained_bar_indices",
         "SketchCircle", "SketchLine", "SketchPolygon", "SketchText",
     }, sorted(imported)
+
+
+# --------------------------------------------------------------------- #
+# #89 -- the ties the engineer stated
+
+
+def test_every_stated_tie_is_drawn():
+    """Three inner ties plus the implied perimeter."""
+    shapes = section(ties=_ties(VALID_SUBSETS))
+    loops = [s for s in shapes if s.style in ("tie_outer", "tie_inner")]
+    assert len(loops) == 4
+    assert len([s for s in loops if s.style == "tie_outer"]) == 1
+
+
+def test_a_cross_tie_is_a_LEG_not_a_thin_rectangle():
+    """A1 makes it a cross-tie because the rectangle cannot be bent, so
+    drawing one would picture exactly the geometry Revit refuses with a
+    modal dialog.
+    """
+    shapes = section(ties=resolve_ties([], layout(), TIE, BAR, 900.0))
+    cross = [s for s in shapes if s.style == "cross_tie"]
+    assert len(cross) == 1
+    assert isinstance(cross[0], SketchLine)
+    assert not [s for s in shapes if isinstance(s, SketchPolygon)
+                and s.style == "cross_tie"]
+
+
+def test_unrestrained_bars_are_MARKED():
+    """Section 6.1 is about these bars. Leaving the reader to work them
+    out from the tie rectangles is how a violation gets missed on the one
+    drawing meant to reveal it.
+    """
+    bare = [s for s in section(ties=_ties([]))
+            if s.style == "bar_unrestrained"]
+    assert len(bare) == 6, "the perimeter tie holds only its four corners"
+    covered = [s for s in section(ties=_ties(VALID_SUBSETS))
+               if s.style == "bar_unrestrained"]
+    assert covered == []
+
+
+def test_an_unrestrained_bar_is_drawn_in_the_REFUSAL_colour():
+    assert STYLE_BRUSH_KEYS["bar_unrestrained"] == "DangerRed"
+
+
+def test_the_sketch_derives_no_topology_of_its_own():
+    """R4 and R17: the user states it. With no subsets the sketch shows
+    the perimeter tie alone -- it does not invent inner ties to make the
+    picture look complete.
+    """
+    shapes = section(ties=())
+    assert not [s for s in shapes if s.style in ("tie_inner", "cross_tie")]
+    assert len([s for s in shapes if s.style == "tie_outer"]) == 1

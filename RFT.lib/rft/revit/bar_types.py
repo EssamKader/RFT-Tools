@@ -86,6 +86,29 @@ def bar_type_diameter_mm(bar_type, from_internal_units):
     return from_internal_units(bar_type.BarNominalDiameter)
 
 
+def bar_type_bend_diameter_mm(bar_type, from_internal_units):
+    """The ``RebarBarType``'s own ``StirrupTieBendDiameter``, in mm.
+
+    Issue #89/A1. The bend diameter is READ, never assumed as a multiple
+    of the bar diameter, and the live model shows why: ``10M`` reads
+    40.00 mm against a 9.50 mm bar (4.2x) while ``19M`` reads 115.00
+    against 19.10 (6.0x). A constant multiplier would be wrong across most
+    of the range.
+
+    It decides A1's buildability test -- ``narrow >= bend + tie`` -- and
+    getting it wrong means offering Revit a loop it refuses with a MODAL
+    DIALOG that blocks the session rather than a catchable exception. That
+    is the whole reason the test runs before the API call.
+
+    VERIFIED LIVE (Revit 2024): ``StirrupTieBendDiameter`` is readable on
+    every ``RebarBarType`` in the test document, and is distinct from
+    ``StandardBendDiameter`` for the smaller bars -- 10M reads 60.00 for
+    the standard bend and 40.00 for the stirrup/tie bend. A column tie is
+    a ``StirrupTie``, so the stirrup/tie value is the one that governs.
+    """
+    return from_internal_units(bar_type.StirrupTieBendDiameter)
+
+
 def hook_angle_deg(hook_type):
     """The selected ``RebarHookType``'s own hook angle, in degrees, or
     ``None`` if it cannot be read back at all (issue #25).

@@ -15,8 +15,13 @@ from rft.core.column_host_rules import extent_from_ends, section_from_dimensions
 from rft.core.column_inputs import (
     LS_MODE_DIAMETERS, perimeter_bars, splice_length, splice_length_report_line,
 )
+from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_report import (
     FLAG_PREFIX, build_report, outstanding_section, render, spacing_section,
+    tie_section,
+)
+from rft.core.column_ties import (
+    TieSubset, resolve_ties, tie_report_lines, validate,
 )
 from rft.core.column_spacing import (
     FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
@@ -41,7 +46,11 @@ def host_data(base_face_z=None, top_cover_set=False):
     }
 
 
-def report_text(mode=MODE_AUTO, manual=(None, None), data=None):
+VALID_SUBSETS = [TieSubset(0, 4), TieSubset(0, 5), TieSubset(1, 5)]
+
+
+def report_text(mode=MODE_AUTO, manual=(None, None), data=None,
+                findings=(), tie_lines=()):
     plan = spacing_plan(mode, HC, 450.0, 600.0, 15.9, 9.5,
                         manual_confinement_mm=manual[0],
                         manual_middle_zone_mm=manual[1])
@@ -51,7 +60,8 @@ def report_text(mode=MODE_AUTO, manual=(None, None), data=None):
     splice = splice_length(40, LS_MODE_DIAMETERS, 15.9)
     return render(build_report(
         data if data is not None else host_data(), bars, splice,
-        splice_length_report_line(splice, 15.9), "16M", 15.9, plan, ladder))
+        splice_length_report_line(splice, 15.9), "16M", 15.9, plan, ladder,
+        findings=findings, tie_lines=tie_lines))
 
 
 def test_cover_is_labelled_as_READ_never_as_an_input():
@@ -192,15 +202,50 @@ def test_the_report_says_its_positions_are_IDEALISED():
     assert "read back after placement" in text
 
 
-def test_the_report_names_the_topology_it_cannot_yet_state():
-    """A1/#89. A cross-tie appearing without explanation is exactly what
-    REUSE_GUIDELINES section 3 exists to prevent -- and so is a report
-    that stays silent about which bars would get one.
+def test_the_report_now_STATES_the_topology_it_once_could_not():
+    """A1/#89. This assertion is the inverse of the one it replaces: the
+    report used to say "not guessed here" because Q11 was open. Q11 is
+    answered, so the page states per tie what it is and which bars it
+    holds -- and must no longer carry the apology.
     """
-    text = report_text()
-    assert "LOOP vs CROSS-TIE" in text
-    assert "#89" in text and "Q11" in text
-    assert "Not guessed here." in text
+    lay = perimeter_bar_positions(450.0, 600.0, 40.0, 9.5, 15.9, 3, 4)
+    resolved = resolve_ties(VALID_SUBSETS, lay, 9.5, 15.9, 40.0)
+    text = report_text(findings=validate(lay, resolved),
+                       tie_lines=tie_report_lines(resolved))
+    # render() upper-cases every heading.
+    assert "TIES (SECTION 6.2)" in text
+    assert "Outer perimeter tie: closed loop" in text
+    assert "Not guessed here." not in text
+    assert "blocked on open question Q11" not in text
+    assert "STATED by the engineer, not derived" in text
+
+
+def test_a_refused_topology_is_FLAGGED_at_the_top_of_its_section():
+    """A topology section 6.1 refuses is the thing to read. Under a list
+    of tie geometry it gets skimmed past.
+    """
+    lay = perimeter_bar_positions(450.0, 600.0, 40.0, 9.5, 15.9, 3, 4)
+    bare = resolve_ties([], lay, 9.5, 15.9, 40.0)
+    section = tie_section(validate(lay, bare), tie_report_lines(bare))
+    assert section.lines[0].startswith(FLAG_PREFIX)
+    assert "EVERY bar to be restrained" in section.lines[0]
+
+
+def test_a_clean_topology_says_so_rather_than_saying_nothing():
+    lay = perimeter_bar_positions(450.0, 600.0, 40.0, 9.5, 15.9, 3, 4)
+    resolved = resolve_ties(VALID_SUBSETS, lay, 9.5, 15.9, 40.0)
+    section = tie_section(validate(lay, resolved), tie_report_lines(resolved))
+    assert "every requirement met" in section.lines[0]
+
+
+def test_a_cross_tie_reaches_the_page_WITH_its_reason():
+    lay = perimeter_bar_positions(450.0, 600.0, 40.0, 9.5, 15.9, 3, 4)
+    unbuildable = resolve_ties([], lay, 9.5, 15.9, 900.0)
+    section = tie_section(validate(lay, unbuildable),
+                          tie_report_lines(unbuildable))
+    joined = "\n".join(section.lines)
+    assert "cross-tie" in joined
+    assert "cannot be bent" in joined
 
 
 def test_the_outstanding_section_is_never_empty():
@@ -228,7 +273,10 @@ def test_the_report_recomputes_nothing():
     for node in ast.walk(ast.parse(io.open(path, encoding="utf-8").read())):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             imported |= set(alias.name for alias in node.names)
-    assert imported == {"namedtuple", "MODE_MANUAL"}, (
+    # SEVERITY_BLOCKING is a string constant used to choose a line
+    # prefix. Like MODE_MANUAL it decides WORDING, not a number -- which
+    # is the line this guard draws.
+    assert imported == {"namedtuple", "MODE_MANUAL", "SEVERITY_BLOCKING"}, (
         "the report imports something it could compute WITH: %s" % imported)
 
 
