@@ -64,16 +64,11 @@ from rft.core.column_inputs import (
     splice_length,
     splice_length_report_line,
 )
-from rft.core.column_layout import perimeter_bar_positions, tier_summary
+from rft.core.column_layout import tier_summary
+from rft.core.column_plan import (
+    MODE_AUTO, MODE_MANUAL, bar_plan, complete_plan, is_blocked,
+)
 from rft.core.column_report import build_report, render
-from rft.core.column_spacing import (
-    FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
-)
-from rft.core.column_ties import (
-    is_blocking, parse_tie_subsets, resolve_ties, tie_report_lines,
-    validate as validate_ties,
-)
-from rft.core.column_tie_levels import tie_levels
 from rft.revit.bar_types import (
     bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
     hook_angle_deg, hook_type_options, list_stirrup_hook_types,
@@ -202,6 +197,8 @@ class ColumnWindow(forms.WPFWindow):
         self.column_data = None
         self.bar_type_options = []
         self.hook_type_options = []
+        self.bars = None
+        self.plan = None
         self.longitudinal = None
         self.splice = None
         self.spacing = None
@@ -232,6 +229,8 @@ class ColumnWindow(forms.WPFWindow):
             getattr(self, name).IsEnabled = False
         self.main_bar_type_cb.IsEnabled = False
         self.tie_bar_type_cb.IsEnabled = False
+        self.bars = None
+        self.plan = None
         self.longitudinal = None
         self.splice = None
         self.spacing = None
@@ -497,15 +496,17 @@ class ColumnWindow(forms.WPFWindow):
             self.longitudinal_status_tb.Text = str(ex)
             return
 
+        # One composing call (#110). The window states the inputs and
+        # reads the plan back; it never builds the perimeter itself, so
+        # the sketch cannot draw a layout the report denies.
+        self.bars = bar_plan(
+            self.column_data, counts, splice, bar_diameter_mm,
+            self._selected_tie_diameter_mm(),
+            self._selected_bar_type_name(self.main_bar_type_cb),
+            self._selected_bar_type_name(self.tie_bar_type_cb))
         self.longitudinal = counts
         self.splice = splice
-        # Section 2's perimeter, built from the same counts the report
-        # states -- so the sketch cannot draw a layout the page denies.
-        section = self.column_data["section"]
-        self.layout = perimeter_bar_positions(
-            section.b_mm, section.h_mm, self.column_data["cover_mm"],
-            self._selected_tie_diameter_mm(), bar_diameter_mm,
-            counts.count_b_face, counts.count_h_face)
+        self.layout = self.bars.layout
         self.total_bars_tb.Text = "{}".format(counts.total_count)
         self.total_bars_source_tb.Text = (
             "2 x ({} + {}) - 4: the four corner bars are shared between "
@@ -527,8 +528,6 @@ class ColumnWindow(forms.WPFWindow):
                 "Apply the Longitudinal bars tab first -- a tie arrangement "
                 "is stated in bar indices, and there are no bars yet.")
             return
-        section = self.column_data["section"]
-        extent = self.column_data["extent"]
         mode = MODE_MANUAL if self.mode_b_rb.IsChecked else MODE_AUTO
         try:
             manual_confinement = manual_middle = None
@@ -538,49 +537,24 @@ class ColumnWindow(forms.WPFWindow):
                     "Confinement spacing")
                 manual_middle = parse_positive_float(
                     self.manual_middle_tb.Text, "Middle-zone spacing")
-            plan = spacing_plan(
-                mode,
-                clear_height_mm=extent.clear_height_mm,
-                narrow_mm=section.narrow_mm,
-                wide_mm=section.wide_mm,
-                smallest_long_bar_dia_mm=self._selected_bar_diameter_mm(),
-                tie_dia_mm=self._selected_tie_diameter_mm(),
+            # The second composing call (#110): spacing, the ladder built
+            # from the BUILT spacings, the stated topology and section
+            # 6.1's verdict, in one place and in one order.
+            self.plan = complete_plan(
+                self.bars, mode,
+                self._selected_tie_bend_diameter_mm(),
+                self.tie_subsets_tb.Text,
                 manual_confinement_mm=manual_confinement,
                 manual_middle_zone_mm=manual_middle)
         except ValueError as ex:
             self.ties_status_tb.Text = str(ex)
             return
 
-        try:
-            # Built from the plan's BUILT spacings, never the code
-            # limits: in Mode B those differ, and a ladder drawn from
-            # the maximums would list ties at positions nothing will
-            # occupy.
-            ladder = tie_levels(extent.clear_height_mm, plan.l0_mm,
-                                plan.confinement_spacing_mm,
-                                plan.middle_zone_spacing_mm,
-                                FIRST_TIE_OFFSET_MM)
-        except ValueError as ex:
-            self.ties_status_tb.Text = str(ex)
-            return
-
-        # Section 6.2's topology, as STATED. Resolved after the spacing
-        # so a parse error in the tie box does not throw away a valid
-        # spacing the engineer just entered.
-        try:
-            subsets = parse_tie_subsets(self.tie_subsets_tb.Text)
-            ties = resolve_ties(subsets, self.layout,
-                                self._selected_tie_diameter_mm(),
-                                self._selected_bar_diameter_mm(),
-                                self._selected_tie_bend_diameter_mm())
-        except ValueError as ex:
-            self.ties_status_tb.Text = str(ex)
-            return
-        findings = validate_ties(self.layout, ties)
-
+        plan = self.plan.spacing
+        findings = self.plan.findings
         self.spacing = plan
-        self.ladder = ladder
-        self.ties = ties
+        self.ladder = self.plan.ladder
+        self.ties = self.plan.ties
         self.tie_findings = findings
         self.tie_findings_tb.Text = "\n".join(f.message for f in findings)
         self.l0_tb.Text = "{:.0f} mm".format(plan.l0_mm)
@@ -605,9 +579,9 @@ class ColumnWindow(forms.WPFWindow):
             + ("" if not plan.flags else
                " {} value(s) exceed the code maximum and will be built as "
                "entered.".format(len(plan.flags)))
-            + ("" if not is_blocking(findings) else
+            + ("" if not is_blocked(self.plan) else
                "  Section 6.1 REFUSES this tie arrangement -- see below.")
-            + ("  No inner ties stated." if not subsets else ""))
+            + ("  No inner ties stated." if not self.plan.ties[1:] else ""))
 
     def on_build_report_click(self, sender, args):
         """Render the page. No Revit work -- every value is already read.
@@ -626,14 +600,13 @@ class ColumnWindow(forms.WPFWindow):
                 % "; ".join(missing))
             return
 
-        bar_type_name = self._selected_bar_type_name(self.main_bar_type_cb)
-        bar_diameter_mm = self._selected_bar_diameter_mm()
+        plan = self.plan
         self.report_tb.Text = render(build_report(
-            self.column_data, self.longitudinal, self.splice,
-            splice_length_report_line(self.splice, bar_diameter_mm),
-            bar_type_name, bar_diameter_mm, self.spacing, self.ladder,
-            findings=self.tie_findings,
-            tie_lines=tie_report_lines(self.ties) if self.ties else []))
+            plan.host, plan.counts, plan.splice,
+            splice_length_report_line(plan.splice, plan.bar_diameter_mm),
+            plan.bar_type_name, plan.bar_diameter_mm,
+            plan.spacing, plan.ladder,
+            findings=plan.findings, tie_lines=plan.tie_lines))
         self.review_status_tb.Text = (
             "Built from the same values the placer will use."
             + ("" if not self.spacing.flags else
@@ -664,11 +637,11 @@ class ColumnWindow(forms.WPFWindow):
         if self.column_data is None or self.layout is None:
             return
 
-        section = self.column_data["section"]
+        bars = self.bars
         self._render(self.section_canvas, cross_section_shapes(
-            section.b_mm, section.h_mm, self.column_data["cover_mm"],
-            self._selected_tie_diameter_mm(), self._selected_bar_diameter_mm(),
-            self.layout, self.ties or ()))
+            bars.section.b_mm, bars.section.h_mm, bars.cover_mm,
+            bars.tie_diameter_mm, bars.bar_diameter_mm,
+            bars.layout, self.ties or ()))
         self.sketch_captions_tb.Text = "\n".join(cross_section_captions(
             self.layout, tier_summary(self.layout), self.ties or ()))
 
