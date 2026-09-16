@@ -7,7 +7,9 @@ implementable user stories.
 
 **Source of truth:** `technical-material/beam/beam_rebar_detailing_spec_v2.docx`
 (revision 2). Amendment provenance: [`docs/beam/spec-amendments.md`](../docs/beam/spec-amendments.md).
-Standing rules: [`CONTEXT.md`](../CONTEXT.md).
+Standing rules: [`CONTEXT.md`](../CONTEXT.md) (repo-wide) and
+[`SimpleBeamRFT.extension/CONTEXT.md`](../SimpleBeamRFT.extension/CONTEXT.md)
+(this tool's own).
 
 Throughout, **"the engineer"** means the BIM/structural engineer running the
 tool inside Revit.
