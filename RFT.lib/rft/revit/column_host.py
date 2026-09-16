@@ -47,6 +47,7 @@ from ..core.column_host_rules import (
     rectangular_section_refusal,
     section_from_dimensions,
 )
+from .bar_types import element_name
 from .units import internal_to_mm
 
 #: The parameter names the supported family uses for its section. Named
@@ -208,7 +209,7 @@ def read_cover_mm(element):
         "read from the element and never typed (amendment A2), so there is "
         "nothing to detail against. Set a cover on the column and pick it "
         "again.")
-    return internal_to_mm(cover_type.CoverDistance), cover_type.Name
+    return internal_to_mm(cover_type.CoverDistance), element_name(cover_type)
 
 
 def read_top_face_cover_is_set(element):
@@ -395,7 +396,7 @@ def read_column(doc, element):
 
     return {
         "element_id": element.Id.IntegerValue,
-        "type_name": element.Symbol.Name,
+        "type_name": element_name(element.Symbol),
         "family_name": element.Symbol.Family.Name,
         "section": section,
         "hand": hand,

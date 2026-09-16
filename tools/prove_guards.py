@@ -68,6 +68,8 @@ TY = "tests/test_column_layout.py::"
 TK = "tests/test_column_sketch.py::"
 COL_TIES = "RFT.lib/rft/core/column_ties.py"
 TT = "tests/test_column_ties.py::"
+COL_HOST = "RFT.lib/rft/revit/column_host.py"
+TH = "tests/test_column_host_source.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -256,6 +258,27 @@ CASES = [
      '        if len(run) > 99]',
      TT + "test_the_alternate_tier_refuses_two_untied_bars_IN_A_ROW",
      "consecutive untied bars accepted as alternating"),
+
+    # ---- the rc1 live failure: ElementType hides Element.Name ----------
+    (COL_HOST, '    return internal_to_mm(cover_type.CoverDistance), element_name(cover_type)',
+     '    return internal_to_mm(cover_type.CoverDistance), cover_type.Name',
+     TH + "test_no_dot_Name_is_read_on_an_ElementType",
+     "RebarCoverType.Name read back -- AttributeError on the first click"),
+
+    (COL_HOST, '        "type_name": element_name(element.Symbol),',
+     '        "type_name": element.Symbol.Name,',
+     TH + "test_the_two_reads_that_broke_the_live_host_are_gone",
+     "FamilySymbol.Name read back -- the exact rc1 defect"),
+
+    (COL_HOST, '        "family_name": element.Symbol.Family.Name,',
+     '        "family_name": element_name(element.Symbol.Family),',
+     TH + "test_the_family_name_does_NOT_go_through_element_name",
+     "Family routed through element_name -- name degraded to a placeholder"),
+
+    (COL_HOST, 'from .bar_types import element_name',
+     'from .units import internal_to_mm as element_name',
+     TH + "test_element_name_is_imported_from_the_beam_s_verified_helper",
+     "the verified helper swapped for a local stand-in"),
 
     (COL_TIES, '            if upper - lower > MAX_TIE_BRANCH_SPACING_MM:',
      '            if False:',
