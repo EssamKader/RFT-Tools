@@ -280,6 +280,37 @@ CASES = [
      TH + "test_element_name_is_imported_from_the_beam_s_verified_helper",
      "the verified helper swapped for a local stand-in"),
 
+    # ---- rc2 live failure: Location.Point.Z is not the elevation -------
+    (COL_HOST, '                        probe_z)',
+     '                        point.Z + 4.0 * RAY_CLEARANCE_INTERNAL)',
+     TH + "test_no_ray_origin_is_built_from_Location_Point_Z",
+     "self-test ray back at the project base -- upper storey unseeable"),
+
+    (COL_HOST, '        origin = DB.XYZ(point.X, point.Y, max_z - inset)',
+     '        origin = DB.XYZ(point.X, point.Y, point.Z + inset)',
+     TH + "test_the_support_rays_start_inside_the_column_s_own_ends",
+     "upward search from the project base -- ground soffit as the top"),
+
+    (COL_HOST, '        origin = DB.XYZ(point.X, point.Y, min_z + inset)',
+     '        origin = DB.XYZ(point.X, point.Y, point.Z - inset)',
+     TH + "test_the_support_rays_start_inside_the_column_s_own_ends",
+     "downward search from the project base"),
+
+    (COL_HOST, '    probe_z = 0.5 * (min_z + max_z)',
+     '    probe_z = max_z',
+     TH + "test_the_view_self_test_fires_at_the_column_s_mid_height",
+     "self-test grazing the column's top face instead of its middle"),
+
+    (COL_HOST, '    return min(RAY_CLEARANCE_INTERNAL, span / 4.0)',
+     '    return RAY_CLEARANCE_INTERNAL',
+     TH + "test_a_short_column_cannot_invert_its_two_ray_origins",
+     "a short column's two ray origins silently inverted"),
+
+    (COL_HOST, '    box = element.get_BoundingBox(None)',
+     '    box = element.Location.Point',
+     TH + "test_the_vertical_extent_comes_from_the_bounding_box",
+     "the vertical extent taken from the insertion point again"),
+
     (COL_TIES, '            if upper - lower > MAX_TIE_BRANCH_SPACING_MM:',
      '            if False:',
      TT + "test_the_branch_spacing_limit_bites_on_a_bare_perimeter",
