@@ -67,9 +67,11 @@ COL_SKETCH_PAL = "RFT.lib/rft/ui/column_sketch_palette.py"
 TY = "tests/test_column_layout.py::"
 TK = "tests/test_column_sketch.py::"
 COL_TIES = "RFT.lib/rft/core/column_ties.py"
+COL_PLAN = "RFT.lib/rft/core/column_plan.py"
 TT = "tests/test_column_ties.py::"
 COL_HOST = "RFT.lib/rft/revit/column_host.py"
 TH = "tests/test_column_host_source.py::"
+TPL = "tests/test_column_plan.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -280,6 +282,37 @@ CASES = [
      TH + "test_element_name_is_imported_from_the_beam_s_verified_helper",
      "the verified helper swapped for a local stand-in"),
 
+    # ---- #110: the window composes nothing -----------------------
+    (COL_SCRIPT, 'from rft.core.column_plan import (',
+     'from rft.core.column_spacing import spacing_plan\nfrom rft.core.column_plan import (',
+     TC + "test_the_window_reaches_for_the_PLAN_not_the_modules_under_it",
+     "the window calling a composed module directly again"),
+
+    (COL_SCRIPT, 'from rft.core.column_layout import tier_summary',
+     'from rft.core.column_layout import tier_summary, perimeter_bar_positions',
+     TC + "test_the_only_thing_taken_from_column_layout_is_WORDING",
+     "the wording exception widened back into a decision"),
+
+    (COL_SCRIPT, '            + ("" if not is_blocked(self.plan) else',
+     '            + ("" if not self.plan.findings else',
+     TC + "test_section_6_1_s_verdict_has_ONE_reader_in_the_window",
+     "the window re-applying section 6.1's test for itself"),
+
+    (COL_PLAN, '                        ladder_inputs.confinement_spacing_mm,',
+     '                        ladder_inputs.s0_mm,',
+     TPL + "test_the_tie_ladder_is_built_from_the_BUILT_spacings",
+     "the ladder following the code limit, not what will be built"),
+
+    (COL_PLAN, '        findings=validate(bars.layout, ties),',
+     '        findings=(),',
+     TPL + "test_the_findings_belong_to_the_ties_the_plan_CARRIES",
+     "a plan carrying ties nobody judged"),
+
+    (COL_PLAN, '        tie_lines=tie_report_lines(ties),',
+     '        tie_lines=(),',
+     TPL + "test_the_plan_carries_the_tie_LINES_the_report_prints",
+     "the report's tie section emptied at the source"),
+
     # ---- rc2 live failure: Location.Point.Z is not the elevation -------
     (COL_HOST, '                        probe_z)',
      '                        point.Z + 4.0 * RAY_CLEARANCE_INTERNAL)',
@@ -411,11 +444,6 @@ CASES = [
      '% _mm(plan.s0_mm))',
      TP + "test_the_spacing_section_reads_the_built_values_not_the_limits",
      "the report showing a code limit where the built value belongs"),
-
-    (COL_SCRIPT, '                                plan.confinement_spacing_mm,',
-     '                                plan.s0_mm,',
-     TC + "test_the_tie_ladder_is_built_from_the_BUILT_spacings",
-     "the ladder drawn from code limits instead of built spacings"),
 
     # ---- #88: the inputs ----------------------------------------
 

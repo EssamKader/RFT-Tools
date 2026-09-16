@@ -604,22 +604,6 @@ def test_the_corner_sharing_convention_is_stated_in_the_WINDOW():
 # #91 -- the Review report
 
 
-def test_the_tie_ladder_is_built_from_the_BUILT_spacings():
-    """Not from s0_mm and the middle-zone maximum, which are the CODE
-    LIMITS. In Mode B they differ, and a ladder drawn from the maximums
-    lists ties at positions nothing will occupy -- on the page an engineer
-    reads to decide whether to place.
-    """
-    called, _literals = _code_of("on_apply_ties_click")
-    assert "tie_levels" in called, "the ladder is never built"
-    body = re.search(r"ladder = tie_levels\((.*?)\)", _script(),
-                     re.DOTALL).group(1)
-    assert "confinement_spacing_mm" in body and "middle_zone_spacing_mm" in body
-    assert "s0_mm" not in body, (
-        "the ladder must follow what will be built, not the code limit")
-    assert "middle_zone_max_mm" not in body
-
-
 def test_the_report_refuses_to_render_a_PARTIAL_page():
     """A page with missing sections is still read as the page, and this
     one's whole purpose is being trusted before Place. It names what is
@@ -715,20 +699,6 @@ def test_the_two_canvases_are_separate():
 # #89 -- the tie topology control
 
 
-def test_the_topology_is_ENTERED_never_derived():
-    """R4 and R17. The tool validates what the engineer states; it does
-    not pick a covering. Section 6.1 admits many valid ones and the spec
-    has no rule to choose between them, so deriving would mean inventing
-    the rule.
-    """
-    called, _literals = _code_of("on_apply_ties_click")
-    assert "parse_tie_subsets" in called, "the stated subsets are never read"
-    assert "validate_ties" in called, "the stated subsets are never validated"
-    for forbidden in ("derive_ties", "suggest_ties", "auto_ties"):
-        assert forbidden not in _script(), (
-            "%s would be the tool choosing a covering" % forbidden)
-
-
 def test_the_bend_diameter_is_READ_from_the_bar_type():
     """A1. The live model's 10M reads 40.00 mm against a 9.50 mm bar and
     its 19M reads 115.00 against 19.10 -- 4.2x against 6.0x. A constant
@@ -790,20 +760,78 @@ def test_the_ties_tab_refuses_before_the_bars_exist():
     assert "Longitudinal bars tab first" in body
 
 
-def test_a_tie_parse_error_does_not_discard_the_spacing():
-    """The spacing is resolved before the topology, so a typo in the tie
-    box does not throw away numbers the engineer just entered.
-    """
-    body = re.search(r"def on_apply_ties_click\(.*?\n(.*?)\n    # ---",
-                     _script(), re.DOTALL).group(1)
-    assert body.index("spacing_plan") < body.index("parse_tie_subsets")
+# --------------------------------------------------------------------- #
+# #110 -- the window composes nothing
 
 
-def test_the_report_and_the_sketch_get_the_SAME_resolved_ties():
-    """One resolution, two consumers. Resolving twice is how the page and
-    the picture come to disagree about which tie is a cross-tie.
+#: The modules whose results the window must take from the plan rather
+#: than compute for itself. Each one decides a detailing value; a second
+#: call site for any of them is a second answer waiting to diverge.
+COMPOSED_BY_THE_PLAN = (
+    "column_layout",
+    "column_spacing",
+    "column_tie_levels",
+    "column_ties",
+)
+
+
+def test_the_window_reaches_for_the_PLAN_not_the_modules_under_it():
+    """#110's whole point, and the beam tool's costliest defect stated as
+    a rule.
+
+    ``ZONE_LAYOUT_FLAGS`` drifted between the report and the placer
+    because each independently called the same underlying logic. The
+    repair was one composing object -- written after both consumers
+    existed, which is the expensive way round. The column has one consumer
+    and no placer yet, so the rule is enforced here while it still costs
+    nothing.
+
+    Four assertions that used to live in this file now run for real in
+    ``tests/test_column_plan.py``: the composition moved, and being pure
+    it can be executed rather than grepped.
     """
     script = _script()
-    assert script.count("resolve_ties(") == 1, (
-        "the ties must be resolved once and shared")
-    assert "self.ties" in script
+    offenders = [name for name in COMPOSED_BY_THE_PLAN
+                 if ("from rft.core.%s import" % name) in script]
+    assert offenders == ["column_layout"], (
+        "script.py imports %s directly. Those decisions belong to "
+        "rft.core.column_plan, which composes them once; a second call "
+        "site is a second answer waiting to disagree with the report. "
+        "(column_layout is allowed for tier_summary alone, which is "
+        "wording, not a decision.)" % ", ".join(offenders))
+
+
+def test_the_only_thing_taken_from_column_layout_is_WORDING():
+    """The one permitted exception, kept narrow. ``tier_summary`` turns a
+    layout the plan already built into a sentence; it decides nothing. If
+    anything else is imported from that module the exception has widened
+    into the hole it was carved out of.
+    """
+    line = re.search(r"from rft\.core\.column_layout import ([^\n]+)",
+                     _script())
+    assert line is not None
+    imported = [name.strip() for name in line.group(1).split(",")]
+    assert imported == ["tier_summary"], (
+        "only tier_summary may come from column_layout; %s decide things "
+        "the plan has already decided" % imported)
+
+
+def test_the_window_builds_the_plan_in_its_two_Apply_handlers():
+    """The rule needs a positive half: forbidding the four modules is
+    satisfied by a window that computes nothing at all."""
+    longitudinal, _ = _code_of("on_apply_longitudinal_click")
+    ties, _ = _code_of("on_apply_ties_click")
+    assert "bar_plan" in longitudinal, "the perimeter is never composed"
+    assert "complete_plan" in ties, "the ties are never composed"
+
+
+def test_section_6_1_s_verdict_has_ONE_reader_in_the_window():
+    """``is_blocked(plan)`` rather than the window applying its own test
+    to ``findings``. The placer's gate and the report's wording must
+    agree, and the cheapest guarantee is leaving them nothing to disagree
+    with.
+    """
+    script = _script()
+    assert "is_blocked(" in script
+    assert "is_blocking(" not in script, (
+        "the window must ask the plan, not re-apply the test itself")
