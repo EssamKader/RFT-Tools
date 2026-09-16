@@ -56,6 +56,7 @@ RFT-Tools/
 ├── specs/                            WHAT each tool must do
 │   ├── beam-rft-detailing.md
 │   ├── column-rft-detailing.md
+│   ├── column-roof-termination.md    addendum — locked, citations open
 │   └── ui-single-window.md
 │
 ├── docs/

@@ -44,6 +44,12 @@ blocker** — do not hold up implementation waiting for it.
   it as a ticket first; the spec explicitly defers this until after the tracer
   bullet (§11) proves the underlying API mechanics. *(The tracer bullet is now
   done — this decision is live and open.)*
+- **Roof / top-storey termination** — the rules are written and LOCKED in
+  [`specs/column-roof-termination.md`](../specs/column-roof-termination.md),
+  but its §7 citations are OPEN, so it is **blocked from implementation**
+  (#77). It also names its own prerequisite: interactive face picking
+  (`PickObjects`) is a different API surface from #69's passive reads and
+  needs its own tracer bullet on a live host first.
 - **§12 citation granularity** — open, non-blocking. Sub-clause numbers may be
   added later without a spec amendment cycle.
 

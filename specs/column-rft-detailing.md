@@ -256,6 +256,13 @@ after the fact.
 
 ## 9. Splice location — constructability override (C4, named exception)
 
+> **This section assumes a storey above to splice into.** A roof / top-storey
+> column has none, and its top termination is governed instead by
+> [`specs/column-roof-termination.md`](column-roof-termination.md) — whose
+> rules are locked but whose citations are OPEN, so it must not be
+> implemented yet (#77). Until then the tool must **refuse** a top-storey
+> column rather than protrude `L_s` out of the roof slab.
+
 **Constructability Override (Exception to Seismic Clause):** Despite the `L₀`
 confinement zone being a critical seismic region, lap splices shall deliberately
 start at the top face of the support (falling entirely within the lower `L₀` zone
