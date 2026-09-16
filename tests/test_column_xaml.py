@@ -759,14 +759,25 @@ def test_a_refused_topology_is_shown_and_does_not_look_like_a_flag():
 
 
 def test_the_tie_box_says_how_bars_are_NUMBERED():
-    """A subset is "bar 8, six bars". Without knowing where bar 0 is and
-    which way the numbering runs, that is not an instruction anyone can
-    follow -- and the answer is on a different tab.
+    """A tie is "bars 1 and 6". Without knowing where bar 0 is and which
+    way the numbering runs, that is not an instruction anyone can follow
+    -- and the answer is on a different tab.
     """
     text = read(COLUMN_XAML_PATH)
-    assert "first bar index" in text
+    assert "the bar numbers it touches" in text
     assert "anticlockwise from the bottom-left corner" in text
     assert "Sketch tab" in text
+
+
+def test_the_tie_box_shows_BOTH_kinds_of_tie():
+    """R19's whole point. A user who reads only "bar numbers" will write
+    runs, because that is what the old notation allowed and what every
+    example showed; the cross-tie has to be named as an example or it
+    stays invisible.
+    """
+    text = read(COLUMN_XAML_PATH)
+    assert "cross-tie (1 6)" in text
+    assert "closed loop (0 1 2 3)" in text
 
 
 def test_the_ties_tab_refuses_before_the_bars_exist():

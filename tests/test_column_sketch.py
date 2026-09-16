@@ -35,7 +35,8 @@ def layout(count_b=3, count_h=4):
 
 
 #: One of the many valid coverings of the live layout.
-VALID_SUBSETS = [TieSubset(0, 4), TieSubset(0, 5), TieSubset(1, 5)]
+VALID_SUBSETS = [TieSubset((0, 1, 2, 3)), TieSubset((0, 1, 2, 3, 4)),
+                 TieSubset((1, 2, 3, 4, 5))]
 
 BEND = 40.0   # 10M StirrupTieBendDiameter, measured live
 
