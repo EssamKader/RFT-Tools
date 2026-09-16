@@ -316,10 +316,27 @@ CASES = [
      TT + "test_the_branch_spacing_limit_bites_on_a_bare_perimeter",
      "the 300 mm tie-branch limit never checked"),
 
-    (COL_TIES, '    return [(subset.start_index + offset) % bar_count',
-     '    return [(subset.start_index + offset)',
-     TT + "test_a_subset_wraps_around_the_perimeter",
-     "a subset that cannot cross bar 0 (one face unexpressible)"),
+    # ---- R19: a tie is the bars it touches, not a run ------------
+    (COL_TIES, '    if len(set(indices)) != len(indices):',
+     '    if False:',
+     TT + "test_a_repeated_bar_is_refused_rather_than_absorbed",
+     "a bar named twice absorbed silently by the bounding box"),
+
+    (COL_TIES, '        if len(parts) < 2:',
+     '        if len(parts) < 99:',
+     TT + "test_a_cross_tie_line_is_two_bar_numbers",
+     "every tie line rejected, so no topology can be stated"),
+
+    # ---- R20: a cross-tie is a leg -------------------------------
+    (COL_TIES, '                if half <= other_half:',
+     '                if False:',
+     TT + "test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule",
+     "cross-ties ignored again -- only nested loops can satisfy 300 mm"),
+
+    (COL_TIES, '                other_half = tie.half_v_mm if axis == 0 else tie.half_u_mm',
+     '                other_half = half',
+     TT + "test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS",
+     "a cross-tie counted on BOTH axes -- a branch no steel provides"),
 
     # ---- #90: the perimeter model and the sketch ----------------
 

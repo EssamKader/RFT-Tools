@@ -405,7 +405,7 @@
                              it has no catalogue to maintain; a control with its
                              own hidden state would put one back. -->
                         <TextBlock Style="{StaticResource ReadOutSource}"
-                                   Text="One tie per line: the first bar index, then how many bars it encloses. The outer perimeter tie is implied and never typed. Bars are numbered anticlockwise from the bottom-left corner - see the Sketch tab."/>
+                                   Text="One tie per line: the bar numbers it touches. Two opposite bars make a cross-tie (1 6); three or more make a closed loop (0 1 2 3). The outer perimeter tie is implied and never typed. Bars are numbered anticlockwise from the bottom-left corner - see the Sketch tab."/>
                         <TextBox x:Name="tie_subsets_tb"
                                  Height="86" Margin="0,6,0,0"
                                  AcceptsReturn="True"

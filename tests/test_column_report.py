@@ -46,7 +46,8 @@ def host_data(base_face_z=None, top_cover_set=False):
     }
 
 
-VALID_SUBSETS = [TieSubset(0, 4), TieSubset(0, 5), TieSubset(1, 5)]
+VALID_SUBSETS = [TieSubset((0, 1, 2, 3)), TieSubset((0, 1, 2, 3, 4)),
+                 TieSubset((1, 2, 3, 4, 5))]
 
 
 def report_text(mode=MODE_AUTO, manual=(None, None), data=None,

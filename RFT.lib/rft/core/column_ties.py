@@ -61,7 +61,21 @@ KIND_CROSS_TIE = "cross-tie"
 #: millimetres apart, so this only has to survive float arithmetic.
 COINCIDENT_TOL_MM = 1.0e-6
 
-TieSubset = namedtuple("TieSubset", "start_index count")
+#: A tie, as the bars it touches. R19 (supersedes R17's "start + count").
+#:
+#: R17 was right that the engineer states the topology and the tool never
+#: derives it. It was wrong about the alphabet. "Start plus count" can only
+#: name a CONTIGUOUS run of the perimeter, and the commonest inner tie of
+#: all -- a cross-tie from one mid-face bar straight across to the one
+#: opposite -- is not contiguous. On the live 450x600 column, bars 1 and 6
+#: face each other across the width; every cross-tie the old notation could
+#: express joined bars ADJACENT on the same face, 25.4 mm apart, which is
+#: not a detail anybody draws.
+#:
+#: A plain list of bar numbers says everything the old form said (a run is
+#: just a list) and says the thing it could not. Order is kept as typed:
+#: for a cross-tie the first and last entries are its two ends.
+TieSubset = namedtuple("TieSubset", "indices")
 
 #: A subset resolved into geometry and judged. ``half_u``/``half_v`` are
 #: the CENTRELINE half-dimensions -- what ``CreateFromCurves`` takes.
@@ -79,23 +93,42 @@ SEVERITY_BLOCKING = "blocking"
 SEVERITY_WARNING = "warning"
 
 
+def describe_subset(subset):
+    """A subset in the words the user typed, for a message."""
+    return " ".join(str(i) for i in subset.indices)
+
+
 def subset_indices(subset, bar_count):
-    """The bar indices a subset encloses, wrapping around the perimeter."""
-    if subset.count < 2:
+    """The bar indices a tie touches, validated.
+
+    No wrapping arithmetic any more: the list IS the answer. What remains
+    is checking it, and every check below is a mistake that is easy to make
+    by typing and impossible to see in the result.
+    """
+    indices = list(subset.indices)
+    if len(indices) < 2:
         raise ValueError(
-            "A tie must enclose at least 2 bars -- subset starting at bar %d "
-            "encloses %d. A one-bar tie has no rectangle."
-            % (subset.start_index, subset.count))
-    if subset.count > bar_count:
+            "A tie must touch at least 2 bars -- %r names %d. A one-bar tie "
+            "has no geometry."
+            % (describe_subset(subset), len(indices)))
+    if len(indices) > bar_count:
         raise ValueError(
-            "A tie cannot enclose %d bars: the perimeter has %d."
-            % (subset.count, bar_count))
-    if not (0 <= subset.start_index < bar_count):
+            "A tie cannot touch %d bars: the perimeter has %d."
+            % (len(indices), bar_count))
+    for index in indices:
+        if not (0 <= index < bar_count):
+            raise ValueError(
+                "Bar index %d is outside the perimeter's 0..%d."
+                % (index, bar_count - 1))
+    if len(set(indices)) != len(indices):
+        repeated = sorted(set(i for i in indices if indices.count(i) > 1))
         raise ValueError(
-            "Bar index %d is outside the perimeter's 0..%d."
-            % (subset.start_index, bar_count - 1))
-    return [(subset.start_index + offset) % bar_count
-            for offset in range(subset.count)]
+            "%r names bar %s twice. A tie touches each bar once; a repeat "
+            "is a typo that would otherwise pass silently, because a "
+            "bounding box does not care how often a corner is named."
+            % (describe_subset(subset),
+               ", ".join(str(i) for i in repeated)))
+    return indices
 
 
 def outer_perimeter_subset(bar_count):
@@ -103,7 +136,7 @@ def outer_perimeter_subset(bar_count):
     user: every column has one, and asking for it would be asking the
     engineer to state the obvious before they can state anything else.
     """
-    return TieSubset(start_index=0, count=bar_count)
+    return TieSubset(indices=tuple(range(bar_count)))
 
 
 def minimum_buildable_narrow_mm(bend_diameter_mm, tie_dia_mm):
@@ -272,8 +305,8 @@ def validate(layout, ties):
     for tie in ties:
         if tie.kind == KIND_CROSS_TIE:
             findings.append(Finding(SEVERITY_WARNING,
-                "Tie starting at bar %d is a CROSS-TIE: %s"
-                % (tie.subset.start_index, tie.reason)))
+                "Tie %s is a CROSS-TIE: %s"
+                % (describe_subset(tie.subset), tie.reason)))
     return findings
 
 
@@ -289,10 +322,24 @@ def _branch_spacing_findings(layout, ties):
     for axis, label in ((0, "vertical legs (u)"), (1, "horizontal legs (v)")):
         coords = set()
         for tie in ties:
-            if tie.kind == KIND_CROSS_TIE:
-                continue
             centre = tie.centre_u_mm if axis == 0 else tie.centre_v_mm
             half = tie.half_u_mm if axis == 0 else tie.half_v_mm
+            if tie.kind == KIND_CROSS_TIE:
+                # R20. A cross-tie is a single bar, not a rectangle, so it
+                # contributes ONE coordinate rather than two -- and only on
+                # the axis it is thin across. The cross-tie from bar 1 to
+                # bar 6 runs the full height at u = 0: that is a vertical
+                # leg at u = 0, and nothing at all horizontally.
+                #
+                # Skipping cross-ties entirely (the behaviour until this
+                # ticket) meant the 300 mm rule could only ever be met by
+                # NESTED CLOSED LOOPS, so the tool pushed the engineer away
+                # from the detail they would actually draw toward heavier
+                # ones. Found by detailing a real column with it.
+                other_half = tie.half_v_mm if axis == 0 else tie.half_u_mm
+                if half <= other_half:
+                    coords.add(round(centre, 6))
+                continue
             coords.add(round(centre - half, 6))
             coords.add(round(centre + half, 6))
         ordered = sorted(coords)
@@ -319,7 +366,7 @@ def tie_report_lines(ties):
     lines = []
     for position, tie in enumerate(ties):
         label = "Outer perimeter tie" if position == 0 else (
-            "Tie from bar %d" % tie.subset.start_index)
+            "Tie %s" % describe_subset(tie.subset))
         lines.append(
             "%s: %s, encloses %d bars (%s), restrains %s. Narrow dimension "
             "%.1f mm against a %.1f mm minimum."
@@ -335,9 +382,11 @@ def tie_report_lines(ties):
 def parse_tie_subsets(text):
     """Subsets from the text the engineer types, one tie per line.
 
-    ``"8 6"`` or ``"8,6"`` -- an initial bar index and a count, in §6.2's
-    own words. Blank lines and ``#`` comments are ignored, so a topology
-    can be annotated and pasted between columns.
+    ``"1 6"`` or ``"1,6"`` -- the bar numbers the tie touches (R19).
+    ``"1 6"`` is a cross-tie from bar 1 straight across to bar 6;
+    ``"0 1 2 3"`` is a loop around those four. Blank lines and ``#``
+    comments are ignored, so a topology can be annotated and pasted
+    between columns.
 
     A TEXT control rather than a list widget with add/remove buttons: the
     whole topology is visible and editable at once, it copies between
@@ -354,20 +403,22 @@ def parse_tie_subsets(text):
         if not line:
             continue
         parts = [p for p in line.replace(",", " ").split() if p]
-        if len(parts) != 2:
+        if len(parts) < 2:
             raise ValueError(
-                "Line %d (%r): a tie is TWO numbers -- the first bar index "
-                "and how many bars it encloses, e.g. '8 6'." % (number, raw.strip()))
+                "Line %d (%r): a tie is the bar numbers it touches, at "
+                "least two -- '1 6' is a cross-tie from bar 1 to bar 6, "
+                "'0 1 2 3' is a loop around those four."
+                % (number, raw.strip()))
         try:
-            start, count = int(parts[0]), int(parts[1])
+            indices = tuple(int(p) for p in parts)
         except ValueError:
             raise ValueError(
-                "Line %d (%r): both values must be whole numbers."
+                "Line %d (%r): every value must be a whole bar number."
                 % (number, raw.strip()))
-        subsets.append(TieSubset(start_index=start, count=count))
+        subsets.append(TieSubset(indices=indices))
     return subsets
 
 
 def format_tie_subsets(subsets):
     """The inverse, for restoring what was typed."""
-    return "\n".join("%d %d" % (s.start_index, s.count) for s in subsets)
+    return "\n".join(describe_subset(s) for s in subsets)

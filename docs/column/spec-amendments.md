@@ -206,3 +206,76 @@ read-back lands.
 as-built positions (R15), so a re-validation on read-back positions is a
 report-time check, not a gate. If it ever disagrees with the pre-placement
 result, it will disagree by being *less* demanding.
+
+---
+
+## R19 — A tie is the bars it touches, not a run of them
+
+**Supersedes R17's notation. R17's *principle* stands unchanged:** the
+engineer states the topology and the tool never derives one (R4). What
+changes is the alphabet R17 chose to state it in.
+
+**Decided:** a tie is written as the **bar numbers it touches**, one tie per
+line. `1 6` is a cross-tie from bar 1 straight across to bar 6; `0 1 2 3` is
+a closed loop around those four. The outer perimeter tie stays implied and is
+never typed.
+
+**Why R17's "start index + count" had to go.** It can only name a
+**contiguous run** of the perimeter, and the commonest inner tie in practice
+— a cross-tie from one mid-face bar to the one opposite — is not contiguous.
+Found by detailing the live 450 × 600 column: bars 1 and 6 face each other
+across the width, and every cross-tie the old notation could express joined
+bars **adjacent on the same face**, 25.4 mm apart, which is not a detail
+anybody draws. Asked for the conventional three cross-ties, the tool instead
+offered three overlapping closed loops.
+
+The evidence was already in the repository, asserting the opposite of its own
+name: `test_a_two_bar_subset_across_a_face_becomes_a_CROSS_TIE` asserted
+`KIND_CLOSED_LOOP`, twice, because `TieSubset(1, 6)` meant *the run 1..6*.
+The test documented the gap and nobody read it that way.
+
+**Nothing downstream changed.** The bounding box, A1's bend test, the corner
+scan and §6.1's tiers only ever saw a list of bar indices; the contiguous
+assumption lived in `subset_indices` alone. A list is strictly more
+expressive — a run is just a list — so no topology expressible before is
+lost.
+
+**One new failure mode, guarded:** a free-form list can name the same bar
+twice. `1 6 1` would resolve to the same tie as `1 6`, because a bounding box
+does not care how often a corner is named. It is refused, naming the repeated
+bar: a typo that produces a plausible result is worse than one that produces
+none.
+
+---
+
+## R20 — A cross-tie counts as a leg for §6.1's 300 mm branch limit
+
+**Decided by the owner**, after the live column showed what the previous
+behaviour cost.
+
+**The behaviour until now:** `_branch_spacing_findings` skipped cross-ties
+entirely. Only closed-loop legs counted toward the 300 mm maximum between
+branches.
+
+**Why that was wrong.** A cross-tie from bar 1 to bar 6 is a single bar
+running the full height of the section at `u = 0`. As a branch restraining
+the core, that **is** a vertical leg. Skipping it meant the 300 mm rule could
+only ever be satisfied by **nested closed loops**, so the tool steered the
+engineer away from the detail they would actually draw and toward a heavier
+one — extra steel in every column, produced by a validator's blind spot
+rather than by the code.
+
+**The rule as implemented:** a cross-tie contributes **one** coordinate, not
+two, and **only on the axis it is thin across**. Bar 1 → bar 6 is a vertical
+leg at `u = 0` and contributes nothing horizontally. Counting it on both axes
+would invent a horizontal branch that no steel provides, which is the unsafe
+direction and is separately guarded.
+
+**On the live column**, the conventional detail now passes:
+
+```
+ties: 1 6 | 9 3 | 8 4        all three resolve as CROSS-TIE
+u legs:  -180.25, 0, +180.25             -> 180, 180          (was 360)
+v legs:  -255.25, -80.8, +80.9, +255.25  -> 174, 162, 174     (was 510)
+all 10 bars restrained                    BLOCKING: none
+```

@@ -19,7 +19,9 @@ from rft.core.column_ties import (
     SEVERITY_BLOCKING,
     SEVERITY_WARNING,
     TieSubset,
+    format_tie_subsets,
     is_blocking,
+    parse_tie_subsets,
     minimum_buildable_narrow_mm,
     outer_perimeter_subset,
     resolve_tie,
@@ -34,8 +36,17 @@ B, H, COVER, TIE, BAR = 450.0, 600.0, 40.0, 9.5, 15.9
 BEND = 40.0        # 10M StirrupTieBendDiameter, measured live
 MIN_NARROW = 49.5  # BEND + TIE
 
+def run(start, count, bar_count=10):
+    """A CONTIGUOUS run of bars, the only thing the pre-R19 notation could
+    say. Kept as a helper because runs are still perfectly valid ties --
+    R19 widened the alphabet, it did not narrow it.
+    """
+    return TieSubset(tuple((start + offset) % bar_count
+                           for offset in range(count)))
+
+
 #: One of the 420 valid coverings of the live layout (see the test below).
-VALID = [TieSubset(0, 4), TieSubset(0, 5), TieSubset(1, 5)]
+VALID = [run(0, 4), run(0, 5), run(1, 5)]
 
 
 def layout(count_b=3, count_h=4):
@@ -55,26 +66,42 @@ def test_a_subset_wraps_around_the_perimeter():
     perimeter is a ring; a subset that could not cross index 0 would make
     three of the four faces expressible and one not.
     """
-    assert subset_indices(TieSubset(8, 4), 10) == [8, 9, 0, 1]
+    assert subset_indices(TieSubset((8, 9, 0, 1)), 10) == [8, 9, 0, 1]
 
 
 def test_the_outer_tie_is_implied_not_entered():
     """Every column has one. Asking the engineer to state it would be
     asking them to state the obvious before they can state anything.
     """
-    assert outer_perimeter_subset(10) == TieSubset(0, 10)
+    assert outer_perimeter_subset(10) == TieSubset(tuple(range(10)))
     resolved = ties([])
     assert len(resolved) == 1
     assert resolved[0].enclosed_indices == list(range(10))
 
 
 @pytest.mark.parametrize("subset", [
-    TieSubset(0, 1), TieSubset(0, 0), TieSubset(0, 11), TieSubset(10, 2),
-    TieSubset(-1, 2),
+    TieSubset((0,)),                       # one bar has no geometry
+    TieSubset(()),                         # no bars at all
+    TieSubset(tuple(range(11))),           # more bars than the perimeter has
+    TieSubset((10, 2)),                    # index past the last bar
+    TieSubset((-1, 2)),                    # negative index
+    TieSubset((1, 6, 1)),                  # bar named twice (R19 only)
 ])
 def test_an_impossible_subset_is_refused(subset):
     with pytest.raises(ValueError):
         subset_indices(subset, 10)
+
+
+def test_a_repeated_bar_is_refused_rather_than_absorbed():
+    """New with R19, and the one mistake a free-form list makes possible.
+
+    A bounding box does not care how often a corner is named, so ``1 6 1``
+    would silently resolve to the same tie as ``1 6`` -- a typo that
+    produces a plausible result is worse than one that produces none.
+    """
+    with pytest.raises(ValueError) as caught:
+        subset_indices(TieSubset((1, 6, 1)), 10)
+    assert "twice" in str(caught.value)
 
 
 # --------------------------------------------------------------------- #
@@ -82,24 +109,37 @@ def test_an_impossible_subset_is_refused(subset):
 
 
 def test_a_wide_subset_is_a_CLOSED_LOOP():
-    tie = resolve_tie(TieSubset(0, 10), layout(), TIE, BAR, BEND)
+    tie = resolve_tie(run(0, 10), layout(), TIE, BAR, BEND)
     assert tie.kind == KIND_CLOSED_LOOP
     assert tie.reason == ""
     assert tie.min_buildable_mm == pytest.approx(MIN_NARROW)
 
 
-def test_a_two_bar_subset_across_a_face_becomes_a_CROSS_TIE():
-    """A1's only permitted trigger. Two bars on opposite faces produce a
-    rectangle about 25 mm wide, which no bar can bend to -- and Revit
-    refuses it with a MODAL DIALOG that blocks the session, not a
-    catchable exception. That is why the test runs here.
+def test_two_OPPOSITE_bars_are_a_CROSS_TIE():
+    """A1's only permitted trigger, and the detail R19 exists to allow.
+
+    Bars 1 and 6 are the two mid-face bars, directly opposite across the
+    450 mm width. Naming just those two gives a rectangle about 25 mm
+    wide, which no bar can bend to -- and Revit refuses it with a MODAL
+    DIALOG that blocks the session, not a catchable exception.
+
+    Before R19 this test could not be written. ``TieSubset(1, 6)`` meant
+    the contiguous RUN 1..6, which spans the section and is a wide closed
+    loop; the version of this test that shipped with #89 asserted
+    ``KIND_CLOSED_LOOP`` under a name promising a cross-tie, because the
+    notation could not express the thing the name described.
     """
-    # bars 1 and 6 are the two mid-face bars, directly opposite.
-    tie = resolve_tie(TieSubset(1, 6), layout(), TIE, BAR, BEND)
-    assert tie.kind == KIND_CLOSED_LOOP  # 1..6 spans the section: wide
-    # 6 and 1 the short way round is the same two bars with nothing between
-    narrow_tie = resolve_tie(TieSubset(6, 6), layout(), TIE, BAR, BEND)
-    assert narrow_tie.kind == KIND_CLOSED_LOOP
+    tie = resolve_tie(TieSubset((1, 6)), layout(), TIE, BAR, BEND)
+    assert tie.kind == KIND_CROSS_TIE
+    assert tie.restrained_indices == [1, 6]
+    assert tie.narrow_mm < MIN_NARROW
+
+
+def test_the_same_two_bars_as_a_RUN_are_still_a_closed_loop():
+    """The old reading, which is still a legitimate (heavier) tie: the run
+    1,2,3,4,5,6 encloses six bars and is wide."""
+    tie = resolve_tie(run(1, 6), layout(), TIE, BAR, BEND)
+    assert tie.kind == KIND_CLOSED_LOOP
 
 
 def test_the_narrow_case_is_decided_by_the_MEASURED_bend_diameter():
@@ -109,7 +149,7 @@ def test_the_narrow_case_is_decided_by_the_MEASURED_bend_diameter():
     lay = layout()
     # Force the narrow case: a huge bend diameter makes every loop
     # unbuildable, which is the same arithmetic from the other side.
-    tie = resolve_tie(TieSubset(0, 10), lay, TIE, BAR, bend_diameter_mm=900.0)
+    tie = resolve_tie(run(0, 10), lay, TIE, BAR, bend_diameter_mm=900.0)
     assert tie.kind == KIND_CROSS_TIE
     assert "cannot be bent" in tie.reason
     assert "modal dialog" in tie.reason
@@ -119,7 +159,7 @@ def test_a_cross_tie_always_carries_its_REASON():
     """A cross-tie appearing without explanation is exactly what
     REUSE_GUIDELINES section 3 exists to prevent.
     """
-    tie = resolve_tie(TieSubset(0, 10), layout(), TIE, BAR, 900.0)
+    tie = resolve_tie(run(0, 10), layout(), TIE, BAR, 900.0)
     assert tie.reason
     assert "%.1f" % tie.narrow_mm in tie.reason
     assert "%.1f" % tie.min_buildable_mm in tie.reason
@@ -131,7 +171,7 @@ def test_the_threshold_is_bend_plus_tie():
 
 
 def test_a_cross_tie_restrains_only_its_two_ends():
-    tie = resolve_tie(TieSubset(0, 10), layout(), TIE, BAR, 900.0)
+    tie = resolve_tie(run(0, 10), layout(), TIE, BAR, 900.0)
     assert len(tie.restrained_indices) == 2
 
 
@@ -153,7 +193,7 @@ def test_a_tie_corner_restrains_a_bar_it_does_not_ENCLOSE():
     not name, and that bar is still inside the bend. The first version of
     this module scanned only the enclosed bars and missed one.
     """
-    tie = resolve_tie(TieSubset(8, 6), layout(), TIE, BAR, BEND)
+    tie = resolve_tie(run(8, 6), layout(), TIE, BAR, BEND)
     assert 4 not in tie.enclosed_indices
     assert 4 in tie.restrained_indices
 
@@ -259,7 +299,7 @@ def test_the_live_layout_admits_MANY_valid_coverings():
     """
     lay = layout()
     count = len(lay.bars)
-    candidates = [TieSubset(start, size)
+    candidates = [run(start, size, count)
                   for start in range(count)
                   for size in range(2, count + 1)]
     # Stops at 20 rather than enumerating all of them. The exhaustive
@@ -311,3 +351,91 @@ def test_every_tie_reports_its_narrow_dimension_against_the_minimum():
 
 def test_restrained_bar_indices_unions_every_tie():
     assert restrained_bar_indices(ties(VALID)) == set(range(10))
+
+
+# --------------------------------------------------------------------- #
+# R20 -- a cross-tie is a leg
+
+
+def test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule():
+    """R20, ruled by the owner after detailing a real column.
+
+    The cross-tie from bar 1 to bar 6 is a single bar running the full
+    height at u = 0. As a branch restraining the core that IS a vertical
+    leg, so it splits the outer tie's 360 mm into two 180 mm gaps.
+
+    Until R20 cross-ties were skipped entirely here, which meant the
+    300 mm limit could only ever be satisfied by NESTED CLOSED LOOPS --
+    the tool pushed the engineer away from the detail they would actually
+    draw and toward a heavier one. The three cross-ties below are that
+    detail, and they pass.
+    """
+    lay = layout()
+    resolved = ties([TieSubset((1, 6)), TieSubset((9, 3)), TieSubset((8, 4))],
+                    lay)
+    assert [t.kind for t in resolved[1:]] == [KIND_CROSS_TIE] * 3
+    findings = validate(lay, resolved)
+    assert not is_blocking(findings), [f.message for f in findings]
+
+
+def test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS():
+    """A cross-tie contributes ONE coordinate, not two, and not on both
+    axes. Bar 1 to bar 6 runs vertically at u = 0: it is a vertical leg
+    there and nothing at all horizontally. Counting it on both axes would
+    invent a horizontal branch that no steel provides.
+    """
+    lay = layout()
+    # The vertical cross-tie ALONE: it fixes the u gaps, and must leave
+    # the v gaps exactly as the bare perimeter had them.
+    with_vertical = validate(lay, ties([TieSubset((1, 6))], lay))
+    messages = " ".join(f.message for f in with_vertical)
+    assert "vertical legs (u)" not in messages
+    assert "horizontal legs (v)" in messages
+
+
+# --------------------------------------------------------------------- #
+# The text the engineer actually types (R19)
+#
+# Untested until this ticket: only a source guard said script.py CALLS the
+# parser, and nothing said what it accepts. R19 changes exactly that, so
+# the behaviour is pinned here.
+
+
+def test_a_cross_tie_line_is_two_bar_numbers():
+    assert parse_tie_subsets("1 6") == [TieSubset((1, 6))]
+
+
+def test_a_loop_line_is_as_many_bars_as_it_touches():
+    assert parse_tie_subsets("0 1 2 3") == [TieSubset((0, 1, 2, 3))]
+
+
+def test_commas_blank_lines_and_comments_are_accepted():
+    """A topology is pasted between columns and annotated while it is
+    being worked out. Rejecting a comment would make the box a worse place
+    to think than a text editor."""
+    text = "\n".join([
+        "# bottom half", "1,6", "", "   ", "9 3   # lower horizontal", "8 4"])
+    assert parse_tie_subsets(text) == [
+        TieSubset((1, 6)), TieSubset((9, 3)), TieSubset((8, 4))]
+
+
+def test_a_one_number_line_is_refused_NAMING_the_line():
+    """An "invalid input" on a six-line topology is not actionable."""
+    with pytest.raises(ValueError) as caught:
+        parse_tie_subsets("1 6\n7\n8 4")
+    message = str(caught.value)
+    assert "Line 2" in message
+    assert "cross-tie" in message      # says what a good line looks like
+
+
+def test_a_non_numeric_line_is_refused_NAMING_the_line():
+    with pytest.raises(ValueError) as caught:
+        parse_tie_subsets("1 6\nx y")
+    assert "Line 2" in str(caught.value)
+
+
+def test_what_was_typed_round_trips():
+    """The window restores the box from the parsed value, so anything the
+    parser accepts must format back to something it accepts."""
+    text = "1 6\n9 3\n0 1 2 3"
+    assert format_tie_subsets(parse_tie_subsets(text)) == text
