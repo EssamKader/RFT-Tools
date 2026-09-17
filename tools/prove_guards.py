@@ -53,6 +53,8 @@ COL_BUNDLE = COL_DIR + "bundle.yaml"
 COL_RULES = "RFT.lib/rft/core/column_host_rules.py"
 TC = "tests/test_column_xaml.py::"
 TR = "tests/test_column_host_rules.py::"
+COL_PLACE_BARS = "RFT.lib/rft/revit/column_place_bars.py"
+TPB = "tests/test_column_place_bars.py::"
 COL_INPUTS = "RFT.lib/rft/core/column_inputs.py"
 COL_SPACING = "RFT.lib/rft/core/column_spacing.py"
 TI = "tests/test_column_inputs.py::"
@@ -96,6 +98,32 @@ CATCH_MUTANT = ("        except ValueError as ex:\n"
 
 # (file, find, replace, test node, what defect this reintroduces)
 CASES = [
+    # ---- #119: the bar placer, R22 ----------------------------------
+    (COL_PLACE_BARS, 'candidate.SetDistanceToTargetHostFace(-offset_internal)',
+     'candidate.SetDistanceToTargetHostFace(offset_internal)',
+     TPB + "test_the_face_offset_is_signed_NEGATIVE",
+     "R22 -- the offset sign flipped, which on the live host put the "
+     "bar 57 mm OUTSIDE the column"),
+
+    (COL_PLACE_BARS, '        if candidate.IsToCover():\n            continue\n',
+     '',
+     TPB + "test_the_ToCover_candidate_is_rejected_even_when_offered_first",
+     "R22 -- the ToCover candidate accepted; it re-points the "
+     "constraint and the bar does NOT move, so this must fail on "
+     "POSITION, never on the constraint type"),
+
+    (COL_PLACE_BARS, '        mgr.SetPreferredConstraintForHandle(handle, candidate)\n',
+     '',
+     TPB + "test_removing_the_preferred_constraint_call_would_leave_it_unset",
+     "R22 -- the right constraint chosen and never applied"),
+
+    (COL_PLACE_BARS, '            return candidate\n    return None',
+     '            match = candidate\n    return match',
+     TPB + "test_the_FIRST_matching_candidate_is_taken_not_the_last",
+     "R22 -- first-match reverted to last-match-wins, picking by an "
+     "ordering Revit does not document (47-49 candidates per handle "
+     "on the live column)"),
+
     (SCRIPT, "review.crack_bars.requested", "review.crack.requested",
      "test_every_review_attribute_the_script_uses_exists",
      "wrong derivation attribute (the rc4 live failure)"),

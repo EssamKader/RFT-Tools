@@ -23,6 +23,20 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``RebarConstraint`` and ``RebarConstraintsManager`` (issue #119, R22)
+  were enumerated by reflection on Revit 2024 build 24.3.40.26.
+  ``GetRebarConstraintsManager()``, ``GetAllHandles()``,
+  ``GetConstraintCandidatesForHandle(handle)``,
+  ``SetPreferredConstraintForHandle(handle, constraint)``,
+  ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElement()``,
+  ``GetTargetHostFaceAndTransform(index, transform)`` and
+  ``SetDistanceToTargetHostFace(offset)`` all exist.
+  **``GetTargetElementId()`` and a ``PlanarFace`` property do not**,
+  and the bar placer called both until reflection caught it -- with a
+  green suite throughout, because this file had been written to match
+  the invention. It is the clearest case yet for why a fake is
+  evidence about the ADAPTER and never about the API.
+
 - ``Rebar.GetCenterlineCurves(adjustForSelfIntersection, suppressHooks,
   suppressBendRadius, multiplanarOption, tolerance)`` (issue #118) -- the
   5-argument signature, the tolerance argument and
@@ -155,6 +169,25 @@ Currently ``SHAPE UNVERIFIED``:
   built on this fake proves the ADAPTER's assertion logic is
   self-consistent (Left passes, Right/mixed fails); it does not and cannot
   prove Revit's real hooks land where this fake says they do.
+- ``Rebar.SetLayoutAsNumberWithSpacing(numberOfBarPositions, spacing,
+  barsOnNormalSide, includeFirstBar, includeLastBar)`` (issue #119) -- the
+  ticket's own reading of published Revit API documentation. The method
+  NAME is not in doubt; the parameter order is, and a wrong order here
+  would place a bar set that builds and is spaced wrongly. Not live
+  confirmed.
+- ``Rebar.CreateFromCurves``'s ``normal`` argument for a STRAIGHT,
+  unhooked bar (issue #119). ``StirrupTie`` loops were confirmed live by
+  #109; a standard bar was not. R22's face pin overrides the resulting
+  position either way, which is why this is recorded rather than blocking.
+
+  The rest of #119's constraint surface is no longer on this list:
+  ``GetRebarConstraintsManager``, ``GetAllHandles``,
+  ``GetConstraintCandidatesForHandle``,
+  ``SetPreferredConstraintForHandle``, ``IsToHostFaceOrCover``,
+  ``IsToCover``, ``GetTargetElement``, ``GetTargetHostFaceAndTransform``
+  and ``SetDistanceToTargetHostFace`` were all confirmed by reflection over
+  the live types -- see the verified list above, and the two members that
+  reflection showed do NOT exist.
 """
 
 import math
@@ -542,17 +575,140 @@ class FakeRebarShapeDrivenAccessor(object):
 #: tie corner near the column's cover moves clearly outside the host's
 #: bounding box when pushed outward, on every column this suite builds.
 _FAKE_HOOK_TAIL_OFFSET_INTERNAL = 200.0 / 304.8
+class FakeConstraintTarget(object):
+    """What ``RebarConstraint.GetTargetElement()`` returns -- an Element.
+    Only ``.Id`` is read, so only ``.Id`` is offered: a fake that invented
+    more of the Element surface would be back to guessing.
+    """
+
+    def __init__(self, element_id):
+        self.Id = element_id
+
+
+class FakeRebarConstraintCandidate(object):
+    """Stand-in for what
+    ``RebarConstraintsManager.GetConstraintCandidatesForHandle`` returns.
+    ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElement()``,
+    ``GetTargetHostFaceAndTransform(index, transform)`` and
+    ``SetDistanceToTargetHostFace(offset)`` are all VERIFIED to exist by
+    reflection over the live ``RebarConstraint``.
+
+    **What is NOT verified is the behaviour.** This fake returns the
+    candidates a test hands it, in that order. The live column returned
+    47-49 per handle in an order Revit does not document, and nothing here
+    models how it decides what to offer.
+
+    An earlier version of this fake exposed ``GetTargetElementId()`` and a
+    ``PlanarFace`` property. **Neither exists on the real class**, and
+    because the fake offered them the suite passed on code that could not
+    run. That is the failure mode this module's header exists to prevent,
+    caught only by reflecting over the live type.
+    """
+
+    def __init__(self, to_host_face_or_cover=True, to_cover=False,
+                target_element_id=None, planar_face=None, label=None):
+        self._to_host_face_or_cover = to_host_face_or_cover
+        self._to_cover = to_cover
+        self._target_element_id = target_element_id
+        self._planar_face = planar_face
+        self.label = label
+        #: What the module under test actually called this with -- the
+        #: mutation-proving surface for R22's sign rule.
+        self.distance_to_target_host_face = None
+
+    def IsToHostFaceOrCover(self):
+        return self._to_host_face_or_cover
+
+    def IsToCover(self):
+        return self._to_cover
+
+    def GetTargetElement(self):
+        if self._target_element_id is None:
+            return None
+        return FakeConstraintTarget(self._target_element_id)
+
+    def GetTargetHostFaceAndTransform(self, index, transform):
+        return self._planar_face
+
+    def SetDistanceToTargetHostFace(self, value):
+        self.distance_to_target_host_face = value
+
+    def __repr__(self):
+        return "FakeRebarConstraintCandidate({!r})".format(self.label)
+
+
+class FakeRebarHandle(object):
+    """An opaque handle, as ``RebarConstraintsManager.GetAllHandles()``
+    returns (verified to exist by reflection). Only carries a diagnostic
+    label, which is honest rather than lazy: the module under test never
+    inspects a handle, so a fake that invented fields would be asserting
+    something about the real class that nobody checked."""
+
+    def __init__(self, label):
+        self.label = label
+
+    def __repr__(self):
+        return "FakeRebarHandle({!r})".format(self.label)
+
+
+class FakeRebarConstraintsManager(object):
+    """Stand-in for ``Rebar.GetRebarConstraintsManager()``'s return
+    value; the methods used here are verified to exist by reflection. A
+    test builds one with the handles/candidates a scenario needs and hands
+    it to ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` so the NEXT
+    ``CreateFromCurves`` call returns it.
+
+    Note ``IsRebarConstrainedPlacementEnabled`` is deliberately absent. It
+    is a STATIC on the real class, it read ``False`` on the live host, and
+    the bar snapped anyway (#92) -- so it governs nothing this adapter
+    does, and a fake offering it would invite someone to reach for it.
+    """
+
+    def __init__(self, handles=None, candidates=None):
+        self._handles = list(handles or [])
+        #: {handle: [candidate, ...]}
+        self._candidates = dict(candidates or {})
+        #: {handle: candidate} -- what the module under test set, the
+        #: mutation-proving surface for "removing SetPreferredConstraint
+        #: ForHandle must fail a test".
+        self.preferred = {}
+
+    def GetAllHandles(self):
+        return list(self._handles)
+
+    def GetConstraintCandidatesForHandle(self, handle):
+        return list(self._candidates.get(handle, []))
+
+    def SetPreferredConstraintForHandle(self, handle, candidate):
+        self.preferred[handle] = candidate
 
 
 class FakeRebarInstance(object):
     """SHAPE UNVERIFIED -- stand-in for the `Rebar` element returned by
     `CreateFromCurves`. Real return type/members not confirmed; this only
-    records constructor args and hands back a fresh accessor per call."""
+    records constructor args and hands back a fresh accessor per call.
+
+    ``GetRebarConstraintsManager()`` returns the next manager queued in
+    ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` (per-scenario, popped in
+    creation order) or a fresh, empty one -- an empty manager offers no
+    handles, so a test that never arms one simply exercises the "nothing to
+    pin" path rather than raising.
+    """
+
+    _next_id = [500000]
 
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
         self._accessor = FakeRebarShapeDrivenAccessor()
+        self.Id = FakeElementId(FakeRebarInstance._next_id[0])
+        FakeRebarInstance._next_id[0] += 1
+        self.layout_calls = []
+        if FakeRebar.PENDING_CONSTRAINTS_MANAGERS:
+            self._constraints_manager = \
+                FakeRebar.PENDING_CONSTRAINTS_MANAGERS.pop(0)
+        else:
+            self._constraints_manager = FakeRebarConstraintsManager()
 
     def GetShapeDrivenAccessor(self):
         return self._accessor
@@ -595,9 +751,26 @@ class FakeRebarInstance(object):
         start_hook = FakeLine.CreateBound(tail(start_anchor, orient_start), start_anchor)
         end_hook = FakeLine.CreateBound(end_anchor, tail(end_anchor, orient_end))
         return [start_hook] + curves + [end_hook]
+    def GetRebarConstraintsManager(self):
+        return self._constraints_manager
+
+    def SetLayoutAsNumberWithSpacing(self, number_of_bar_positions, spacing,
+                                     bars_on_normal_side, include_first_bar,
+                                     include_last_bar):
+        self.layout_calls.append({
+            "number_of_bar_positions": number_of_bar_positions,
+            "spacing": spacing,
+            "bars_on_normal_side": bars_on_normal_side,
+            "include_first_bar": include_first_bar,
+            "include_last_bar": include_last_bar,
+        })
 
 
 class FakeRebar(object):
+    #: Popped in creation order by ``FakeRebarInstance.__init__`` -- see
+    #: its docstring. A test arms this before calling ``place_bars``.
+    PENDING_CONSTRAINTS_MANAGERS = []
+
     @staticmethod
     def CreateFromCurves(*args, **kwargs):
         return FakeRebarInstance(*args, **kwargs)
@@ -968,6 +1141,18 @@ class FakeSolid(object):
         self.Volume = volume
 
 
+class FakeTransform(object):
+    """Only ``Transform.Identity`` is used -- it is passed to
+    ``GetTargetHostFaceAndTransform`` as the transform to fill in, and this
+    module never reads it back. VERIFIED to exist on the live API.
+    """
+
+    Identity = None
+
+
+FakeTransform.Identity = FakeTransform()
+
+
 class FakePlanarFace(object):
     def __init__(self, normal):
         self.FaceNormal = normal
@@ -1116,6 +1301,7 @@ def install():
     db.XYZ = FakeXYZ
     db.UV = FakeUV
     db.Line = FakeLine
+    db.Curve = object
     db.ElementId = FakeElementId
     db.UnitTypeId = FakeUnitTypeId
     db.UnitUtils = FakeUnitUtils
@@ -1142,6 +1328,7 @@ def install():
     db.View = FakeView3D
     db.Solid = FakeSolid
     db.PlanarFace = FakePlanarFace
+    db.Transform = FakeTransform
     db.ViewDetailLevel = FakeViewDetailLevel
     db.FindReferenceTarget = FakeFindReferenceTarget
     db.ElementCategoryFilter = FakeElementCategoryFilter

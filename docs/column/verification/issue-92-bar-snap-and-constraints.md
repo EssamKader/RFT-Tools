@@ -68,12 +68,36 @@ readable.
 
 ```csharp
 var mgr = bar.GetRebarConstraintsManager();
-// for the RebarPlane handle and each Edge handle:
-//   pick the candidate that IsToHostFaceOrCover(), is NOT IsToCover(),
-//   targets the host, and whose PlanarFace normal is the NEAR face
-c.SetDistanceToTargetHostFace(-offset);      // note the sign
-mgr.SetPreferredConstraintForHandle(h, c);
+foreach (var h in mgr.GetAllHandles()) {
+    // RebarPlane and Edge handles only
+    foreach (var c in mgr.GetConstraintCandidatesForHandle(h)) {
+        if (!c.IsToHostFaceOrCover()) continue;
+        if (c.IsToCover()) continue;                       // see below
+        var target = c.GetTargetElement();                 // NOT GetTargetElementId
+        if (target == null || target.Id != hostId) continue;
+        var face = c.GetTargetHostFaceAndTransform(0, Transform.Identity)
+                       as PlanarFace;                      // NOT a .PlanarFace property
+        if (face == null) continue;
+        if (!IsNearFace(face.FaceNormal)) continue;
+        c.SetDistanceToTargetHostFace(-offset);            // note the sign
+        mgr.SetPreferredConstraintForHandle(h, c);
+        break;                                             // FIRST match
+    }
+}
 ```
+
+> **These are the literal calls, because an earlier version of this section
+> was not.** It described the filter in prose — *"whose `PlanarFace` normal
+> is the near face"* — and #119's implementer read `GetTargetElementId()`
+> and a `PlanarFace` property out of it. **Neither member exists.** The
+> fake was then written to match the invention, so the suite passed on code
+> that could not run on a host. Reflection over the live `RebarConstraint`
+> is what caught it.
+>
+> `break` on the first match is deliberate: the live column returned
+> **47–49 candidates for a single handle**, in an order Revit does not
+> document. Taking the last match would be picking by an ordering nobody
+> specified.
 
 Four things were established the hard way and each would have cost a day:
 
