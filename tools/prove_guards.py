@@ -721,20 +721,13 @@ CASES = [
     # ---- R20: a cross-tie is a leg. Retargeted by R29 (#146): the
     # ---- cross-tie special case these used to mutate is gone, and
     # ---- one leg reading now answers for every kind.
-    (COL_TIES, '    if len(points) == 2:',
-     '    if False:',
+    (COL_TIES, '    if len(points) < 2:',
+     '    if len(points) < 3:',
      TT + "test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule",
      "cross-ties ignored again -- only nested loops can satisfy 300 mm"),
 
-    (COL_TIES,
-     '    if across > BRANCH_AXIS_TOL_MM:\n'
-     '        return None\n'
-     '    if along <= BRANCH_AXIS_TOL_MM:\n'
-     '        return None',
-     '    if False:\n'
-     '        return None\n'
-     '    if False:\n'
-     '        return None',
+    (COL_TIES, '    if along <= BRANCH_AXIS_TOL_MM:',
+     '    if False:',
      TT + "test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS",
      "a cross-tie counted on BOTH axes -- a branch no steel provides"),
 

@@ -394,6 +394,22 @@ def test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS():
     assert "vertical legs (u)" not in messages
     assert "horizontal legs (v)" in messages
 
+    # Asked of the leg itself, not inferred from which findings appear.
+    # Reading the findings alone cannot see a cross-tie wrongly counted
+    # HORIZONTALLY: the bare perimeter already fails that axis, so the
+    # spurious coordinate changes the number in the message and not
+    # whether there is one. This is the assertion that fails when the
+    # cross-tie is credited on both axes (R29's `along` guard).
+    cross = ties([TieSubset((1, 6))], lay)[1]
+    legs = tie_legs(cross)
+    assert len(legs) == 1, "a cross-tie is ONE leg, not a circuit"
+    assert branch_coordinate(legs[0], 0) == pytest.approx(0.0), (
+        "bar 1 to bar 6 runs the full height at u = 0: that is a vertical "
+        "leg there")
+    assert branch_coordinate(legs[0], 1) is None, (
+        "and nothing at all horizontally -- counting it on both axes "
+        "invents a branch no steel provides")
+
 
 # --------------------------------------------------------------------- #
 # The text the engineer actually types (R19)
