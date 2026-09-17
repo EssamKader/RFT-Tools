@@ -114,6 +114,20 @@ Currently ``SHAPE UNVERIFIED``:
   environment) -- the three pushbuttons' selection helpers are therefore
   UNEXECUTED, not merely shape-unverified. See each pushbutton's own
   module docstring and docs/beam/verification/s7-grades.md.
+- ``Rebar.GetRebarConstraintsManager()`` and
+  ``RebarConstraintsManager.GetAllHandles()`` /
+  ``GetConstraintCandidatesForHandle(handle)`` /
+  ``SetPreferredConstraintForHandle(handle, candidate)``, and a candidate's
+  ``IsToHostFaceOrCover()`` / ``IsToCover()`` / ``GetTargetElementId()`` /
+  ``PlanarFace`` / ``SetDistanceToTargetHostFace(offset)`` (issue #119,
+  R22). Names are exactly what the ticket and #92's live verification note
+  give; none of this shape has been independently re-probed against a
+  live host by this repository's own code -- #92 measured the BEHAVIOUR
+  (the bar stops drifting) but the accessor names come from the ticket,
+  not from a fresh probe. ``Rebar.SetLayoutAsNumberWithSpacing(number
+  OfBarPositions, spacing, barsOnNormalSide, includeFirstBar,
+  includeLastBar)`` is likewise the ticket's own reading of published
+  Revit API documentation, not a live confirmation.
 """
 
 import math
@@ -476,21 +490,131 @@ class FakeRebarShapeDrivenAccessor(object):
         )
 
 
+class FakeRebarConstraintCandidate(object):
+    """SHAPE UNVERIFIED (issue #119, R22) -- stand-in for whatever
+    ``RebarConstraintsManager.GetConstraintCandidatesForHandle`` returns.
+    Names match the ticket and #92's verification note exactly:
+    ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElementId()``,
+    ``PlanarFace`` (a property, carrying a ``FakePlanarFace``), and
+    ``SetDistanceToTargetHostFace(offset)``.
+    """
+
+    def __init__(self, to_host_face_or_cover=True, to_cover=False,
+                target_element_id=None, planar_face=None, label=None):
+        self._to_host_face_or_cover = to_host_face_or_cover
+        self._to_cover = to_cover
+        self._target_element_id = target_element_id
+        self.PlanarFace = planar_face
+        self.label = label
+        #: What the module under test actually called this with -- the
+        #: mutation-proving surface for R22's sign rule.
+        self.distance_to_target_host_face = None
+
+    def IsToHostFaceOrCover(self):
+        return self._to_host_face_or_cover
+
+    def IsToCover(self):
+        return self._to_cover
+
+    def GetTargetElementId(self):
+        return self._target_element_id
+
+    def SetDistanceToTargetHostFace(self, value):
+        self.distance_to_target_host_face = value
+
+    def __repr__(self):
+        return "FakeRebarConstraintCandidate({!r})".format(self.label)
+
+
+class FakeRebarHandle(object):
+    """SHAPE UNVERIFIED (issue #119, R22) -- an opaque handle, as
+    ``RebarConstraintsManager.GetAllHandles()`` is assumed to return. Only
+    carries a diagnostic label; the module under test never inspects it."""
+
+    def __init__(self, label):
+        self.label = label
+
+    def __repr__(self):
+        return "FakeRebarHandle({!r})".format(self.label)
+
+
+class FakeRebarConstraintsManager(object):
+    """SHAPE UNVERIFIED (issue #119, R22) -- stand-in for
+    ``Rebar.GetRebarConstraintsManager()``'s return value. A test builds
+    one with the handles/candidates a scenario needs and hands it to
+    ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` so the NEXT
+    ``CreateFromCurves`` call returns it.
+    """
+
+    def __init__(self, handles=None, candidates=None):
+        self._handles = list(handles or [])
+        #: {handle: [candidate, ...]}
+        self._candidates = dict(candidates or {})
+        #: {handle: candidate} -- what the module under test set, the
+        #: mutation-proving surface for "removing SetPreferredConstraint
+        #: ForHandle must fail a test".
+        self.preferred = {}
+
+    def GetAllHandles(self):
+        return list(self._handles)
+
+    def GetConstraintCandidatesForHandle(self, handle):
+        return list(self._candidates.get(handle, []))
+
+    def SetPreferredConstraintForHandle(self, handle, candidate):
+        self.preferred[handle] = candidate
+
+
 class FakeRebarInstance(object):
     """SHAPE UNVERIFIED -- stand-in for the `Rebar` element returned by
     `CreateFromCurves`. Real return type/members not confirmed; this only
-    records constructor args and hands back a fresh accessor per call."""
+    records constructor args and hands back a fresh accessor per call.
+
+    ``GetRebarConstraintsManager()`` returns the next manager queued in
+    ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` (per-scenario, popped in
+    creation order) or a fresh, empty one -- an empty manager offers no
+    handles, so a test that never arms one simply exercises the "nothing to
+    pin" path rather than raising.
+    """
+
+    _next_id = [500000]
 
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
         self._accessor = FakeRebarShapeDrivenAccessor()
+        self.Id = FakeElementId(FakeRebarInstance._next_id[0])
+        FakeRebarInstance._next_id[0] += 1
+        self.layout_calls = []
+        if FakeRebar.PENDING_CONSTRAINTS_MANAGERS:
+            self._constraints_manager = \
+                FakeRebar.PENDING_CONSTRAINTS_MANAGERS.pop(0)
+        else:
+            self._constraints_manager = FakeRebarConstraintsManager()
 
     def GetShapeDrivenAccessor(self):
         return self._accessor
 
+    def GetRebarConstraintsManager(self):
+        return self._constraints_manager
+
+    def SetLayoutAsNumberWithSpacing(self, number_of_bar_positions, spacing,
+                                     bars_on_normal_side, include_first_bar,
+                                     include_last_bar):
+        self.layout_calls.append({
+            "number_of_bar_positions": number_of_bar_positions,
+            "spacing": spacing,
+            "bars_on_normal_side": bars_on_normal_side,
+            "include_first_bar": include_first_bar,
+            "include_last_bar": include_last_bar,
+        })
+
 
 class FakeRebar(object):
+    #: Popped in creation order by ``FakeRebarInstance.__init__`` -- see
+    #: its docstring. A test arms this before calling ``place_bars``.
+    PENDING_CONSTRAINTS_MANAGERS = []
+
     @staticmethod
     def CreateFromCurves(*args, **kwargs):
         return FakeRebarInstance(*args, **kwargs)
@@ -948,6 +1072,7 @@ def install():
     db.XYZ = FakeXYZ
     db.UV = FakeUV
     db.Line = FakeLine
+    db.Curve = object
     db.ElementId = FakeElementId
     db.UnitTypeId = FakeUnitTypeId
     db.UnitUtils = FakeUnitUtils
