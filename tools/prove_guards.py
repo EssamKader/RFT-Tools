@@ -718,14 +718,23 @@ CASES = [
      TT + "test_a_cross_tie_line_is_two_bar_numbers",
      "every tie line rejected, so no topology can be stated"),
 
-    # ---- R20: a cross-tie is a leg -------------------------------
-    (COL_TIES, '                if half <= other_half:',
-     '                if False:',
+    # ---- R20: a cross-tie is a leg. Retargeted by R29 (#146): the
+    # ---- cross-tie special case these used to mutate is gone, and
+    # ---- one leg reading now answers for every kind.
+    (COL_TIES, '    if len(points) == 2:',
+     '    if False:',
      TT + "test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule",
      "cross-ties ignored again -- only nested loops can satisfy 300 mm"),
 
-    (COL_TIES, '                other_half = tie.half_v_mm if axis == 0 else tie.half_u_mm',
-     '                other_half = half',
+    (COL_TIES,
+     '    if across > BRANCH_AXIS_TOL_MM:\n'
+     '        return None\n'
+     '    if along <= BRANCH_AXIS_TOL_MM:\n'
+     '        return None',
+     '    if False:\n'
+     '        return None\n'
+     '    if False:\n'
+     '        return None',
      TT + "test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS",
      "a cross-tie counted on BOTH axes -- a branch no steel provides"),
 
