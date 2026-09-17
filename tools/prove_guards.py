@@ -396,12 +396,16 @@ CASES = [
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
      "A1 -- the narrow-vs-minimum comparison itself disabled in core"),
 
-    (COL_PLACER, '        if is_buildable(tie):\n            continue\n',
-     '',
+    (COL_PLACER, '        if is_buildable(tie):',
+     '        if True:',
      "tests/test_column_placer.py::"
      "test_apply_never_opens_a_transaction_for_an_unbuildable_tie",
-     "A1 -- the Apply path's own gate deleted, so an unbuildable loop "
-     "reaches a transaction even though the tie placer would refuse it"),
+     "A1 -- the Apply path's gate made unconditionally permissive, so "
+     "an unbuildable loop reaches a transaction even though the tie "
+     "placer would go on to refuse it. DELETING the two lines instead "
+     "leaves a bare raise in the loop, refusing EVERY tie -- still "
+     "raising, still opening nothing, indistinguishable from working, "
+     "and that is how this guard came back MISSED the first time."),
 
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
