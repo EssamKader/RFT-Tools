@@ -118,6 +118,79 @@ def test_bars_are_created_as_four_FACE_RUNS_not_one_element_per_bar():
     assert counts == [2, 2, 3, 3]
 
 
+def test_each_run_is_arrayed_ALONG_its_own_face_not_across_it():
+    """A set distributes along the NORMAL its bar was created with, so the
+    normal must be the run's own step direction.
+
+    This is the test that was missing when #131 shipped. The placer handed
+    `CreateFromCurves` the PERPENDICULAR of the step direction, on the
+    stated belief that the normal did not matter. Every run was then
+    arrayed ACROSS its own face and picked up the neighbouring face's
+    spacing: on the live column two 16M bars landed 11.7 mm apart at two
+    corners -- centres closer than one bar diameter, so the steel
+    intersected -- in a cage that otherwise looked correct.
+
+    Asserted as a relationship between the normal and the spacing, which
+    is what actually has to agree:
+
+      - the 450 face steps 167.55 mm and runs along `hand`
+      - the 600 face steps 161.70 mm and runs along `facing`
+
+    A perpendicular normal swaps those, and this fails.
+    """
+    _reset_pending_managers()
+    plan = _plan()
+    bars = place_bars(doc=None, host_element=_host(), bar_type=object(),
+                      plan=plan)
+
+    hand, facing = plan.host["hand"], plan.host["facing"]
+    b_step = (B - 2 * OFFSET_MM) / (COUNT_B - 1)     # 167.55
+    h_step = (H - 2 * OFFSET_MM) / (COUNT_H - 1)     # 161.70
+
+    seen = []
+    for bar in bars:
+        assert len(bar.layout_calls) == 1
+        spacing_mm = bar.layout_calls[0]["spacing"] * FT
+        normal = bar.args[6]
+        axis = (normal.X, normal.Y, normal.Z)
+        along_hand = abs(sum(a * b for a, b in zip(axis, hand)))
+        along_facing = abs(sum(a * b for a, b in zip(axis, facing)))
+
+        if abs(spacing_mm - b_step) < 1e-6:
+            assert along_hand == pytest.approx(1.0), (
+                "a run stepping %.2f mm belongs to the %.0f face and must "
+                "be arrayed along `hand`; got normal %r"
+                % (spacing_mm, B, axis))
+            seen.append("b")
+        elif abs(spacing_mm - h_step) < 1e-6:
+            assert along_facing == pytest.approx(1.0), (
+                "a run stepping %.2f mm belongs to the %.0f face and must "
+                "be arrayed along `facing`; got normal %r"
+                % (spacing_mm, H, axis))
+            seen.append("h")
+        else:
+            raise AssertionError(
+                "a run stepped %.2f mm, which is neither face's spacing "
+                "(%.2f / %.2f)" % (spacing_mm, b_step, h_step))
+
+    assert sorted(seen) == ["b", "b", "h", "h"]
+
+
+def test_no_two_bars_are_placed_closer_than_one_bar_diameter():
+    """The symptom #131 produced, asserted directly on the layout the
+    placer is handed: overlapping steel is never a detailing choice, so if
+    two positions come within a bar diameter something upstream is wrong.
+    """
+    plan = _plan()
+    points = [(bar.u_mm, bar.v_mm) for bar in plan.layout.bars]
+    for i, a in enumerate(points):
+        for b in points[i + 1:]:
+            gap = ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+            assert gap >= BAR, (
+                "bars at %r and %r are %.2f mm apart, closer than the "
+                "%.2f mm bar diameter" % (a, b, gap, BAR))
+
+
 # --------------------------------------------------------------------- #
 # R22 -- the offset is NEGATIVE, and mutation-proven
 

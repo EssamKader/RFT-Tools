@@ -427,6 +427,13 @@ CASES = [
      "#130 -- the layout method called on the Rebar instead of on its "
      "shape driven accessor, which is where the live API has it"),
 
+    (COL_PLACE_BARS, '    normal = direction',
+     '    normal = (-direction[1], direction[0], 0.0)',
+     TPB + "test_each_run_is_arrayed_ALONG_its_own_face_not_across_it",
+     "#131 -- the set arrayed ACROSS its own face instead of along "
+     "it, which put two bars 11.7 mm apart at a corner on the live "
+     "column while every test passed"),
+
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
      '    transaction = Transaction(doc, TRANSACTION_NAME)',

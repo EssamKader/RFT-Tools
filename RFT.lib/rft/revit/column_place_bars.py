@@ -134,16 +134,6 @@ def _horizontal_unit(hand, facing, delta_u_mm, delta_v_mm):
     return (vec[0] / length, vec[1] / length, vec[2] / length)
 
 
-def _perp_horizontal(direction):
-    """90-degree rotation of a horizontal unit vector about Z.
-
-    Used only as the ``normal`` handed to ``CreateFromCurves`` -- see the
-    module docstring's SHAPE UNVERIFIED note. Never used for anything R22
-    depends on for correctness.
-    """
-    return (-direction[1], direction[0], 0.0)
-
-
 def _point_internal(origin, hand, facing, u_mm, v_mm, z_internal):
     """A seed point for ``CreateFromCurves`` -- the host's own
     ``Location.Point`` plus its ``hand``/``facing`` orientation, in internal
@@ -254,12 +244,21 @@ def _place_run(doc, host_element, bar_type, run, hand, facing, origin,
         direction = _horizontal_unit(
             hand, facing, run[1].u_mm - seed.u_mm, run[1].v_mm - seed.v_mm)
     else:
-        # A single-bar run has no direction of its own to derive a normal
-        # from; `hand` is as good a horizontal reference as any, and R22's
-        # correctness never depends on this value (see the module's SHAPE
-        # UNVERIFIED note).
+        # A single-bar run never has `SetLayoutAsNumberWithSpacing`
+        # applied, so nothing is distributed and any horizontal reference
+        # perpendicular to the bar will do.
         direction = hand
-    normal = _perp_horizontal(direction)
+
+    # THE NORMAL IS THE RUN'S OWN STEP DIRECTION.
+    #
+    # `SetLayoutAsNumberWithSpacing` arrays the set ALONG the normal the
+    # bar was created with. This module used to hand it the PERPENDICULAR
+    # of the step direction, on the stated belief that the normal was
+    # "never used for anything R22 depends on". It is load-bearing: every
+    # run was arrayed ACROSS its own face, picking up the neighbouring
+    # face's spacing, and two bars landed 11.7 mm apart at two corners --
+    # overlapping steel, in a cage that otherwise looked right (#131).
+    normal = direction
 
     bar = Rebar.CreateFromCurves(
         doc, RebarStyle.Standard, bar_type, None, None, host_element,
