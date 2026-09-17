@@ -147,9 +147,17 @@ bar 2: (-313.372, 1267.800)         preferred constraint recorded on both handle
 bar 3: (-313.372, 1429.500)
 ```
 
-**Save / reopen is NOT covered.** It needs the document saved and
-reopened, which is the owner's call, not a probe's. Until then the claim
-is "survives regeneration", not "survives a round trip".
+**Save / reopen is NOT covered, and is now harder to cover.** The
+claim this section supports is *"survives regeneration and a later
+execution"*, never *"survives a file round trip"*.
+
+The pinned set was kept in `ColumnRFT.Trail.rvt` so the round trip could be
+finished; the owner has since discarded it, unsaved, rather than commit a
+probe's leftovers to a working model. **That was the right call and it
+closes this route.** Finishing Q4 now needs a scratch copy of the document
+— which is what it should have needed from the start, because a test whose
+prerequisite is "save the model you are working in" is a test nobody will
+run twice.
 
 ---
 
@@ -162,7 +170,10 @@ made. That is a spec question for the owner and nothing here answers it.
 
 ## State left behind
 
-One 4-bar pinned set, **423228**, in column 422078, alongside the three
-ties 423209 / 423210 / 423211 from #109. Kept deliberately so Q4's
-save/reopen half can be finished. The document was unmodified before
-#109, so closing without saving removes all of it.
+**None.** The 4-bar pinned set (423228) and #109's three ties were deleted
+on the owner's instruction and never saved — rebar count 99 -> 95, and
+column 422078 hosts nothing of ours. `ColumnRFT.Trail.rvt` is as it was
+before any of this work.
+
+Every measurement above was taken while those elements existed, on a
+committed transaction. Nothing here rests on them still being present.

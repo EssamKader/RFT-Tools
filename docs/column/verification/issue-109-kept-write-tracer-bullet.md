@@ -196,9 +196,14 @@ corner.
 
 ## State left behind
 
-Three ties remain in `ColumnRFT.Trail.rvt` (423209, 423210, 423211) at
-z = 3300 / 3500 / 3700 in column 422078. They are the kept write this ticket
-exists to produce, rebuilt with R21's hook orientation after Finding 4;
-the three original ties (423136, 423137, 423139) were deleted. The
-document was unmodified before this session, so closing
-without saving removes them; deleting the three elements does the same.
+**Nothing remains.** The three ties (423209, 423210, 423211, at
+z = 3300 / 3500 / 3700 in column 422078) were deleted on the owner's
+instruction and the document was never saved: rebar count went 99 -> 95,
+its value before this ticket, and column 422078 hosts none of ours.
+
+That does not weaken the ticket. **The write was kept across a committed
+transaction and read back in later executions** — which is what #109
+existed to establish, and what every prior proof in this repository had
+failed to do by aborting its `SubTransaction`. Findings 1, 3 and 4 were all
+measured on elements that had genuinely survived a commit. Discarding them
+afterwards is housekeeping, not a retraction.
