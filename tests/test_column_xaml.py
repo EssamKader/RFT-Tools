@@ -893,6 +893,51 @@ def test_add_tie_refuses_under_two_bars():
         "a refused Add tie must write NOTHING into the Ties box")
 
 
+def test_the_tie_shape_combo_exists_with_loop_and_triangle():
+    """#141: the Add tie button gains a Loop / Triangle choice. Checked
+    against ``TIE_SHAPE_CHOICES``, the single list that fills the combo
+    AND the one ``_tie_shape_is_triangle`` indexes into, so the two can
+    never silently disagree about which entry means what.
+    """
+    script = _script()
+    assert "tie_shape_cb" in _x_names(COLUMN_XAML_PATH), (
+        "no tie_shape_cb declared in the XAML")
+    choices = re.search(r"TIE_SHAPE_CHOICES = \(([^)]*)\)", script)
+    assert choices, "TIE_SHAPE_CHOICES did not parse -- pattern broken?"
+    labels = re.findall(r'"([A-Za-z]+)"', choices.group(1))
+    assert labels == ["Loop", "Triangle"], (
+        "TIE_SHAPE_CHOICES must be (Loop, Triangle) in that order -- "
+        "_tie_shape_is_triangle reads SelectedIndex == 1")
+
+
+def test_add_tie_writes_a_T_marked_line_only_for_triangle():
+    """A Triangle selection writes 'T <bars>'; a Loop selection writes
+    exactly what #137 always wrote, unmarked.
+    """
+    called, literals = _code_of("on_add_tie_click")
+    assert "_tie_shape_is_triangle" in called, (
+        "on_add_tie_click must ask which shape is selected, not assume "
+        "Loop")
+    assert "T " in literals, (
+        "no 'T ' literal found -- a Triangle selection must write a "
+        "T-marked line into the Ties box")
+
+
+def test_add_tie_refuses_a_triangle_of_the_wrong_bar_count():
+    """A triangle is a genuine three-sided closed tie through exactly
+    three bars -- never rounded up or down to whatever was selected.
+    """
+    body = re.search(r"def on_add_tie_click\(.*?\n(.*?)\n    def ",
+                     _script(), re.DOTALL).group(1)
+    assert "len(self._tie_selection) != 3" in body, (
+        "on_add_tie_click never checks the triangle case for exactly "
+        "three bars")
+    triangle_refusal = body.split(
+        "len(self._tie_selection) != 3", 1)[1].split("return", 1)[0]
+    assert "tie_subsets_tb" not in triangle_refusal, (
+        "a refused triangle Add tie must write NOTHING into the Ties box")
+
+
 def test_a_click_on_nothing_clears_no_selection():
     """A stray click on empty canvas must not lose a half-built tie."""
     body = re.search(r"def on_section_canvas_click\(.*?\n(.*?)\n    def ",

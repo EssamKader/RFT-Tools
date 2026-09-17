@@ -405,7 +405,7 @@
                              it has no catalogue to maintain; a control with its
                              own hidden state would put one back. -->
                         <TextBlock Style="{StaticResource ReadOutSource}"
-                                   Text="One tie per line: the bar numbers it touches. Two opposite bars make a cross-tie (1 6); three or more make a closed loop (0 1 2 3). The outer perimeter tie is implied and never typed. Bars are numbered anticlockwise from the bottom-left corner - see the Sketch tab."/>
+                                   Text="One tie per line: the bar numbers it touches. Two opposite bars make a cross-tie (1 6); three or more make a closed loop (0 1 2 3). A line starting with T, e.g. T 1 3 5, is a genuine three-sided triangle through exactly three bars - an unmarked line still means a loop or cross-tie, exactly as before. The outer perimeter tie is implied and never typed. Bars are numbered anticlockwise from the bottom-left corner - see the Sketch tab."/>
                         <TextBox x:Name="tie_subsets_tb"
                                  Height="86" Margin="0,6,0,0"
                                  AcceptsReturn="True"
@@ -567,7 +567,9 @@
                          far and commits it. The Ties text box stays the
                          authoritative source: this row only ever WRITES a
                          line into it, the same line typing would have
-                         produced. -->
+                         produced. #141 adds the shape choice: Triangle
+                         writes a T-marked line for exactly three bars,
+                         Loop is everything this row has always written. -->
                     <StackPanel Grid.Row="1" Grid.ColumnSpan="2"
                                 Orientation="Horizontal"
                                 Margin="0,8,0,0">
@@ -576,6 +578,9 @@
                                    Foreground="{StaticResource SelectionPurple}"
                                    FontWeight="Bold"
                                    Margin="0,0,12,0" Text=""/>
+                        <ComboBox x:Name="tie_shape_cb"
+                                  Width="90" Margin="0,0,8,0"
+                                  VerticalAlignment="Center"/>
                         <Button x:Name="add_tie_btn" Content="Add tie"
                                 Padding="10,4,10,4" Margin="0,0,8,0"/>
                         <Button x:Name="clear_selection_btn"

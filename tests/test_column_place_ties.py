@@ -323,3 +323,40 @@ def test_the_module_never_calls_Start_Commit_or_RollBack():
     source = inspect.getsource(place_ties_module)
     for forbidden in (".Start(", ".Commit(", ".RollBack("):
         assert forbidden not in source
+
+
+# --------------------------------------------------------------------- #
+# #141: a triangle is 3 segments through the SAME _uv_segments_mm dispatch
+# a closed loop already uses -- not a third code path.
+
+
+def _triangle_tie(layout):
+    from rft.core.column_ties import resolve_tie
+
+    return resolve_tie(TieSubset((0, 1, 9), triangle=True), layout,
+                       TIE_DIA_MM, BAR_DIA_MM, BEND_DIAMETER_MM)
+
+
+def test_a_triangle_is_3_segments_matching_its_own_vertices():
+    layout = _layout()
+    tie = _triangle_tie(layout)
+    segments = place_ties_module._uv_segments_mm(tie, layout)
+    assert segments == [(tie.vertices[0], tie.vertices[1]),
+                        (tie.vertices[1], tie.vertices[2]),
+                        (tie.vertices[2], tie.vertices[0])]
+
+
+def test_a_triangle_places_as_one_rebar_per_level():
+    """End to end through `place_ties`, exactly like a closed loop -- the
+    triangle takes the same code path from here on, so a defect specific
+    to a 3-curve polygon would show up as a curve-count mismatch or a
+    hook-tail assertion failure, not as a separate crash.
+    """
+    layout = _layout()
+    tie = _triangle_tie(layout)
+    plan = _Plan(ties=[tie], ladder=_ladder([50.0, 150.0]),
+                base_z_mm=3000.0, layout=layout)
+    created = _place(plan)
+    assert len(created) == 2
+    for rebar in created:
+        assert len(rebar.args[7]) == 3  # 3 curves: a genuine triangle

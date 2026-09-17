@@ -310,6 +310,20 @@ def test_a_cross_tie_is_a_LEG_not_a_thin_rectangle():
                 and s.style == "cross_tie"]
 
 
+def test_a_triangle_is_drawn_as_a_3_POINT_SketchPolygon():
+    """#141. A triangle is not a cross-tie's single leg -- it is a genuine
+    closed polygon, and falls through to the same drawing path a closed
+    loop's rectangle already uses (``_tie_shapes``'s ``else`` branch),
+    which is exactly what makes it a 3-point ``SketchPolygon`` rather than
+    a 4-point one, with no dedicated triangle-drawing code required.
+    """
+    shapes = section(ties=_ties([TieSubset((0, 1, 9), triangle=True)]))
+    triangles = [s for s in shapes if s.style == "tie_inner"
+                and isinstance(s, SketchPolygon)]
+    assert len(triangles) == 1
+    assert len(triangles[0].points) == 3
+
+
 def test_unrestrained_bars_are_MARKED():
     """Section 6.1 is about these bars. Leaving the reader to work them
     out from the tie rectangles is how a violation gets missed on the one

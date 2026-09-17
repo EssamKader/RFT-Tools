@@ -122,6 +122,13 @@ BAR_PICK_RADIUS_PX = 10.0
 #: and drawn at another clips the tails.
 SKETCH_FONT_SIZE_PX = 11.0
 
+#: #141. ``Add tie``'s shape choice, index-matched to ``tie_shape_cb``'s
+#: items in the XAML (Loop first, Triangle second) -- read by
+#: ``_tie_shape_is_triangle`` the same way every other combo in this
+#: window is read (``_options_for``), never by a string compare against
+#: ``SelectedItem`` that a relabelled entry would silently stop matching.
+TIE_SHAPE_CHOICES = ("Loop", "Triangle")
+
 #: Read-outs cleared on every pick. Listed rather than cleared one by one
 #: for the same reason: a field added to the XAML and forgotten here shows
 #: the PREVIOUS column's number beside the new column's name.
@@ -243,6 +250,13 @@ class ColumnWindow(forms.WPFWindow):
         self.section_canvas.MouseLeftButtonDown += self.on_section_canvas_click
         self.add_tie_btn.Click += self.on_add_tie_click
         self.clear_selection_btn.Click += self.on_clear_selection_click
+
+        # #141: Loop / Triangle, index-matched to TIE_SHAPE_CHOICES.
+        # Defaults to Loop -- the shape every existing topology means and
+        # the one #137's click-to-select flow has always produced.
+        for label in TIE_SHAPE_CHOICES:
+            self.tie_shape_cb.Items.Add(label)
+        self.tie_shape_cb.SelectedIndex = 0
 
         # Filled once, from the module that owns the choice, so the label
         # and the parse can never disagree about what "diameters" means.
@@ -1005,19 +1019,44 @@ class ColumnWindow(forms.WPFWindow):
         # defect this ordering exists to rule out).
         self.redraw_sketch()
 
+    def _tie_shape_is_triangle(self):
+        """Which of the ``Add tie`` shape choices is selected (#141).
+
+        ``tie_shape_cb``'s two entries are Loop then Triangle, in that
+        order -- see the XAML. Read by index, the same pattern every other
+        combo in this window uses (``_options_for``), rather than by a
+        string compare against ``SelectedItem`` that a relabelled item
+        would silently stop matching.
+        """
+        return self.tie_shape_cb.SelectedIndex == 1
+
     def on_add_tie_click(self, sender, args):
         """Append the pending selection to the Ties box as exactly the
-        text typing it would have produced (#137).
+        text typing it would have produced (#137), ``T``-marked when the
+        Triangle shape is selected (#141).
 
         Refused under two bars -- one bar is not a tie -- and the refusal
-        says why rather than silently doing nothing.
+        says why rather than silently doing nothing. A Triangle selection
+        of anything other than exactly three bars is refused the same
+        way: a triangle is a genuine three-sided closed tie through three
+        bars, never a bounding box, so there is no plausible number to
+        round it to.
         """
         if len(self._tie_selection) < 2:
             self.tie_selection_caption_tb.Text = (
                 "Select at least two bars before Add tie -- one bar is "
                 "not a tie.")
             return
+        triangle = self._tie_shape_is_triangle()
+        if triangle and len(self._tie_selection) != 3:
+            self.tie_selection_caption_tb.Text = (
+                "A triangle touches exactly three bars -- %d selected. "
+                "Clear the selection and pick exactly three."
+                % len(self._tie_selection))
+            return
         line = format_tie_selection(self._tie_selection)
+        if triangle:
+            line = "T " + line
         text = self.tie_subsets_tb.Text
         if text and not text.endswith("\n"):
             text += "\n"
