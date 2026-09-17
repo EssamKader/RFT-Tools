@@ -600,6 +600,11 @@ class ColumnWindow(forms.WPFWindow):
             self._selected_bar_type_name(self.tie_bar_type_cb))
         self.longitudinal = counts
         self.splice = splice
+        # self.layout is ALWAYS this same object, never a copy: assigned
+        # together with self.bars here and nowhere else. on_section_canvas
+        # _click reads self.layout.bars; redraw_sketch reads
+        # self.bars.layout -- both name the identical PerimeterLayout, so a
+        # click always hit-tests the bars the sketch just drew.
         self.layout = self.bars.layout
         self.total_bars_tb.Text = "{}".format(counts.total_count)
         self.total_bars_source_tb.Text = (
@@ -830,6 +835,12 @@ class ColumnWindow(forms.WPFWindow):
                 "sketch cannot draw. Everything else still works.")
             return
         self._clear_canvases()
+        # #137: MUST run after _clear_canvases, which blanks this caption
+        # unconditionally. A handler that sets the caption and then calls
+        # redraw_sketch would otherwise have it wiped in the same click --
+        # centralising the write HERE, last, is what makes that ordering
+        # impossible to get wrong from a call site again.
+        self._update_tie_selection_caption()
         if self.column_data is None or self.layout is None:
             return
 
@@ -988,7 +999,10 @@ class ColumnWindow(forms.WPFWindow):
         if index is None:
             return
         self._tie_selection = toggle_bar_selection(self._tie_selection, index)
-        self._update_tie_selection_caption()
+        # redraw_sketch sets tie_selection_caption_tb ITSELF, after its own
+        # _clear_canvases -- calling _update_tie_selection_caption here
+        # first would only have it blanked in the same click (the review
+        # defect this ordering exists to rule out).
         self.redraw_sketch()
 
     def on_add_tie_click(self, sender, args):
@@ -1009,13 +1023,15 @@ class ColumnWindow(forms.WPFWindow):
             text += "\n"
         self.tie_subsets_tb.Text = text + line + "\n"
         self._tie_selection = []
-        self._update_tie_selection_caption()
+        # See on_section_canvas_click: redraw_sketch sets the caption
+        # itself, after clearing it, so it is not blanked here first.
         self.redraw_sketch()
 
     def on_clear_selection_click(self, sender, args):
         """Empty the pending selection without writing anything (#137)."""
         self._tie_selection = []
-        self._update_tie_selection_caption()
+        # See on_section_canvas_click: redraw_sketch sets the caption
+        # itself, after clearing it, so it is not blanked here first.
         self.redraw_sketch()
 
     # ------------------------------------------------------- selections

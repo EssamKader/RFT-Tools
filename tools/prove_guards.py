@@ -461,6 +461,36 @@ CASES = [
      "the under-2-bars refusal loosened to under-1, letting Add tie "
      "commit a single bar as though it were a tie"),
 
+    # ---- #137 review round: the caption-wiped-on-redraw defect ------
+    (COL_SCRIPT,
+     '        self._clear_canvases()\n'
+     '        # #137: MUST run after _clear_canvases, which blanks this caption\n'
+     '        # unconditionally. A handler that sets the caption and then calls\n'
+     '        # redraw_sketch would otherwise have it wiped in the same click --\n'
+     '        # centralising the write HERE, last, is what makes that ordering\n'
+     '        # impossible to get wrong from a call site again.\n'
+     '        self._update_tie_selection_caption()\n',
+     '        self._update_tie_selection_caption()\n'
+     '        self._clear_canvases()\n'
+     '        # #137: MUST run after _clear_canvases, which blanks this caption\n'
+     '        # unconditionally. A handler that sets the caption and then calls\n'
+     '        # redraw_sketch would otherwise have it wiped in the same click --\n'
+     '        # centralising the write HERE, last, is what makes that ordering\n'
+     '        # impossible to get wrong from a call site again.\n',
+     TC + "test_the_selection_caption_is_set_AFTER_the_clear_not_before",
+     "the caption written BEFORE _clear_canvases again, so 'selecting: "
+     "1 6' is set and then blanked in the same redraw -- the exact review "
+     "defect this ordering exists to rule out"),
+
+    (COL_XAML,
+     '<Canvas x:Name="section_canvas" ClipToBounds="True"\n'
+     '                                Background="Transparent"/>',
+     '<Canvas x:Name="section_canvas" ClipToBounds="True"/>',
+     TC + "test_the_section_canvas_is_hit_testable_over_empty_area",
+     "Background=\"Transparent\" removed from section_canvas, so a WPF "
+     "Canvas is no longer hit-testable over empty area and the grown "
+     "BAR_PICK_RADIUS_PX buys nothing"),
+
     # ---- #133: fy shown, longitudinal filtered to T ------------------
     (GRADES, '    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)',
      '    return True',
