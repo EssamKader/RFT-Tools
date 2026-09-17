@@ -384,16 +384,24 @@ CASES = [
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
      "A1 -- the pre-check over the whole plan deleted from place_ties"),
 
-    (COL_PLACE_TIES, '    if tie.kind != KIND_CLOSED_LOOP:\n        return\n',
+    (COL_TIES, '    if tie.kind != KIND_CLOSED_LOOP:\n        return True\n',
      '',
      TPT + "test_a_cross_tie_is_never_gated_by_A1_its_geometry_is_not_a_loop",
      "A1 -- a legitimate cross-tie (narrow < minimum BY DESIGN) wrongly "
-     "refused once the CLOSED_LOOP-only guard is removed"),
+     "refused once the CLOSED_LOOP-only guard is removed from core's "
+     "is_buildable, which BOTH the tie placer and the Apply path ask"),
 
-    (COL_PLACE_TIES, '    if tie.narrow_mm < tie.min_buildable_mm:',
-     '    if False:',
+    (COL_TIES, '    return tie.narrow_mm >= tie.min_buildable_mm',
+     '    return True',
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
-     "A1 -- the narrow-vs-minimum comparison itself disabled"),
+     "A1 -- the narrow-vs-minimum comparison itself disabled in core"),
+
+    (COL_PLACER, '        if is_buildable(tie):\n            continue\n',
+     '',
+     "tests/test_column_placer.py::"
+     "test_apply_never_opens_a_transaction_for_an_unbuildable_tie",
+     "A1 -- the Apply path's own gate deleted, so an unbuildable loop "
+     "reaches a transaction even though the tie placer would refuse it"),
 
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',

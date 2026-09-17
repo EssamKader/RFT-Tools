@@ -75,7 +75,7 @@ the element it named is gone. See ``tests/fake_revit_api.py``'s header.
 from Autodesk.Revit.DB import Transaction
 
 from ..core.column_plan import is_blocked
-from ..core.column_ties import KIND_CLOSED_LOOP, describe_subset
+from ..core.column_ties import describe_subset, is_buildable
 from .column_ownership import partition_host_rebar, tag_as_ours
 from .column_place_bars import place_bars
 from .column_place_ties import place_ties
@@ -115,17 +115,16 @@ def refuse_if_not_ready(plan):
             "before opening a transaction (R25). See the Review tab's "
             "findings.")
     for tie in plan.ties:
-        if tie.kind != KIND_CLOSED_LOOP:
+        if is_buildable(tie):
             continue
-        if tie.narrow_mm < tie.min_buildable_mm:
-            raise ColumnPlacementError(
-                "Tie %s: narrow dimension %.1f mm is below the %.1f mm A1 "
-                "threshold (bend diameter + tie diameter) and cannot be "
-                "bent. Refused before any transaction opened -- issue #109 "
-                "Finding 3 found this fails above the call site, "
-                "uncatchable, so it must never be reached (R25)."
-                % (describe_subset(tie.subset), tie.narrow_mm,
-                   tie.min_buildable_mm))
+        raise ColumnPlacementError(
+            "Tie %s: narrow dimension %.1f mm is below the %.1f mm A1 "
+            "threshold (bend diameter + tie diameter) and cannot be "
+            "bent. Refused before any transaction opened -- issue #109 "
+            "Finding 3 found this fails above the call site, "
+            "uncatchable, so it must never be reached (R25)."
+            % (describe_subset(tie.subset), tie.narrow_mm,
+               tie.min_buildable_mm))
 
 
 def existing_elements(doc, host_element):
