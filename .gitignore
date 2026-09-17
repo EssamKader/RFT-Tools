@@ -35,3 +35,6 @@ Thumbs.db
 
 # Agent worktrees (created by Claude Code subagents, never source)
 .claude/worktrees/
+
+# Revit scratch
+Revit_temp/

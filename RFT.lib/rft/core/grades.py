@@ -23,10 +23,18 @@ diameter, so two selections cannot express a Ø12 top bar and a Ø16 bottom
 bar in the same beam -- the normal case. A42 moves to one selection per bar
 ROLE instead. Grade stops being a selection axis: inferring a
 ``RebarBarType``'s grade from the type itself is exactly what A35's note
-already ruled out (a `RebarBarType` carries a diameter, not a grade), so
-A34's assignment is now the LABEL each role's picker carries and a line in
-the report -- the engineer's selection is the assertion, not something this
-module can verify. The bar diameter itself is no longer typed anywhere; it
+already ruled out, so A34's assignment is now the LABEL each role's picker
+carries and a line in the report -- the engineer's selection is the
+assertion, not something this module can verify.
+
+**Correction (issue #133, R27).** A35's note gave the reason as "a
+`RebarBarType` carries a diameter, not a grade". That is false: it carries
+a Material, and the material carries a yield strength -- 13 of the
+verification model's 15 types resolve to a real fy. The POLICY above
+survives unchanged, because it never depended on the reason: the engineer
+still selects and this module still does not infer. What changed is that
+``rft.revit.bar_types`` now SHOWS the grade beside every type, so the
+label states a fact instead of an aspiration. The bar diameter itself is no longer typed anywhere; it
 comes from the selected type via ``rft.revit.bar_types.bar_type_diameter_mm``.
 """
 
