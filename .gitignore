@@ -32,3 +32,6 @@ Thumbs.db
 *.slog
 *.dwlx
 *.dwl2
+
+# Agent worktrees (created by Claude Code subagents, never source)
+.claude/worktrees/
