@@ -279,3 +279,28 @@ u legs:  -180.25, 0, +180.25             -> 180, 180          (was 360)
 v legs:  -255.25, -80.8, +80.9, +255.25  -> 174, 162, 174     (was 510)
 all 10 bars restrained                    BLOCKING: none
 ```
+
+
+---
+
+## R21 — a closed tie's hooks turn INWARD: `Left` / `Left`
+
+**Established live** (#109, Finding 4), on column 422078.
+
+`Rebar.CreateFromCurves` takes a hook orientation per end. With
+`RebarHookOrientation.Right` at both ends — the obvious-looking choice, and
+the one the tracer bullet used — both 135° hook tails land **outside the
+concrete**. Revit builds it anyway: no exception, no warning, no null. The
+element schedules and draws like any other tie.
+
+Of the four combinations, only `Left` / `Left` turns both tails into the
+core. **The placer passes `Left` / `Left`, and asserts that both hook tails
+fall inside the host's extent before keeping the element.**
+
+The assertion is not belt-and-braces. The orientation enum is interpreted
+against the curve direction, so the correct value is a property of how the
+loop was wound — and the loop is wound by
+`rft.core.column_ties`, which is free to change. A constant that is right
+today because of an unstated convention elsewhere is exactly the kind of
+coupling this project has paid for before. The check is on the geometry
+that came back, which cannot drift.
