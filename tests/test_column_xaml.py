@@ -97,22 +97,22 @@ def _code_of(function_name):
     raise AssertionError("no function named %r in script.py" % function_name)
 
 
-def test_the_two_bar_pickers_are_filled_from_DIFFERENT_lists():
-    """#133. The longitudinal picker takes T-named types only; the tie
-    picker takes everything. Filling both from one list is the defect
-    this guards -- it would silently offer an M type for the vertical
-    bars, which is the whole thing the ruling exists to prevent.
+def test_both_bar_pickers_show_EVERY_type():
+    """#135, withdrawing #133's filter.
 
-    Source-level because ``script.py`` imports ``pyrevit`` and cannot be
-    executed here. The FILTER itself is tested by execution in
-    ``tests/test_bar_type_grade.py``; this only checks the window asks
+    The longitudinal picker was briefly filtered to T-named types and came
+    up EMPTY on the live model, which holds eleven types all named `..M`.
+    Hiding a bar the engineer needs is worse than showing one they must
+    judge -- and the fy in each label is what lets them judge it.
+
+    Source-level because ``script.py`` imports ``pyrevit``. The adapter's
+    filter still exists and is still tested by execution in
+    ``tests/test_bar_type_grade.py``; this asserts the WINDOW does not ask
     for it.
     """
     source = _script()
-    assert "high_tensile_only=True" in source, (
-        "the longitudinal picker must ask for the filtered list")
-    assert source.count("bar_type_options(") >= 2, (
-        "two pickers, two calls -- one filtered, one not")
+    assert "high_tensile_only" not in source, (
+        "the window must not filter either picker -- #135")
 
 
 def test_the_column_xaml_parses():
