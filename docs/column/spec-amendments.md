@@ -304,3 +304,45 @@ loop was wound — and the loop is wound by
 today because of an unstated convention elsewhere is exactly the kind of
 coupling this project has paid for before. The check is on the geometry
 that came back, which cannot drift.
+
+
+---
+
+## R22 — a longitudinal bar is positioned by a DISTANCE TO A HOST FACE, never by a coordinate
+
+**Established live** (#92), on column 422078, after #109 made kept writes
+possible.
+
+A bar handed to `Rebar.CreateFromCurves` **does not stay where it is put.**
+It binds to the nearest tie bend and translates, and a multi-bar set
+translates whole — every bar carrying the same error. On the live column a
+corner bar moved `+4.75 / +12.05 mm`, which is R15's snap, measured.
+
+The placer therefore does not rely on the coordinate it passes. After
+creating the bar it **pins the in-plane handles to the host's own faces**:
+
+- for the `RebarPlane` handle and each `Edge` handle, take the candidate
+  from `GetConstraintCandidatesForHandle` that is `IsToHostFaceOrCover()`,
+  is **not** `IsToCover()`, targets the host, and whose `PlanarFace` normal
+  is the near face on that axis;
+- `SetDistanceToTargetHostFace(-offset)` — **negative**, because the
+  distance is signed against the OUTWARD face normal;
+- `SetPreferredConstraintForHandle(handle, constraint)`.
+
+Three things that look like the same fix and are not:
+
+| tried | result |
+|---|---|
+| `ToCover` candidate | constraint re-points, **bar does not move** |
+| positive offset | bar lands 57 mm **outside** the column |
+| `IsRebarConstrainedPlacementEnabled` | static, already `False`, snap happens anyway |
+
+**Why this is a rule and not an implementation detail.** The column's near
+faces sit at `x = -370.822`, `y = 886.950` — not on a round coordinate, and
+nothing requires them to be. A placer that computes absolute XY carries the
+host's coordinate noise into every bar and must then decide what rounding is
+acceptable. A placer that states *"57.45 mm from this face"* is exact by
+construction and follows a cover change for free.
+
+This supersedes #92's proposal to place single-bar sets for predictability.
+Sets stay; the constraint is what buys the predictability.
