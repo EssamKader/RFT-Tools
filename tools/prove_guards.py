@@ -303,6 +303,32 @@ CASES = [
      "a zero-length leg reading as aligned on BOTH axes, inventing "
      "two branches out of one point"),
 
+    # ---- R30 (#146): a diagonal bridges the gap it crosses
+
+    (COL_TIES,
+     '                if span is None or span > MAX_TIE_BRANCH_SPACING_MM:',
+     '                if True:',
+     "tests/test_column_ties.py::"
+     '     "test_a_triangles_diagonal_BRIDGES_the_gap_it_crosses"',
+     "R30 switched off, so a triangle's diagonals stop bridging and "
+     "the tool demands a cross-tie the engineering does not need"),
+
+    (COL_TIES,
+     '                if span is None or span > MAX_TIE_BRANCH_SPACING_MM:',
+     '                if span is None:',
+     "tests/test_column_ties.py::"
+     '     "test_a_diagonal_TOO_LONG_to_be_doing_that_job_does_not_bridge"',
+     "the 300 mm limit dropped from R30, so ANY diagonal bridges "
+     "however long -- a licence rather than a rule"),
+
+    (COL_TIES,
+     '    du = max(0.0, abs(bar_a.u_mm - bar_b.u_mm) - bar_diameter_mm)',
+     '    du = abs(bar_a.u_mm - bar_b.u_mm) - bar_diameter_mm',
+     "tests/test_column_ties.py::"
+     '     "test_a_purely_horizontal_leg_reports_its_PLAIN_clear_distance"',
+     "the clamp removed, so a leg with no extent on one axis squares "
+     "a NEGATIVE clear distance back into its span"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',
