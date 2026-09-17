@@ -188,6 +188,19 @@ Currently ``SHAPE UNVERIFIED``:
   and ``SetDistanceToTargetHostFace`` were all confirmed by reflection over
   the live types -- see the verified list above, and the two members that
   reflection showed do NOT exist.
+- ``Document.Delete(ElementId)`` (issue #120, R23/R25) -- one of the
+  oldest, most standard members of the Revit API, and still not probed
+  against this project's own live host, so it is listed here rather than
+  quietly assumed on the strength of being well known elsewhere. The real
+  member is documented to return ``ICollection<ElementId>`` of every
+  dependent element also removed; ``rft.revit.column_placer`` discards
+  that return value and never relies on it. ``FakeDocument.Delete`` below
+  additionally models something no real API call needs to: undoing itself
+  on ``FakeTransaction.RollBack()``. That is not part of the real
+  `Document.Delete` shape -- Revit's own transaction machinery does that
+  restoration natively -- it is this FAKE's only way to let a test prove
+  R25's central claim (a rolled-back delete leaves the model exactly as
+  it was) without a real Revit session.
 """
 
 import math
@@ -365,21 +378,45 @@ class FakeUnitUtils(object):
 
 
 class FakeTransaction(object):
+    """Issue #120, R25: unlike every earlier use of this fake (the beam
+    tool's own `run_in_transaction`, which never deletes anything), this
+    ticket's whole point is that a ROLLED-BACK delete must leave the
+    original elements in place. ``doc`` therefore needs to know which
+    transaction is currently open, so `FakeDocument.Delete` can log what
+    left the collector and this class can put it back on `RollBack`.
+
+    ``doc`` may be ``None`` (every pre-#120 caller passes it that way) --
+    guarded below so this remains a no-op for anything that never deletes.
+    """
+
     def __init__(self, doc, name):
         self.doc = doc
         self.name = name
         self.started = False
         self.committed = False
         self.rolled_back = False
+        #: Elements `FakeDocument.Delete` removed from the collector while
+        #: THIS transaction was the active one -- put back verbatim on
+        #: `RollBack`, forgotten on `Commit`.
+        self.deleted_items = []
 
     def Start(self):
         self.started = True
+        if self.doc is not None:
+            self.doc._active_transaction = self
 
     def Commit(self):
         self.committed = True
+        self.deleted_items = []
+        if self.doc is not None:
+            self.doc._active_transaction = None
 
     def RollBack(self):
         self.rolled_back = True
+        FakeFilteredElementCollector._ITEMS.extend(self.deleted_items)
+        self.deleted_items = []
+        if self.doc is not None:
+            self.doc._active_transaction = None
 
 
 class FakeBuiltInCategory(object):
@@ -693,6 +730,16 @@ class FakeRebarInstance(object):
     creation order) or a fresh, empty one -- an empty manager offers no
     handles, so a test that never arms one simply exercises the "nothing to
     pin" path rather than raising.
+
+    ``LookupParameter("Partition")`` (issue #120): a freshly-created
+    element must carry the SAME writable ``Partition`` parameter
+    ``FakeRebarElement`` gives an already-placed one, because R26's
+    `tag_as_ours` runs on whatever `Rebar.CreateFromCurves` just returned
+    -- ties from `place_ties`, bars from `place_bars` -- not on a
+    separately-queried element. The parameter shape itself is the one
+    `column_ownership.py`'s own docstring already records as VERIFIED LIVE
+    (issue #109/#117); what is new here is only that THIS fake, and not
+    only `FakeRebarElement`, now exposes it.
     """
 
     _next_id = [500000]
@@ -704,11 +751,17 @@ class FakeRebarInstance(object):
         self.Id = FakeElementId(FakeRebarInstance._next_id[0])
         FakeRebarInstance._next_id[0] += 1
         self.layout_calls = []
+        self._partition = FakeRebarPartitionParameter("")
         if FakeRebar.PENDING_CONSTRAINTS_MANAGERS:
             self._constraints_manager = \
                 FakeRebar.PENDING_CONSTRAINTS_MANAGERS.pop(0)
         else:
             self._constraints_manager = FakeRebarConstraintsManager()
+
+    def LookupParameter(self, name):
+        if name == PARTITION_PARAMETER_NAME_FOR_FAKE:
+            return self._partition
+        return None
 
     def GetShapeDrivenAccessor(self):
         return self._accessor
@@ -1280,16 +1333,42 @@ class FakeColumn(object):
 
 
 class FakeDocument(object):
-    """Only ``GetElement``; collectors read the module-level ``_ITEMS``."""
+    """``GetElement`` plus, since issue #120 (R23/R25), ``Delete`` --
+    collectors read the module-level ``_ITEMS``, and that is what
+    ``Delete`` mutates."""
 
     def __init__(self, elements=None):
         self._elements = dict(elements or {})
+        #: Set by ``FakeTransaction.Start()``; ``None`` outside any
+        #: transaction. Lets ``Delete`` log what it removed so a rollback
+        #: can restore it -- see ``FakeTransaction``'s own docstring.
+        self._active_transaction = None
+        #: Every id ever handed to ``Delete``, committed or not -- purely
+        #: a diagnostic a test can inspect; the adapter never reads this.
+        self.deleted_ids = []
 
     def GetElement(self, element_id):
         if element_id is None:
             return None
         return self._elements.get(getattr(element_id, "IntegerValue",
                                           element_id))
+
+    def Delete(self, element_id):
+        """SHAPE UNVERIFIED -- see this module's header. Removes the
+        matching element from ``FakeFilteredElementCollector._ITEMS`` (the
+        list every ``hosted_rebar`` query reads) and, if a transaction is
+        currently open, remembers it so ``FakeTransaction.RollBack`` can
+        put it back -- R25's guarantee that a failed rebuild leaves the
+        original cage intact cannot be tested any other way.
+        """
+        self.deleted_ids.append(element_id)
+        items = FakeFilteredElementCollector._ITEMS
+        removed = [item for item in items if item.Id == element_id]
+        for item in removed:
+            items.remove(item)
+        if self._active_transaction is not None:
+            self._active_transaction.deleted_items.extend(removed)
+        return [element_id]
 
 
 def install():

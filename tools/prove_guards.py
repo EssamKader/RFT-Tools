@@ -80,6 +80,10 @@ TPL = "tests/test_column_plan.py::"
 # ---- #118: the tie placer -------------------------------------
 COL_PLACE_TIES = "RFT.lib/rft/revit/column_place_ties.py"
 TPT = "tests/test_column_place_ties.py::"
+# ---- #120: the Apply path (R23/R25) -----------------------------
+COL_PLACER = "RFT.lib/rft/revit/column_placer.py"
+TCP = "tests/test_column_placer.py::"
+TCA = "tests/test_column_apply.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -390,6 +394,35 @@ CASES = [
      '    if False:',
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
      "A1 -- the narrow-vs-minimum comparison itself disabled"),
+
+    # ---- #120: the Apply path, R23/R25 ------------------------------
+    (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
+     '    transaction = Transaction(doc, TRANSACTION_NAME)',
+     TCP + "test_apply_never_opens_a_transaction_when_blocked",
+     "R25 -- apply's own refuse_if_not_ready gate deleted, so a "
+     "transaction opens on a plan already known to fail"),
+
+    (COL_PLACER,
+     '        for element in ours:\n'
+     '            doc.Delete(element.Id)\n'
+     '\n'
+     '        ties_created = _place_ties_by_role(',
+     '        for element in ours:\n'
+     '            doc.Delete(element.Id)\n'
+     '        transaction.Commit()\n'
+     '        transaction = Transaction(doc, TRANSACTION_NAME)\n'
+     '        transaction.Start()\n'
+     '\n'
+     '        ties_created = _place_ties_by_role(',
+     TCP + "test_a_failed_rebuild_leaves_the_original_cage_intact",
+     "R25 -- the deletions committed in their own transaction before the "
+     "rebuild, so a failed rebuild cannot restore what is already gone "
+     "(the worst state R25 exists to rule out)"),
+
+    (COL_SCRIPT, '        if ours:\n',
+     '        if False and ours:\n',
+     TCA + "test_the_dialog_is_gated_behind_ours_being_non_empty",
+     "R23 -- the replace dialog skipped even when elements of ours exist"),
 
     # ---- rc2 live failure: Location.Point.Z is not the elevation -------
     (COL_HOST, '                        probe_z)',
