@@ -901,6 +901,69 @@ def test_a_click_on_nothing_clears_no_selection():
         "a miss must return before touching the pending selection")
 
 
+def test_the_selection_caption_is_set_AFTER_the_clear_not_before():
+    """Review finding: ``_clear_canvases`` blanks ``tie_selection_caption_
+    tb`` unconditionally, so a handler that wrote the caption and THEN
+    called ``redraw_sketch`` had it wiped in the same click -- "selecting:
+    1 6" appeared and vanished within one handler, and no test caught it
+    because nothing exercised the two calls together.
+
+    The fix centralises the write inside ``redraw_sketch`` itself, after
+    its own ``_clear_canvases`` -- so this is checked as TEXT, on
+    ``redraw_sketch``'s own body, rather than by re-deriving the order
+    from each caller. ``script.py`` imports ``pyrevit`` and cannot be
+    executed under CPython, so a source-level ordering check is the
+    honest option here: nothing short of a real WPF ``TextBlock`` would
+    let a test observe the caption actually surviving the clear.
+    """
+    body = re.search(r"def redraw_sketch\(.*?\n(.*?)\n    def ",
+                     _script(), re.DOTALL).group(1)
+    assert "_clear_canvases()" in body and "_update_tie_selection_caption()" in body
+    assert body.index("_clear_canvases()") < body.index(
+        "_update_tie_selection_caption()"), (
+        "_update_tie_selection_caption must run AFTER _clear_canvases "
+        "inside redraw_sketch, or the pending-selection caption is "
+        "blanked the instant it is set")
+
+
+def test_no_handler_sets_the_caption_before_its_own_redraw():
+    """The other half of the same defect: even with redraw_sketch fixed, a
+    handler that ALSO calls ``_update_tie_selection_caption`` before
+    ``redraw_sketch`` would still have it wiped first and then correctly
+    rewritten -- harmless today, but a second writer is exactly the "two
+    consumers quietly diverge" shape this project keeps paying for. None
+    of the three handlers should call it at all; redraw_sketch is the only
+    writer.
+    """
+    for handler in ("on_section_canvas_click", "on_add_tie_click",
+                   "on_clear_selection_click"):
+        called, _literals = _code_of(handler)
+        assert "_update_tie_selection_caption" not in called, (
+            "%s calls _update_tie_selection_caption directly; only "
+            "redraw_sketch should, or the two writers can disagree about "
+            "the caption's ordering again" % handler)
+        assert "redraw_sketch" in called, (
+            "%s never redraws, so the caption (and the sketch) goes "
+            "stale" % handler)
+
+
+def test_the_section_canvas_is_hit_testable_over_empty_area():
+    """Review finding: a WPF ``Canvas`` with no ``Background`` of its own
+    is not hit-testable over empty space -- only a filled child (the bar
+    ``Ellipse``s) raises ``MouseLeftButtonDown``. Without this,
+    ``BAR_PICK_RADIUS_PX``'s whole point -- a click near, not exactly on,
+    a bar -- buys nothing: the near-miss click never reaches the handler
+    the radius was grown for.
+    """
+    text = read(COLUMN_XAML_PATH)
+    canvas = re.search(r'<Canvas\s+x:Name="section_canvas"[^/]*/>', text)
+    assert canvas, "section_canvas not found"
+    assert 'Background="Transparent"' in canvas.group(0), (
+        "section_canvas must declare Background=\"Transparent\" or most "
+        "of the grown pick radius is dead: only clicks landing directly "
+        "on a filled Ellipse would ever fire")
+
+
 def test_section_6_1_s_verdict_has_ONE_reader_in_the_window():
     """``is_blocked(plan)`` rather than the window applying its own test
     to ``findings``. The placer's gate and the report's wording must

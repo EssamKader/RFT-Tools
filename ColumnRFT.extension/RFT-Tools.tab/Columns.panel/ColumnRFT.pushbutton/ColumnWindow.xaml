@@ -538,7 +538,18 @@
                             BorderBrush="{StaticResource BorderSubtle}"
                             BorderThickness="1"
                             Background="{StaticResource SurfaceWhite}">
-                        <Canvas x:Name="section_canvas" ClipToBounds="True"/>
+                        <!-- Background="Transparent" is NOT decoration and
+                             looks like a no-op against the white Border
+                             behind it, so do not delete it. A WPF Canvas
+                             with no Background of its own is not hit
+                             testable over its empty area: only a filled
+                             child (the bar Ellipses) raises
+                             MouseLeftButtonDown, so without this every
+                             near-miss click #137's BAR_PICK_RADIUS_PX
+                             exists to catch would never reach the
+                             handler. -->
+                        <Canvas x:Name="section_canvas" ClipToBounds="True"
+                                Background="Transparent"/>
                     </Border>
 
                     <Border Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
