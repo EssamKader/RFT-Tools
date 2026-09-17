@@ -285,6 +285,24 @@ CASES = [
      "the closed loop's own winding reversed, which must break the "
      "triangle's agreement with it rather than silently redefining it"),
 
+    # ---- R29 (#146): a diagonal leg is not a branch
+
+    (COL_TIES,
+     '    if across > BRANCH_AXIS_TOL_MM:',
+     '    if False:',
+     "tests/test_column_ties.py::"
+     '     "test_a_diagonal_leg_is_NOT_a_branch_on_either_axis"',
+     "R29 switched off, so a diagonal leg is credited as a branch on "
+     "both axes and section 6.1 passes steel it should block"),
+
+    (COL_TIES,
+     '    if along <= BRANCH_AXIS_TOL_MM:',
+     '    if False:',
+     "tests/test_column_ties.py::"
+     '     "test_a_zero_length_leg_is_no_branch_at_all"',
+     "a zero-length leg reading as aligned on BOTH axes, inventing "
+     "two branches out of one point"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',

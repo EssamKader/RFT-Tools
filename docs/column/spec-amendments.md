@@ -666,3 +666,69 @@ resolution refuses outright rather than resolving to something weaker.
   `_uv_segments_mm` dispatch and a 3-point `SketchPolygon` through the
   existing (kind-agnostic) drawing path — #140's `ResolvedTie.vertices` is
   what makes both need no triangle-specific code at all.
+
+
+---
+
+## R29 — a diagonal leg is not a branch for section 6.1's 300 mm rule
+
+**Decided by the owner** (#146), asked directly whether a diagonal leg counts
+for the 300 mm branch-spacing limit:
+
+> no not count
+
+### What it corrects
+
+Section 6.1 sets a maximum of 300 mm between two tie branches. Until this
+ruling the check read each tie's **bounding box** and took its two edges per
+axis. For a rectangle that is exactly right — a closed loop's four legs *are*
+its bounding box's edges. For a triangle it is not.
+
+`T 1 9 3` on the verification column:
+
+| bar | u | v |
+|---|---|---|
+| 1 | 0 | −243 |
+| 9 | −168 | −81 |
+| 3 | 168 | −81 |
+
+The box spans `v = −243 … −81`, so the check credited **horizontal branches at
+both**. Only leg 9–3 is real. At `v = −243` there is a single **vertex**, bar
+1, with both of its legs running diagonally away from it. The box also claimed
+vertical branches at `u = ±168`, where the triangle has only points.
+
+### The rule
+
+- A leg counts as a branch on an axis **when it runs along that axis** — a
+  vertical leg is one at constant `u`, a horizontal leg one at constant `v`.
+- **A diagonal leg counts for nothing**, on either axis.
+- A zero-length leg counts for nothing, rather than reading as aligned on both.
+
+### Why this direction matters
+
+`validate`'s own discipline, stated in its docstring, is that it *"can demand
+restraint that proves unnecessary; it can never miss restraint that was
+needed."* A bounding box **misses**: it passes an arrangement whose steel is
+more than 300 mm apart because a box edge said otherwise. Section 6.1 is a
+blocking check, so that is the wrong way round.
+
+### What it changes in practice
+
+- **A closed loop: nothing.** Its four legs are its box's edges.
+- **An axis-aligned cross-tie: nothing.** R20 already gave bar 1 → bar 6 one
+  vertical branch at `u = 0` and nothing horizontally; the general rule says
+  the same thing for the same reason.
+- **A triangle:** only its genuinely axis-aligned legs count.
+- **A diagonal cross-tie:** now counts for nothing, where R20's thin-axis test
+  gave it a coordinate. No such tie exists in the verification model; the
+  change is stated here rather than discovered later.
+
+Three special cases became one question, asked through `tie_legs` and
+`branch_coordinate`, both reading the `vertices` polygon #140 gave every tie.
+
+### What is NOT claimed
+
+That Figure 13-3 says this in so many words. It draws diagonal cross-ties in
+several sections and says nothing about how they are measured for the 300 mm
+limit; the owner read the rule as applying between branches parallel to the
+face, and that reading is recorded here as a ruling, not as a citation.

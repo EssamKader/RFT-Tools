@@ -14,6 +14,8 @@ import pytest
 
 from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_ties import (
+    branch_coordinate,
+    tie_legs,
     KIND_CLOSED_LOOP,
     KIND_CROSS_TIE,
     SEVERITY_BLOCKING,
@@ -439,3 +441,72 @@ def test_what_was_typed_round_trips():
     parser accepts must format back to something it accepts."""
     text = "1 6\n9 3\n0 1 2 3"
     assert format_tie_subsets(parse_tie_subsets(text)) == text
+
+# --------------------------------------------------------------------- #
+# R29 (#146) -- a diagonal leg is not a branch
+
+
+def test_a_diagonal_leg_is_NOT_a_branch_on_either_axis():
+    """The owner's ruling: section 6.1's 300 mm limit is read between
+    branches PARALLEL to the face. A leg running corner to corner crosses
+    the gap without being a branch across it.
+    """
+    diagonal = ((-100.0, -100.0), (100.0, 100.0))
+    assert branch_coordinate(diagonal, 0) is None
+    assert branch_coordinate(diagonal, 1) is None
+
+
+def test_an_axis_aligned_leg_is_a_branch_on_ITS_axis_only():
+    vertical = ((0.0, -240.0), (0.0, 240.0))
+    assert branch_coordinate(vertical, 0) == 0.0
+    assert branch_coordinate(vertical, 1) is None
+
+    horizontal = ((-160.0, 80.0), (160.0, 80.0))
+    assert branch_coordinate(horizontal, 1) == 80.0
+    assert branch_coordinate(horizontal, 0) is None
+
+
+def test_a_zero_length_leg_is_no_branch_at_all():
+    """Degenerate, but it would otherwise read as aligned on BOTH axes and
+    invent two branches out of a single point."""
+    point = ((10.0, 20.0), (10.0, 20.0))
+    assert branch_coordinate(point, 0) is None
+    assert branch_coordinate(point, 1) is None
+
+
+def test_a_triangle_contributes_ONLY_its_axis_aligned_leg():
+    """#146's actual defect. `T 1 9 3` has bar 1 at the bottom face and
+    bars 9 and 3 level with each other: leg 9-3 is horizontal and real,
+    the other two run diagonally away from bar 1. The bounding-box
+    reading credited a horizontal branch at bar 1's own level, where
+    there is a VERTEX and no leg, and two vertical branches where there
+    are only points.
+    """
+    lay = layout()
+    triangle = ties([TieSubset((1, 9, 3), triangle=True)], lay)[1]
+
+    horizontals = [branch_coordinate(leg, 1) for leg in tie_legs(triangle)]
+    verticals = [branch_coordinate(leg, 0) for leg in tie_legs(triangle)]
+
+    assert len([c for c in horizontals if c is not None]) == 1, (
+        "a triangle has exactly one horizontal leg here; the bounding box "
+        "claimed two")
+    assert not [c for c in verticals if c is not None], (
+        "none of this triangle's legs runs vertically, so it contributes "
+        "no vertical branch at all")
+
+
+def test_a_rectangle_still_contributes_all_four_of_its_legs():
+    """R29 must not quietly loosen the closed loop, whose legs really are
+    its bounding box's edges. Derived from the tie rather than asserted as
+    four numbers, so it keeps meaning what it says if the corner order
+    ever changes.
+    """
+    lay = layout()
+    loop = ties([], lay)[0]
+    verticals = [c for c in (branch_coordinate(leg, 0)
+                             for leg in tie_legs(loop)) if c is not None]
+    horizontals = [c for c in (branch_coordinate(leg, 1)
+                               for leg in tie_legs(loop)) if c is not None]
+    assert len(verticals) == 2 and len(horizontals) == 2
+    assert verticals[0] != verticals[1]
