@@ -188,7 +188,7 @@ def test_hook_tails_are_verified_by_reading_the_geometry_back():
     curves = rebar.GetCenterlineCurves(False, False, False, None, 0.0)
     box = rebar.args[5].get_BoundingBox(None)
     start_tail = curves[0].GetEndPoint(0)
-    end_tail = curves[-1].GetEndPoint(1)
+    end_tail = curves[len(curves) - 1].GetEndPoint(1)
     for point in (start_tail, end_tail):
         assert box.Min.X <= point.X <= box.Max.X
         assert box.Min.Y <= point.Y <= box.Max.Y

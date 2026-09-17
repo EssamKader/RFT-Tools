@@ -414,6 +414,13 @@ CASES = [
      "is what died on a live host with TypeError: 'Line' object is not "
      "iterable while every test passed"),
 
+    (COL_PLACE_TIES, '    end_tail = curves[len(curves) - 1].GetEndPoint(1)',
+     '    end_tail = curves[-1].GetEndPoint(1)',
+     TPT + "test_hook_tails_are_verified_by_reading_the_geometry_back",
+     "#129 -- negative indexing into what GetCenterlineCurves returns. "
+     "Legal Python, and an error on the .NET IList the API actually "
+     "hands back"),
+
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
      '    transaction = Transaction(doc, TRANSACTION_NAME)',

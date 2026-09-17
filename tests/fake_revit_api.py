@@ -844,7 +844,10 @@ class FakeRebarInstance(object):
         end_anchor = curves[-1].GetEndPoint(1)
         start_hook = FakeLine.CreateBound(tail(start_anchor, orient_start), start_anchor)
         end_hook = FakeLine.CreateBound(end_anchor, tail(end_anchor, orient_end))
-        return [start_hook] + curves + [end_hook]
+        # A .NET-shaped list, not a Python one: the adapter reads this
+        # back and must meet the same indexing rules the real
+        # `GetCenterlineCurves` imposes (PR #129).
+        return FakeGenericList([start_hook] + list(curves) + [end_hook])
     def GetRebarConstraintsManager(self):
         return self._constraints_manager
 
@@ -1081,6 +1084,15 @@ class FakeGenericList(object):
     the adapter tried it and failed. The real import is
     ``from System.Collections.Generic import List``, and the subscript
     returns a constructible type.
+
+    **Negative indices raise here, because they raise on a real .NET
+    list.** ``curves[-1]`` is ordinary Python and is an error on any
+    ``IList<T>``: IronPython surfaces it as
+    ``ValueError: Index was out of range ... Parameter name: index``.
+    PR #129 fixed exactly that, after it shipped to a live host, because this fake
+    delegated to a Python list and answered happily. A fake that is more
+    permissive than the API is not a safe fake -- it is a fake that
+    certifies code the API will reject.
     """
 
     def __init__(self, items=None):
@@ -1090,6 +1102,11 @@ class FakeGenericList(object):
         return cls
 
     def __getitem__(self, index):
+        if index < 0:
+            raise IndexError(
+                "negative index %d: a .NET IList<T> has no negative "
+                "indexing and raises 'Index was out of range'. Use "
+                "len(x) - 1. See PR #129." % index)
         return self._items[index]
 
     def Add(self, item):

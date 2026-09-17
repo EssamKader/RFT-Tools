@@ -214,7 +214,12 @@ def _assert_hook_tails_inside_host_extent(host_element, rebar, tie):
     # the first tie, which is how issue #127 was found -- on a host, after
     # this assertion had "passed" in every test run.
     start_tail = curves[0].GetEndPoint(0)
-    end_tail = curves[-1].GetEndPoint(1)
+    # `len(curves) - 1`, NOT `curves[-1]`. `GetCenterlineCurves`
+    # returns a .NET IList<Curve>, which has no negative indexing:
+    # `curves[-1]` raises
+    # "Index was out of range ... Parameter name: index".
+    # Found live; see PR #129.
+    end_tail = curves[len(curves) - 1].GetEndPoint(1)
     for end_label, point in (("start", start_tail), ("end", end_tail)):
         if not (_within(point.X, box.Min.X, box.Max.X)
                 and _within(point.Y, box.Min.Y, box.Max.Y)):
