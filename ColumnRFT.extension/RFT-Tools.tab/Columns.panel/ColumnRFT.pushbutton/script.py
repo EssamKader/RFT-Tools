@@ -53,6 +53,16 @@ try:
 except Exception:
     _WPF_SHAPES_AVAILABLE = False
 
+# The window's title-bar icon, imported separately from the sketch's WPF
+# types: the sketch and the icon fail independently, and neither may stop
+# the window opening.
+try:
+    from System import Uri, UriKind
+    from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
+    _WPF_IMAGING_AVAILABLE = True
+except Exception:
+    _WPF_IMAGING_AVAILABLE = False
+
 from rft.core.column_inputs import (
     DEFAULT_HOOK_ANGLE_DEG,
     LS_MODE_CHOICES,
@@ -123,6 +133,38 @@ DERIVED_NAMES = ("total_bars_tb", "ls_applied_tb", "l0_tb", "s0_tb",
                  "confinement_built_tb", "middle_built_tb", "middle_max_tb")
 
 
+def _apply_window_icon(window):
+    """Put the pushbutton's own icon in the window's title bar.
+
+    An ABSOLUTE file URI, never a relative one. The window is loaded with
+    ``literal_string=True``, which leaves ``BaseUri`` null, so a relative
+    URI has nothing to resolve against -- the same reason
+    ``rft.ui.shared_styles`` rewrites its resource path. A relative URI
+    would not raise here; it would simply resolve to nothing.
+
+    ``OnLoad`` caching so the file is read once and not held open: the
+    icon lives in the deployed extension, which gets replaced under a
+    running Revit every time this project deploys.
+
+    Wrapped: a missing or unreadable icon must never stop the window
+    opening. The icon is decoration; the window is the tool.
+    """
+    if not _WPF_IMAGING_AVAILABLE:
+        return
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+    if not os.path.exists(path):
+        return
+    try:
+        image = BitmapImage()
+        image.BeginInit()
+        image.UriSource = Uri(path, UriKind.Absolute)
+        image.CacheOption = BitmapCacheOption.OnLoad
+        image.EndInit()
+        window.Icon = image
+    except Exception:
+        pass
+
+
 def _loaded_version():
     """The build actually loaded, from the extension's VERSION file.
 
@@ -165,6 +207,7 @@ class ColumnWindow(forms.WPFWindow):
             literal_string=True,
         )
         self.Title = "{} -- {}".format(self.Title, _loaded_version())
+        _apply_window_icon(self)
 
         # Wired HERE, not with a Click="..." attribute in the XAML. The
         # window is loaded from a string, which has no code behind, so WPF
