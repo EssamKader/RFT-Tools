@@ -113,7 +113,7 @@ CASES = [
 
     (COL_PLACE_BARS, '            return candidate\n    return None',
      '            match = candidate\n    return match',
-     TPB + "test_the_ToCover_candidate_is_rejected_when_offered_last",
+     TPB + "test_the_FIRST_matching_candidate_is_taken_not_the_last",
      "R22 -- first-match reverted to last-match-wins, picking by an "
      "ordering Revit does not document (47-49 candidates per handle "
      "on the live column)"),

@@ -213,6 +213,36 @@ def test_the_ToCover_candidate_is_rejected_when_offered_last():
     assert to_cover.distance_to_target_host_face is None
 
 
+def test_the_FIRST_matching_candidate_is_taken_not_the_last():
+    """Two candidates BOTH pass the filter. Which one is chosen is then
+    purely a question of how the loop terminates, and nothing else in this
+    file can tell the two apart -- the ToCover tests pass either way,
+    because first-match and last-match both reject ToCover.
+
+    The live column returned 47-49 candidates for a single handle, in an
+    order Revit does not document. Taking the last is picking by an
+    ordering nobody specified; taking the first is at least a stated rule.
+    """
+    handle = FakeRebarHandle("RebarPlane")
+    host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
+    first = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="first")
+    second = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="second")
+    manager = FakeRebarConstraintsManager(
+        handles=[handle], candidates={handle: [first, second]})
+    FakeRebar.PENDING_CONSTRAINTS_MANAGERS = [manager]
+
+    plan = _plan(count_b=2, count_h=2)
+    host = _host()
+    host.Id = host_id
+    place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
+
+    assert manager.preferred[handle] is first, (
+        "the first matching candidate must win; got %r" %
+        (manager.preferred[handle],))
+    assert second.distance_to_target_host_face is None, (
+        "a candidate the loop passed over must never be written to")
+
+
 # --------------------------------------------------------------------- #
 # R22 -- SetPreferredConstraintForHandle is what makes the pin stick
 
