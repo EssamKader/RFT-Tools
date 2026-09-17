@@ -27,23 +27,27 @@ another tool's output, a colleague's correction, or this tool's own tag
 hand-edited away -- is left alone and returned with enough detail for the
 Review report to name it: element id, bar type name, quantity.
 
-SHAPE UNVERIFIED (see ``tests/fake_revit_api.py``'s header for the running
-list this module adds to):
+VERIFIED LIVE (Revit 2024 build 24.3.40.26, RevitAPI 24.3.40.0, column
+422078 in ``ColumnRFT.Trail.rvt``). These three were written as SHAPE
+UNVERIFIED and have since been probed:
 
-- ``BuiltInCategory.OST_Rebar`` as the category a ``FilteredElementCollector``
-  can filter placed ``Rebar`` elements by. Standard, documented member name;
-  not independently confirmed against this project's live host.
-- ``Rebar.LookupParameter("Partition")`` as the accessor for the ``Partition``
-  parameter. R26 confirmed the parameter's NAME, storage type and default
-  value live; it did not confirm which accessor reaches it from IronPython.
-  Every other named-but-not-built-in parameter this project reads (``b``,
-  ``h``) is also read via ``LookupParameter``, so this follows that
-  precedent rather than guessing a ``BuiltInParameter`` enum member for it.
-- ``Rebar.GetTypeId()`` as the route from a placed ``Rebar`` back to its
-  ``RebarBarType``, used only to name foreign rebar in the report. Not
-  independently confirmed; ``Rebar.Quantity`` and ``Rebar.GetHostId()`` ARE
-  confirmed live (issue #109), and are the two members this module leans on
-  most.
+- ``Rebar.LookupParameter("Partition")`` returns a **writable String**
+  parameter, and a ``Set`` round-trips: written ``RFT-COL-422078``, read
+  back identically, restored to empty on rollback. The accessor is the one
+  this module uses, not merely the one it guessed.
+- ``BuiltInCategory.OST_Rebar`` filters placed ``Rebar`` through a
+  ``FilteredElementCollector``: 99 elements in the document, 4 of them
+  hosted by 422078 (three ties and one bar set) — so the collector and the
+  ``GetHostId()`` narrowing agree with what is actually there.
+- ``Rebar.GetTypeId()`` returns the ``RebarBarType`` (53673), whose name
+  reads ``16M`` through :func:`rft.revit.bar_types.element_name`.
+  ``element_name`` is used rather than ``.Name`` because ``ElementType.Name``
+  is **setter-only** and IronPython exposes only the most-derived property,
+  so ``bar_type.Name`` raises ``AttributeError`` on a live host while
+  passing against any fake that defines it.
+
+``Rebar.Quantity`` and ``Rebar.GetHostId()`` were already confirmed by
+issue #109.
 """
 
 from Autodesk.Revit import DB

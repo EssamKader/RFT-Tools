@@ -23,6 +23,18 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``Rebar.LookupParameter("Partition")``, ``BuiltInCategory.OST_Rebar``
+  and ``Rebar.GetTypeId()`` (issue #117) -- all three were written as
+  assumptions and have since been probed on Revit 2024 build 24.3.40.26
+  against column 422078. ``LookupParameter("Partition")`` returns a
+  writable ``String`` parameter and a ``Set`` round-trips.
+  ``OfCategory(OST_Rebar)`` collects placed rebar: 99 in the document, 4
+  hosted by 422078, matching what is actually there. ``GetTypeId()``
+  returns the ``RebarBarType``, named ``16M`` through
+  ``rft.revit.bar_types.element_name`` -- which is used instead of
+  ``.Name`` because ``ElementType.Name`` is setter-only and would raise
+  ``AttributeError`` live while passing against any fake defining it.
+
 - ``RebarHostData`` does NOT expose ``GetFaces(RebarFaceType)`` /
   ``GetCoverType(face) -> ElementId`` — that whole shape, including the
   ``RebarFaceType`` enum itself, does not exist. The real shape is
@@ -107,22 +119,6 @@ Currently ``SHAPE UNVERIFIED``:
   read from the Revit UI/API browser, not by re-probing this specific
   method. Still SHAPE UNVERIFIED on that narrower point. See
   ``rft/revit/bar_types.py``.
-- ``BuiltInCategory.OST_Rebar`` (issue #117) -- assumed to be a valid
-  ``FilteredElementCollector.OfCategory`` argument for placed ``Rebar``
-  elements, the same way ``OST_StructuralColumns`` already is; not
-  independently confirmed against a live host.
-- ``Rebar.LookupParameter("Partition")`` (issue #117) -- R26 confirmed the
-  ``Partition`` parameter's name, storage type (``String``) and empty
-  default live; it did NOT confirm which accessor reaches it from
-  IronPython. This fake follows the precedent of every other named (not
-  built-in) parameter this project reads -- ``b``, ``h`` on a
-  ``FamilySymbol`` -- and models it as ``LookupParameter``. If the real
-  accessor differs (a ``BuiltInParameter`` enum member, for instance), this
-  fake's green tests do not prove that.
-- ``Rebar.GetTypeId()`` (issue #117) -- used only to name FOREIGN rebar in
-  the ownership report (bar type name). Not confirmed live.  ``Rebar.
-  Quantity`` and ``Rebar.GetHostId()`` on the same object ARE confirmed
-  live (issue #109) and are not new assumptions.
 - ``pyrevit.forms.SelectFromList.show(items, multiselect=False,
   name_attr=..., title=..., button_name=...)`` (issue #20, S7) -- the
   explicit dropdown/list picker used to select bar and hook types. This is
