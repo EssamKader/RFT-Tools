@@ -23,6 +23,20 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``Document.Delete(ElementId)`` and transaction rollback of a DELETE
+  (issue #120, R25), on Revit 2024 build 24.3.40.26. The method exists
+  and returns ``ICollection<ElementId>`` (1 id for a lone tie);
+  ``rft.revit.column_placer`` discards it.
+
+  **The semantic R25 rests on was probed separately, because deleting
+  something CREATED in the same transaction proves nothing.** A
+  pre-existing element (422280) was deleted inside a ``SubTransaction``
+  and the transaction rolled back: rebar count 95 -> 94 -> **95**, and
+  ``GetElement`` returned the element again. That is exactly what
+  ``FakeDocument.Delete``/``FakeTransaction`` model, and exactly what
+  makes "a failed rebuild leaves the original cage intact" true rather
+  than hoped for. The document was left unchanged.
+
 - ``RebarConstraint`` and ``RebarConstraintsManager`` (issue #119, R22)
   were enumerated by reflection on Revit 2024 build 24.3.40.26.
   ``GetRebarConstraintsManager()``, ``GetAllHandles()``,
@@ -188,13 +202,9 @@ Currently ``SHAPE UNVERIFIED``:
   and ``SetDistanceToTargetHostFace`` were all confirmed by reflection over
   the live types -- see the verified list above, and the two members that
   reflection showed do NOT exist.
-- ``Document.Delete(ElementId)`` (issue #120, R23/R25) -- one of the
-  oldest, most standard members of the Revit API, and still not probed
-  against this project's own live host, so it is listed here rather than
-  quietly assumed on the strength of being well known elsewhere. The real
-  member is documented to return ``ICollection<ElementId>`` of every
-  dependent element also removed; ``rft.revit.column_placer`` discards
-  that return value and never relies on it. ``FakeDocument.Delete`` below
+- ``Document.Delete(ElementId)`` (issue #120, R23/R25) was listed here
+  and has since been VERIFIED LIVE -- see the verified list above, which
+  also records the rollback semantic R25 actually depends on. ``FakeDocument.Delete`` below
   additionally models something no real API call needs to: undoing itself
   on ``FakeTransaction.RollBack()``. That is not part of the real
   `Document.Delete` shape -- Revit's own transaction machinery does that
