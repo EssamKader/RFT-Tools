@@ -340,10 +340,41 @@ class FakeRebarCoverType(object):
         return None
 
 
+class FakeCurve(object):
+    """What ``Line.CreateBound`` returns. **Carries ``GetEndPoint(i)``,
+    which is the real API**, and that is the point of this class.
+
+    Until issue #127 this fake returned a bare tuple ``("Line", p0, p1)``.
+    The column tie placer was written against that shape and unpacked real
+    curves the same way, so on a live host R21's hook-tail assertion --
+    the whole reason #118 exists -- died with
+    ``TypeError: 'Line' object is not iterable`` before it could check
+    anything. Every test passed throughout.
+
+    Indexing is kept ONLY for the older beam tests that already read
+    ``curves[0][1]``. It is not the Revit API and new code must not use
+    it: a real ``Line`` is not indexable and not iterable.
+    """
+
+    def __init__(self, p0, p1):
+        self._points = (p0, p1)
+
+    def GetEndPoint(self, index):
+        return self._points[index]
+
+    #: Legacy tuple view -- see the class docstring. 0 is the tag the old
+    #: tuple carried, 1 and 2 are the endpoints.
+    def __getitem__(self, index):
+        return ("Line", self._points[0], self._points[1])[index]
+
+    def __repr__(self):
+        return "FakeCurve(%r, %r)" % self._points
+
+
 class FakeLine(object):
     @staticmethod
     def CreateBound(p0, p1):
-        return ("Line", p0, p1)
+        return FakeCurve(p0, p1)
 
 
 class FakeElementId(object):
@@ -809,8 +840,8 @@ class FakeRebarInstance(object):
             sign = 1.0 if orientation is FakeRebarHookOrientation.Left else -1.0
             return anchor + direction.Multiply(sign * _FAKE_HOOK_TAIL_OFFSET_INTERNAL)
 
-        _, start_anchor, _ = curves[0]
-        _, _, end_anchor = curves[-1]
+        start_anchor = curves[0].GetEndPoint(0)
+        end_anchor = curves[-1].GetEndPoint(1)
         start_hook = FakeLine.CreateBound(tail(start_anchor, orient_start), start_anchor)
         end_hook = FakeLine.CreateBound(end_anchor, tail(end_anchor, orient_end))
         return [start_hook] + curves + [end_hook]

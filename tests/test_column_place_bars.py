@@ -348,7 +348,7 @@ def test_the_seed_point_comes_from_LOCATION_POINT_not_a_bounding_box():
     seed = plan.layout.bars[0]
     curve_args = bars[0].args
     curves = curve_args[7]
-    p0 = curves[0][1]
+    p0 = curves[0].GetEndPoint(0)
     expected_x = host.Location.Point.X + mm(seed.u_mm)
     expected_y = host.Location.Point.Y + mm(seed.v_mm)
     assert p0.X == pytest.approx(expected_x)
@@ -363,7 +363,7 @@ def test_the_bar_runs_from_the_floor_level_through_the_splice_protrusion():
     bars = place_bars(doc=None, host_element=host, bar_type=object(),
                       plan=plan)
     curves = bars[0].args[7]
-    p0, p1 = curves[0][1], curves[0][2]
+    p0, p1 = curves[0].GetEndPoint(0), curves[0].GetEndPoint(1)
     assert p0.Z == pytest.approx(mm(3000.0))
     assert p1.Z == pytest.approx(mm(6600.0))
 

@@ -407,6 +407,13 @@ CASES = [
      "raising, still opening nothing, indistinguishable from working, "
      "and that is how this guard came back MISSED the first time."),
 
+    (COL_PLACE_TIES, '    start_tail = curves[0].GetEndPoint(0)',
+     '    start_tail, _junk = curves[0]',
+     TPT + "test_hook_tails_are_verified_by_reading_the_geometry_back",
+     "R21/#127 -- the hook-tail read reverted to UNPACKING a curve, which "
+     "is what died on a live host with TypeError: 'Line' object is not "
+     "iterable while every test passed"),
+
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
      '    transaction = Transaction(doc, TRANSACTION_NAME)',
