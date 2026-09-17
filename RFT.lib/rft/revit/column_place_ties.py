@@ -218,7 +218,7 @@ def _assert_hook_tails_inside_host_extent(host_element, rebar, tie):
     # returns a .NET IList<Curve>, which has no negative indexing:
     # `curves[-1]` raises
     # "Index was out of range ... Parameter name: index".
-    # Found live; see issue #129.
+    # Found live; see PR #129.
     end_tail = curves[len(curves) - 1].GetEndPoint(1)
     for end_label, point in (("start", start_tail), ("end", end_tail)):
         if not (_within(point.X, box.Min.X, box.Max.X)
