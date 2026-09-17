@@ -62,26 +62,38 @@ This is exactly the class of defect `docs/token-efficient-expansion.md` §8 warn
 about — a check that appears to pass because it never exercised the thing it
 claims to verify.
 
-## Finding 2 — the as-built centreline sits 2.38 mm outboard of the request
+## Finding 2 — WITHDRAWN. The as-built centreline is exactly the request
 
-Reproducible across all three ties, on both half-dimensions:
+**This finding was wrong, and it was wrong in the way the whole document
+warns about: a number read from the wrong thing.** It is kept here rather
+than deleted because the mistake is more instructive than the correction.
+
+The claim was that the built tie sits 2.38 mm outboard on both
+half-dimensions, eating 2.4 mm of cover. It does not. Read back with the
+bend radii and the hooks present, the four legs are:
 
 ```
-requested half   180.25 x 255.25 mm
-as built half    182.63 x 257.63 mm      (+2.38 mm each)
+bottom leg   y = 931.75          top leg    y = 1442.25     ->  510.50
+left leg     x = -326.05         right leg  x =   34.45     ->  360.50
 ```
 
-The requested geometry already placed the tie's outer surface exactly at the
-40 mm cover (180.25 + 9.5/2 = 185.0 = 225 − 40). The as-built outer surface is
-at 187.38, i.e. **37.6 mm of cover — less than the host's own setting.**
+Both are the requested dimensions to the last decimal, and the cover is the
+40 mm the host states.
 
-**Cause not identified, and not guessed.** 2.38 mm is a quarter of the 10M bar
-diameter, which is suggestive and nothing more. What matters for the placer is
-the rule this establishes: *the tie Revit builds is not the tie you asked for,
-so the Review report's as-built section must read the model rather than restate
-the request.* That is R15's requirement arriving from a second direction.
+**Where 2.38 came from.** The original measurement took the min and max of
+every endpoint in a `suppressHooks=True` read. That read does not stop at
+the corner — it returns the point where each hook *begins*, and those two
+points overrun their legs by one bar radius (9.5 / 2 = 4.75 mm). Half of
+4.75 is 2.38. The number was the hook tangent, measured as though it were
+the rectangle.
 
-Worth a follow-up ticket rather than a guess in code.
+**The rule this leaves for the placer**, which survives the correction and
+is the part that matters: *an as-built check must compare the LEGS, not the
+extremes of the curve array.* A bounding box over `GetCenterlineCurves`
+includes the hooks and will disagree with the request on every tie ever
+placed — reporting a cover violation that is not there, in a report an
+engineer is meant to trust. Finding 1 stands unchanged and is the real
+result of this ticket.
 
 ## Finding 3 — A1 is right, and attempting an unbuildable loop is worse than
 ## an exception
@@ -110,6 +122,41 @@ is not something this probe can see from inside. What IS established:
 - **pre-checking, as A1 does, is the only safe design.** Had the tool offered
   these loops and handled the failure, it would not have worked.
 
+## Finding 4 — `RebarHookOrientation.Right` on both ends throws the 135°
+## hooks OUT of the column
+
+Found by the owner looking at the model, not by any check in this
+repository. The three kept ties were built with
+`RebarHookOrientation.Right` at both ends — the value the tracer bullet
+assumed — and the hook tails land **outside the concrete**:
+
+```
+requested rectangle   x -326.05 .. 34.45      y 931.75 .. 1442.25
+column extent         x -370.80 .. 79.20      y 887.00 .. 1487.00
+
+Right / Right    tail (-260.2,  835.6) OUTSIDE   tail (-422.2, 997.6) OUTSIDE
+Left  / Left     tail (-260.2, 1027.9) INSIDE    tail (-229.9, 997.6) INSIDE
+Left  / Right    tail (-260.2, 1027.9) INSIDE    tail (-422.2, 997.6) OUTSIDE
+Right / Left     tail (-260.2,  835.6) OUTSIDE   tail (-229.9, 997.6) INSIDE
+```
+
+All four combinations build without complaint. Revit does not object to a
+tie whose hooks leave the member; it draws it, schedules it, and lets it
+through. **`Left` / `Left` is the only combination that turns both hooks
+into the core**, which is what a 135° seismic hook is for.
+
+Two consequences:
+
+- the placer must pass `Left` / `Left`, and that is now **R21**;
+- more generally, *a tie that builds is not a tie that is right.* Nothing
+  in the Revit API rejected the wrong one. Any check on hook position has
+  to be ours — the placer should assert that both hook tails fall inside
+  the host's extent, because this defect is invisible in every report that
+  reads only the rectangle.
+
+The three kept ties were **replaced** with `Left` / `Left` ties at the same
+three levels.
+
 ---
 
 ## What this does NOT cover
@@ -126,7 +173,9 @@ is not something this probe can see from inside. What IS established:
 
 ## State left behind
 
-Three ties remain in `ColumnRFT.Trail.rvt` (423136, 423137, 423139) at
+Three ties remain in `ColumnRFT.Trail.rvt` (423209, 423210, 423211) at
 z = 3300 / 3500 / 3700 in column 422078. They are the kept write this ticket
-exists to produce. The document was unmodified before this session, so closing
+exists to produce, rebuilt with R21's hook orientation after Finding 4;
+the three original ties (423136, 423137, 423139) were deleted. The
+document was unmodified before this session, so closing
 without saving removes them; deleting the three elements does the same.
