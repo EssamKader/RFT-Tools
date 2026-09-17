@@ -75,6 +75,9 @@ COL_PLAN = "RFT.lib/rft/core/column_plan.py"
 TT = "tests/test_column_ties.py::"
 COL_HOST = "RFT.lib/rft/revit/column_host.py"
 TH = "tests/test_column_host_source.py::"
+# ---- #137: sketch the tie by clicking its bars ----------------------
+SKETCH_LAYOUT = "RFT.lib/rft/ui/sketch_layout.py"
+TSL = "tests/test_ui_sketch_layout.py::"
 # ---- #117: ownership (R24/R26) --------------------------------------
 COL_OWNERSHIP = "RFT.lib/rft/revit/column_ownership.py"
 TW = "tests/test_column_ownership.py::"
@@ -435,6 +438,28 @@ CASES = [
      "#131 -- the set arrayed ACROSS its own face instead of along "
      "it, which put two bars 11.7 mm apart at a corner on the live "
      "column while every test passed"),
+
+    # ---- #137: sketch the tie by clicking its bars ------------------
+    (SKETCH_LAYOUT,
+     '        return (self.mid_u + (x_px - self.width_px / 2.0) / self.scale,\n'
+     '                self.mid_v - (y_px - self.height_px / 2.0) / self.scale)',
+     '        return (self.mid_u + (x_px - self.width_px / 2.0) / self.scale,\n'
+     '                self.mid_v + (y_px - self.height_px / 2.0) / self.scale)',
+     TSL + "test_to_px_round_trips_through_to_mm",
+     "the flipped v sign in to_mm reverted, so a click would resolve to "
+     "a millimetre point mirrored top-to-bottom from the one drawn there"),
+
+    (COL_SKETCH, '        if distance_sq > limit_sq:\n            continue',
+     '        if distance_sq < limit_sq:\n            continue',
+     TK + "test_bar_at_point_misses_outside_the_radius",
+     "the pick radius comparison inverted -- bar_at_point would hit only "
+     "bars OUTSIDE the pick radius and miss the one actually clicked"),
+
+    (COL_SCRIPT, '        if len(self._tie_selection) < 2:',
+     '        if len(self._tie_selection) < 1:',
+     TC + "test_add_tie_refuses_under_two_bars",
+     "the under-2-bars refusal loosened to under-1, letting Add tie "
+     "commit a single bar as though it were a tie"),
 
     # ---- #133: fy shown, longitudinal filtered to T ------------------
     (GRADES, '    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)',

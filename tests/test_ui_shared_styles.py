@@ -66,8 +66,20 @@ def test_the_shared_palette_is_where_the_module_says_it_is():
 
 
 def test_every_colour_survived_the_move_byte_for_byte():
-    """#86's acceptance: "the beam window must look identical afterwards"."""
-    assert _brushes_in(SHARED_STYLES_PATH) == PALETTE_AS_SHIPPED
+    """#86's acceptance: "the beam window must look identical afterwards".
+
+    A SUBSET check, not equality: #86 moved an existing palette and this
+    proves nothing in it changed colour in transit, but the palette is
+    allowed to grow afterwards (#137 added SelectionPurple) without ever
+    re-litigating the original move. Any key from the shipped set with a
+    DIFFERENT colour still fails -- only an addition is permitted.
+    """
+    current = _brushes_in(SHARED_STYLES_PATH)
+    changed = {key: (value, current.get(key)) for key, value in
+              PALETTE_AS_SHIPPED.items() if current.get(key) != value}
+    assert not changed, (
+        "these #86-era brushes no longer match what shipped "
+        "(name: (shipped, current)): %s" % changed)
 
 
 def test_the_move_left_no_brush_behind():

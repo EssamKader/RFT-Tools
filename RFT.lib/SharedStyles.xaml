@@ -57,4 +57,10 @@
          itself is testable under plain CPython. -->
     <SolidColorBrush x:Key="PassGreen" Color="#FF2E7D32"/>
 
+    <!-- #137: a bar the engineer has clicked, mid-tie. Its own colour --
+         neither PassGreen (a section 6.1 verdict) nor SkyBlue (an applied
+         tie) -- so a pending selection is never mistaken for something
+         this tool has already judged. -->
+    <SolidColorBrush x:Key="SelectionPurple" Color="#FF7A3FA0"/>
+
 </ResourceDictionary>

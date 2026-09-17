@@ -87,11 +87,15 @@ from rft.revit.column_host import ColumnHostError, read_column
 from rft.revit import column_placer
 from rft.revit.units import internal_to_mm
 from rft.ui.column_sketch import (
-    cross_section_captions, cross_section_shapes, zone_strip_shapes,
+    bar_at_point, cross_section_captions, cross_section_shapes,
+    format_tie_selection, selected_bar_shapes, toggle_bar_selection,
+    zone_strip_shapes,
 )
 from rft.ui.column_sketch_palette import brush_key_for_style
 from rft.ui.inputs import parse_optional_positive_int, parse_positive_float
-from rft.ui.sketch_layout import LabelBox, estimate_text_size_px, place_labels
+from rft.ui.sketch_layout import (
+    LabelBox, SketchTransform, estimate_text_size_px, place_labels,
+)
 from rft.ui.sketch_shapes import (
     SketchCircle, SketchLine, SketchPolygon, SketchText,
 )
@@ -108,6 +112,11 @@ GATED_TAB_NAMES = ("longitudinal_tab", "ties_tab", "review_tab",
 #: floor, a 16 mm bar on a 600 mm section fitted to this canvas is about
 #: two pixels across -- correct to scale, and invisible.
 MIN_BAR_RADIUS_PX = 3.0
+#: #137. A click target grown past the drawn radius: at a small canvas a
+#: 16 mm bar is a few pixels across, which is correct to scale and far too
+#: small to click reliably. The drawn radius is never shrunk to match this
+#: -- only the HIT AREA grows.
+BAR_PICK_RADIUS_PX = 10.0
 #: Must match rft.ui.sketch_layout's own default: that module estimates
 #: a label's width from this number, and an estimate made at one size
 #: and drawn at another clips the tails.
@@ -227,6 +236,13 @@ class ColumnWindow(forms.WPFWindow):
         # before that, and scaling to zero draws nothing.
         self.section_canvas.SizeChanged += self.on_canvas_size_changed
         self.strip_canvas.SizeChanged += self.on_canvas_size_changed
+        # #137: clicking the section builds a tie. Wired here for the same
+        # reason every other handler is -- a string-loaded window has no
+        # code behind, so a MouseLeftButtonDown="..." attribute in the
+        # XAML would throw at parse time exactly as Click="..." does.
+        self.section_canvas.MouseLeftButtonDown += self.on_section_canvas_click
+        self.add_tie_btn.Click += self.on_add_tie_click
+        self.clear_selection_btn.Click += self.on_clear_selection_click
 
         # Filled once, from the module that owns the choice, so the label
         # and the parse can never disagree about what "diameters" means.
@@ -254,6 +270,15 @@ class ColumnWindow(forms.WPFWindow):
         self.layout = None
         self.ties = None
         self.tie_findings = []
+        #: #137: bars clicked so far, in click order, not yet committed to
+        #: tie_subsets_tb. Column-scoped state, same as everything else
+        #: reset in _reset_column_state -- a selection built against one
+        #: column means nothing once a different column is picked.
+        self._tie_selection = []
+        #: #137: the pixel<->mm mapping the SECTION canvas was last drawn
+        #: through, kept so a click can be converted back to millimetres.
+        #: Never built for strip_canvas -- nothing there is clickable.
+        self._section_transform = None
         self._api_call_in_flight = False
         self._reset_column_state()
 
@@ -286,6 +311,8 @@ class ColumnWindow(forms.WPFWindow):
         self.layout = None
         self.ties = None
         self.tie_findings = []
+        self._tie_selection = []
+        self._section_transform = None
         self.review_status_tb.Text = "Apply the bar and tie inputs first."
         self.place_status_tb.Text = "Apply the bar and tie inputs first."
         self._clear_canvases()
@@ -789,6 +816,7 @@ class ColumnWindow(forms.WPFWindow):
         for canvas in (self.section_canvas, self.strip_canvas):
             canvas.Children.Clear()
         self.sketch_captions_tb.Text = ""
+        self.tie_selection_caption_tb.Text = ""
 
     def redraw_sketch(self):
         """#90's acceptance: the sketch redraws as the inputs change.
@@ -806,10 +834,17 @@ class ColumnWindow(forms.WPFWindow):
             return
 
         bars = self.bars
-        self._render(self.section_canvas, cross_section_shapes(
+        section_shapes = cross_section_shapes(
             bars.section.b_mm, bars.section.h_mm, bars.cover_mm,
             bars.tie_diameter_mm, bars.bar_diameter_mm,
-            bars.layout, self.ties or ()))
+            bars.layout, self.ties or ())
+        # #137: the pending click selection, drawn AFTER the ordinary bars
+        # so it is never hidden underneath one. Nothing here decides
+        # membership -- toggle_bar_selection already did -- this only
+        # draws it.
+        section_shapes = section_shapes + selected_bar_shapes(
+            bars.layout, self._tie_selection, bars.bar_diameter_mm / 2.0)
+        self._render(self.section_canvas, section_shapes)
         self.sketch_captions_tb.Text = "\n".join(cross_section_captions(
             self.layout, tier_summary(self.layout), self.ties or ()))
 
@@ -846,18 +881,14 @@ class ColumnWindow(forms.WPFWindow):
                 vs.append(shape.v)
         if not us:
             return
-        span_u = max(max(us) - min(us), 1.0)
-        span_v = max(max(vs) - min(vs), 1.0)
-        margin = 18.0
-        scale = min((width_px - 2 * margin) / span_u,
-                    (height_px - 2 * margin) / span_v)
-        mid_u = (max(us) + min(us)) / 2.0
-        mid_v = (max(vs) + min(vs)) / 2.0
-
-        def to_px(u_mm, v_mm):
-            # v is flipped: millimetres run up, pixels run down.
-            return (width_px / 2.0 + (u_mm - mid_u) * scale,
-                    height_px / 2.0 - (v_mm - mid_v) * scale)
+        # #137: the transform now OUTLIVES this method, as a value, so
+        # on_section_canvas_click can invert it. Previously to_px was a
+        # closure built and thrown away here; SketchTransform.fit builds
+        # the identical mapping (same span/margin/midpoint arithmetic).
+        transform = SketchTransform.fit(us, vs, width_px, height_px)
+        if canvas is self.section_canvas:
+            self._section_transform = transform
+        to_px = transform.to_px
 
         text_shapes = []
         for shape in shapes:
@@ -912,6 +943,80 @@ class ColumnWindow(forms.WPFWindow):
             WpfCanvas.SetLeft(text_block, box.x)
             WpfCanvas.SetTop(text_block, box.y)
             canvas.Children.Add(text_block)
+
+    # --------------------------------------------------- tie by clicking
+    def _bar_pick_radius_mm(self):
+        """The drawn bar radius, grown to a comfortably clickable size,
+        converted back to millimetres (#137).
+
+        ``bar_at_point`` compares in the section's own frame, not pixels,
+        so the click target has to be converted back rather than compared
+        in screen space -- and it is computed here, not guessed inside
+        ``rft.ui.column_sketch``, which the ticket is explicit does not
+        guess a size of its own.
+        """
+        scale = self._section_transform.scale
+        drawn_radius_px = max(self.bars.bar_diameter_mm / 2.0 * scale,
+                              MIN_BAR_RADIUS_PX)
+        pick_radius_px = max(drawn_radius_px, BAR_PICK_RADIUS_PX)
+        return pick_radius_px / scale
+
+    def _update_tie_selection_caption(self):
+        """The sentence the ticket asks for: the pending selection, as the
+        text it will produce, so the engineer sees it before committing."""
+        if self._tie_selection:
+            self.tie_selection_caption_tb.Text = (
+                "selecting: %s" % format_tie_selection(self._tie_selection))
+        else:
+            self.tie_selection_caption_tb.Text = ""
+
+    def on_section_canvas_click(self, sender, args):
+        """Click a bar to build a tie by clicking it, instead of typing its
+        number (#137).
+
+        A hit TOGGLES that bar in the pending selection; a click on
+        nothing clears nothing -- a stray click must not lose a
+        half-built tie, which is the acceptance criterion this handler
+        exists to meet.
+        """
+        if self._section_transform is None or self.layout is None:
+            return
+        point = args.GetPosition(self.section_canvas)
+        u_mm, v_mm = self._section_transform.to_mm(point.X, point.Y)
+        index = bar_at_point(self.layout.bars, u_mm, v_mm,
+                             self._bar_pick_radius_mm())
+        if index is None:
+            return
+        self._tie_selection = toggle_bar_selection(self._tie_selection, index)
+        self._update_tie_selection_caption()
+        self.redraw_sketch()
+
+    def on_add_tie_click(self, sender, args):
+        """Append the pending selection to the Ties box as exactly the
+        text typing it would have produced (#137).
+
+        Refused under two bars -- one bar is not a tie -- and the refusal
+        says why rather than silently doing nothing.
+        """
+        if len(self._tie_selection) < 2:
+            self.tie_selection_caption_tb.Text = (
+                "Select at least two bars before Add tie -- one bar is "
+                "not a tie.")
+            return
+        line = format_tie_selection(self._tie_selection)
+        text = self.tie_subsets_tb.Text
+        if text and not text.endswith("\n"):
+            text += "\n"
+        self.tie_subsets_tb.Text = text + line + "\n"
+        self._tie_selection = []
+        self._update_tie_selection_caption()
+        self.redraw_sketch()
+
+    def on_clear_selection_click(self, sender, args):
+        """Empty the pending selection without writing anything (#137)."""
+        self._tie_selection = []
+        self._update_tie_selection_caption()
+        self.redraw_sketch()
 
     # ------------------------------------------------------- selections
     def _options_for(self, combo):

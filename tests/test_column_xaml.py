@@ -418,7 +418,14 @@ def test_every_readout_is_cleared_on_a_re_pick():
     assert not not_reset, (
         "these status lines are written on one column and never reset "
         "for the next: %s" % not_reset)
-    written -= status_lines | {"status_tb"}
+    # tie_subsets_tb is a user-editable INPUT, not a read-out: #137's Add
+    # tie button writes into it exactly what a keystroke would have, and
+    # the box is deliberately never cleared on a re-pick -- same as every
+    # other typed input this script never assigns to at all
+    # (b_face_count_tb, ls_value_tb, ...). It fails "is this read-out
+    # cleared" only because it is not a read-out.
+    input_echo_names = {"tie_subsets_tb"}
+    written -= status_lines | {"status_tb"} | input_echo_names
     # A field is cleared either by being in one of the lists, or by a
     # direct assignment in the reset (possibly inside a helper it
     # calls). Both clear it; only "cleared nowhere" is a defect.
@@ -841,6 +848,57 @@ def test_the_window_builds_the_plan_in_its_two_Apply_handlers():
     ties, _ = _code_of("on_apply_ties_click")
     assert "bar_plan" in longitudinal, "the perimeter is never composed"
     assert "complete_plan" in ties, "the ties are never composed"
+
+
+# --------------------------------------------------------------------- #
+# #137 -- sketch the tie by clicking its bars
+
+
+def test_the_section_canvas_mouse_handler_is_wired_in_code_not_xaml():
+    """Same rule as every Click handler in this window: a string-loaded
+    window has no code behind, so a ``MouseLeftButtonDown="..."`` attribute
+    would throw "Failed to create a ... from the text" at parse time.
+    """
+    markup = re.sub(r"<!--.*?-->", "", read(COLUMN_XAML_PATH), flags=re.DOTALL)
+    assert "MouseLeftButtonDown=" not in markup, (
+        "the section canvas's mouse handler must be wired in script.py, "
+        "not declared in the markup")
+    script = _script()
+    assert ("self.section_canvas.MouseLeftButtonDown += "
+            "self.on_section_canvas_click") in script, (
+        "on_section_canvas_click is never wired to the canvas")
+
+
+def test_add_tie_writes_into_the_ties_box():
+    """#137's whole point: clicking produces exactly the text typing
+    would have, by writing into the SAME control the parser already
+    reads.
+    """
+    called, _literals = _code_of("on_add_tie_click")
+    assert "tie_subsets_tb" in called, (
+        "on_add_tie_click must write into tie_subsets_tb -- the Ties box "
+        "stays the one authoritative source (R17)")
+
+
+def test_add_tie_refuses_under_two_bars():
+    """Acceptance 3: fewer than two bars selected writes nothing and says
+    why -- one bar is not a tie.
+    """
+    body = re.search(r"def on_add_tie_click\(.*?\n(.*?)\n    def ",
+                     _script(), re.DOTALL).group(1)
+    assert "len(self._tie_selection) < 2" in body, (
+        "the under-2-bars refusal is missing or no longer the guard")
+    refusal = body.split("return", 1)[0]
+    assert "tie_subsets_tb" not in refusal, (
+        "a refused Add tie must write NOTHING into the Ties box")
+
+
+def test_a_click_on_nothing_clears_no_selection():
+    """A stray click on empty canvas must not lose a half-built tie."""
+    body = re.search(r"def on_section_canvas_click\(.*?\n(.*?)\n    def ",
+                     _script(), re.DOTALL).group(1)
+    assert "if index is None:\n            return" in body, (
+        "a miss must return before touching the pending selection")
 
 
 def test_section_6_1_s_verdict_has_ONE_reader_in_the_window():

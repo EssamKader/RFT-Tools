@@ -11,7 +11,7 @@ import io
 
 import pytest
 
-from rft.core.column_layout import perimeter_bar_positions, tier_summary
+from rft.core.column_layout import Bar, perimeter_bar_positions, tier_summary
 from rft.core.column_spacing import FIRST_TIE_OFFSET_MM, MODE_AUTO, spacing_plan
 from rft.core.column_ties import TieSubset, resolve_ties
 from rft.core.column_tie_levels import tie_levels
@@ -19,8 +19,12 @@ from rft.ui.column_sketch import (
     MEASURED_CORNER_SNAP_MM,
     STYLE_KEYS,
     all_style_keys_used,
+    bar_at_point,
     cross_section_captions,
     cross_section_shapes,
+    format_tie_selection,
+    selected_bar_shapes,
+    toggle_bar_selection,
     zone_strip_shapes,
 )
 from rft.ui.column_sketch_palette import STYLE_BRUSH_KEYS, brush_key_for_style
@@ -331,3 +335,87 @@ def test_the_sketch_derives_no_topology_of_its_own():
     shapes = section(ties=())
     assert not [s for s in shapes if s.style in ("tie_inner", "cross_tie")]
     assert len([s for s in shapes if s.style == "tie_outer"]) == 1
+
+
+# --------------------------------------------------------------------- #
+# #137 -- sketch the tie by clicking its bars
+
+_BARS = (
+    Bar(index=0, u_mm=-100.0, v_mm=0.0, is_corner=True),
+    Bar(index=1, u_mm=0.0, v_mm=0.0, is_corner=False),
+    Bar(index=2, u_mm=100.0, v_mm=0.0, is_corner=True),
+)
+
+
+def test_bar_at_point_hits_the_bar_within_its_radius():
+    assert bar_at_point(_BARS, 2.0, 3.0, pick_radius_mm=10.0) == 1
+
+
+def test_bar_at_point_misses_outside_the_radius():
+    assert bar_at_point(_BARS, 50.0, 0.0, pick_radius_mm=10.0) is None
+
+
+def test_bar_at_point_chooses_the_NEARER_of_two():
+    """A point between two bars, both within the radius, resolves to
+    whichever centre is actually closer -- not the first in the list.
+    """
+    # 6 mm from bar 1 (index 1, at u=0), 94 mm from bar 2 (index 2, u=100).
+    assert bar_at_point(_BARS, 6.0, 0.0, pick_radius_mm=95.0) == 1
+    # Now closer to bar 2 than bar 1.
+    assert bar_at_point(_BARS, 94.0, 0.0, pick_radius_mm=95.0) == 2
+
+
+def test_bar_at_point_returns_none_with_no_bars():
+    assert bar_at_point((), 0.0, 0.0, pick_radius_mm=100.0) is None
+
+
+def test_toggle_bar_selection_adds_an_unselected_bar():
+    assert toggle_bar_selection([], 1) == [1]
+    assert toggle_bar_selection([1], 6) == [1, 6]
+
+
+def test_toggle_bar_selection_removes_a_selected_bar():
+    """A second click on the same bar deselects it -- acceptance 2."""
+    assert toggle_bar_selection([1, 6], 1) == [6]
+    assert toggle_bar_selection([1, 6], 6) == [1]
+
+
+def test_toggle_bar_selection_keeps_CLICK_ORDER_not_sorted():
+    """R19: a two-bar tie is FROM the first click TO the second. Sorting
+    would silently rewrite what the tie means.
+    """
+    assert toggle_bar_selection([6], 1) == [6, 1]
+
+
+def test_toggle_bar_selection_never_mutates_its_argument():
+    original = [1, 6]
+    toggle_bar_selection(original, 9)
+    assert original == [1, 6]
+
+
+def test_format_tie_selection_is_space_joined_in_order():
+    assert format_tie_selection([1, 6]) == "1 6"
+    assert format_tie_selection([0, 1, 2, 3]) == "0 1 2 3"
+    assert format_tie_selection([]) == ""
+
+
+def test_selected_bar_shapes_draws_only_the_selected_bars():
+    lay = layout()
+    shapes = selected_bar_shapes(lay, [1, 6], radius_mm=8.0)
+    assert len(shapes) == 2
+    assert all(s.style == "bar_selected" for s in shapes)
+    positions = set((round(s.u, 2), round(s.v, 2)) for s in shapes)
+    expected = set((round(b.u_mm, 2), round(b.v_mm, 2))
+                  for b in lay.bars if b.index in (1, 6))
+    assert positions == expected
+
+
+def test_selected_bar_shapes_with_no_selection_draws_nothing():
+    assert selected_bar_shapes(layout(), [], radius_mm=8.0) == []
+
+
+def test_bar_selected_is_a_declared_style_with_its_own_brush():
+    assert "bar_selected" in STYLE_KEYS
+    from rft.ui.column_sketch_palette import STYLE_BRUSH_KEYS
+    assert STYLE_BRUSH_KEYS["bar_selected"] not in (
+        STYLE_BRUSH_KEYS["bar_main"], STYLE_BRUSH_KEYS["bar_unrestrained"])
