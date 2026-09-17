@@ -128,14 +128,14 @@ def _closed_loop_uv_segments_mm(tie):
     """The tie's rectangle as 4 consecutive-corner segments, local (u, v)
     mm, wound so ``curves[0]``'s start and ``curves[-1]``'s end coincide --
     the hook-overlap corner both hooks attach to.
+
+    #140: reads ``tie.vertices`` rather than re-deriving the four corners
+    from ``centre``/``half`` -- this module, `rft.ui.column_sketch` and
+    `rft.core.column_ties.resolve_tie`'s own restrained-bar scan now all
+    read the one polygon `resolve_tie` composed, instead of three
+    independent derivations that happened to agree.
     """
-    cu, cv, hu, hv = tie.centre_u_mm, tie.centre_v_mm, tie.half_u_mm, tie.half_v_mm
-    corners = [
-        (cu - hu, cv - hv),
-        (cu + hu, cv - hv),
-        (cu + hu, cv + hv),
-        (cu - hu, cv + hv),
-    ]
+    corners = tie.vertices
     n = len(corners)
     return [(corners[i], corners[(i + 1) % n]) for i in range(n)]
 
@@ -144,10 +144,13 @@ def _cross_tie_uv_segments_mm(tie, layout):
     """A1's fallback: one leg between the subset's two named ends -- the
     same two bars `rft.core.column_ties.resolve_tie` credits as restrained
     for a cross-tie (its first and last named indices).
+
+    #140: ``tie.vertices`` already carries these two points (`resolve_tie`
+    built them from the same ``layout`` this module used to re-read here).
+    ``layout`` stays a parameter for call-site compatibility with
+    `_uv_segments_mm`/`_closed_loop_uv_segments_mm`; it is no longer read.
     """
-    start_bar = layout.bars[tie.enclosed_indices[0]]
-    end_bar = layout.bars[tie.enclosed_indices[-1]]
-    return [((start_bar.u_mm, start_bar.v_mm), (end_bar.u_mm, end_bar.v_mm))]
+    return [(tie.vertices[0], tie.vertices[-1])]
 
 
 def _uv_segments_mm(tie, layout):

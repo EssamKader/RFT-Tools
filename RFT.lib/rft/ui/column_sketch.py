@@ -174,20 +174,19 @@ def _tie_shapes(tie, loop_style):
     A cross-tie is NOT drawn as a thin rectangle. A1 makes it a cross-tie
     because the rectangle cannot be bent, so drawing one would picture
     exactly the geometry Revit refuses with a modal dialog.
+
+    #140: draws ``tie.vertices`` -- the closed loop's four corners or the
+    cross-tie's two end points -- rather than re-deriving either from
+    ``centre``/``half``. For a cross-tie this now draws the actual leg
+    between the two bars `rft.core.column_ties.resolve_tie` names as
+    restrained, the same points `rft.revit.column_place_ties` builds the
+    placed curve from, rather than the grown bounding-box diagonal the old
+    ``centre``/``half`` arithmetic drew here.
     """
     if tie.kind == KIND_CROSS_TIE:
-        return [SketchLine(
-            u1=tie.centre_u_mm - tie.half_u_mm,
-            v1=tie.centre_v_mm - tie.half_v_mm,
-            u2=tie.centre_u_mm + tie.half_u_mm,
-            v2=tie.centre_v_mm + tie.half_v_mm,
-            style="cross_tie")]
-    return [SketchPolygon(points=[
-        (tie.centre_u_mm - tie.half_u_mm, tie.centre_v_mm - tie.half_v_mm),
-        (tie.centre_u_mm + tie.half_u_mm, tie.centre_v_mm - tie.half_v_mm),
-        (tie.centre_u_mm + tie.half_u_mm, tie.centre_v_mm + tie.half_v_mm),
-        (tie.centre_u_mm - tie.half_u_mm, tie.centre_v_mm + tie.half_v_mm),
-    ], style=loop_style)]
+        (u1, v1), (u2, v2) = tie.vertices[0], tie.vertices[-1]
+        return [SketchLine(u1=u1, v1=v1, u2=u2, v2=v2, style="cross_tie")]
+    return [SketchPolygon(points=list(tie.vertices), style=loop_style)]
 
 
 def cross_section_captions(layout, tier_sentence, ties=()):
