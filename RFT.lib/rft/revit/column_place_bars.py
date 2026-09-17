@@ -56,7 +56,14 @@ once" rule.
   own spacing direction -- a defensible guess, not a confirmed one. R22's
   correctness does not depend on it: the subsequent explicit face-pin
   overrides whatever plane the bar was born on.
-- ``Rebar.SetLayoutAsNumberWithSpacing(numberOfBarPositions, spacing,
+- VERIFIED LIVE: the layout method is
+  ``Rebar.GetShapeDrivenAccessor().SetLayoutAsNumberWithSpacing(
+  numberOfBarPositions, spacing, barsOnNormalSide, includeFirstBar,
+  includeLastBar)`` -- that exact parameter order, confirmed by reflection
+  over ``RebarShapeDrivenAccessor`` on Revit 2024 build 24.3.40.26.
+  ``Rebar`` itself has no such member, and the whole sequence was then run
+  live in an aborted transaction.
+- (superseded) ``Rebar.SetLayoutAsNumberWithSpacing(numberOfBarPositions, spacing,
   barsOnNormalSide, includeFirstBar, includeLastBar)`` -- the ticket names
   this method; its exact parameter order/types are this module's own
   reading of published Revit API documentation, not a live confirmation.
@@ -263,7 +270,11 @@ def _place_run(doc, host_element, bar_type, run, hand, facing, origin,
     if len(run) > 1:
         spacing_mm = ((run[1].u_mm - seed.u_mm) ** 2
                      + (run[1].v_mm - seed.v_mm) ** 2) ** 0.5
-        bar.SetLayoutAsNumberWithSpacing(
+        # On the ACCESSOR, not on the Rebar. `Rebar` has no such member
+        # -- reflection over the live type confirms it -- and calling it
+        # directly raised AttributeError on a host while every test
+        # passed, because the fake offered it both ways (#130).
+        bar.GetShapeDrivenAccessor().SetLayoutAsNumberWithSpacing(
             len(run), mm_to_internal(spacing_mm), True, True, True)
 
     _pin_to_host_faces(bar, host_element.Id, seed, hand, facing,

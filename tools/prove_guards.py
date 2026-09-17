@@ -421,6 +421,12 @@ CASES = [
      "Legal Python, and an error on the .NET IList the API actually "
      "hands back"),
 
+    (COL_PLACE_BARS, '        bar.GetShapeDrivenAccessor().SetLayoutAsNumberWithSpacing(',
+     '        bar.SetLayoutAsNumberWithSpacing(',
+     TPB + "test_bars_are_created_as_four_FACE_RUNS_not_one_element_per_bar",
+     "#130 -- the layout method called on the Rebar instead of on its "
+     "shape driven accessor, which is where the live API has it"),
+
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
      '    transaction = Transaction(doc, TRANSACTION_NAME)',

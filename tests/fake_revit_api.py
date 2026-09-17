@@ -627,10 +627,31 @@ class FakeRebarHookType(object):
 
 
 class FakeRebarShapeDrivenAccessor(object):
-    """SHAPE UNVERIFIED -- see tests/fake_revit_api.py module header."""
+    """``Rebar.GetShapeDrivenAccessor()``'s return value.
+
+    ``SetLayoutAsNumberWithSpacing`` lives HERE and nowhere else --
+    VERIFIED by reflection over the live ``RebarShapeDrivenAccessor``,
+    which also confirmed the parameter order. ``Rebar`` itself has no
+    such member. Until #130 this fake offered it on BOTH objects, so
+    the bar placer called it on the ``Rebar``, passed every test, and
+    died with ``AttributeError`` on the first live Apply.
+    """
 
     def __init__(self):
         self.calls = []
+        #: What the bar placer set, read by tests.
+        self.layout_calls = []
+
+    def SetLayoutAsNumberWithSpacing(self, number_of_bar_positions, spacing,
+                                     bars_on_normal_side, include_first_bar,
+                                     include_last_bar):
+        self.layout_calls.append({
+            "number_of_bar_positions": number_of_bar_positions,
+            "spacing": spacing,
+            "bars_on_normal_side": bars_on_normal_side,
+            "include_first_bar": include_first_bar,
+            "include_last_bar": include_last_bar,
+        })
 
     def SetLayoutAsMaximumSpacing(self, spacing, array_length, bars_on_normal_side,
                                    include_first_bar, include_last_bar):
@@ -791,7 +812,6 @@ class FakeRebarInstance(object):
         self._accessor = FakeRebarShapeDrivenAccessor()
         self.Id = FakeElementId(FakeRebarInstance._next_id[0])
         FakeRebarInstance._next_id[0] += 1
-        self.layout_calls = []
         self._partition = FakeRebarPartitionParameter("")
         if FakeRebar.PENDING_CONSTRAINTS_MANAGERS:
             self._constraints_manager = \
@@ -851,16 +871,11 @@ class FakeRebarInstance(object):
     def GetRebarConstraintsManager(self):
         return self._constraints_manager
 
-    def SetLayoutAsNumberWithSpacing(self, number_of_bar_positions, spacing,
-                                     bars_on_normal_side, include_first_bar,
-                                     include_last_bar):
-        self.layout_calls.append({
-            "number_of_bar_positions": number_of_bar_positions,
-            "spacing": spacing,
-            "bars_on_normal_side": bars_on_normal_side,
-            "include_first_bar": include_first_bar,
-            "include_last_bar": include_last_bar,
-        })
+    #: NOT SetLayoutAsNumberWithSpacing -- that is on the shape driven
+    #: accessor. Offering it here too is what let #130 reach a host.
+    @property
+    def layout_calls(self):
+        return self._accessor.layout_calls
 
 
 class FakeRebar(object):
