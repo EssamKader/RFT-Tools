@@ -197,7 +197,10 @@ class ColumnWindow(forms.WPFWindow):
 
         self.column = None
         self.column_data = None
+        #: The TIE picker's list: every type in the project.
         self.bar_type_options = []
+        #: The LONGITUDINAL picker's list: T-named types only (#133).
+        self.main_bar_type_options = []
         self.hook_type_options = []
         self.bars = None
         self.plan = None
@@ -392,17 +395,33 @@ class ColumnWindow(forms.WPFWindow):
         """Fill the two pickers from the project's own bar types.
 
         Labels carry the type's ACTUAL diameter, because a bar type's name
-        routinely disagrees with it -- the live model's ``16M`` is 15.9 mm.
+        routinely disagrees with it -- the live model's ``16M`` is 15.9 mm
+        -- and, since #133, its yield strength, because the name disagrees
+        with that too: every ``M`` type in the live model is ASTM A615M
+        **Grade 420**, where the M means METRIC, not mild.
+
+        The two pickers get DIFFERENT lists (#133, owner's ruling):
+
+        - longitudinal: T-named types only. The letter is the filter,
+          because in a project where every type reads 420 MPa the yield
+          strength separates nothing.
+        - ties: everything. Mild is permitted for a tie, not required, so
+          nothing is hidden from this one.
+
         ``bar_type_options`` is generic and the reuse audit clears it for
         reuse, so this is shared with the beam tool rather than copied.
         """
-        options = bar_type_options(revit.doc, internal_to_mm)
-        for combo in (self.main_bar_type_cb, self.tie_bar_type_cb):
+        tie_options = bar_type_options(revit.doc, internal_to_mm)
+        main_options = bar_type_options(revit.doc, internal_to_mm,
+                                        high_tensile_only=True)
+        for combo, options in ((self.main_bar_type_cb, main_options),
+                               (self.tie_bar_type_cb, tie_options)):
             combo.Items.Clear()
             for label, _bar_type in options:
                 combo.Items.Add(label)
             combo.IsEnabled = True
-        self.bar_type_options = options
+        self.bar_type_options = tie_options
+        self.main_bar_type_options = main_options
 
     def _populate_hook_types(self):
         """Fill BOTH hook dropdowns, separately.
@@ -850,11 +869,24 @@ class ColumnWindow(forms.WPFWindow):
             canvas.Children.Add(text_block)
 
     # ------------------------------------------------------- selections
+    def _options_for(self, combo):
+        """The option list a combo's ``SelectedIndex`` indexes into.
+
+        The two bar pickers hold different lists since #133, so an index
+        is only meaningful against its own combo's list. One accessor
+        rather than each call site remembering which -- reading the wrong
+        list would silently return a DIFFERENT bar type, not an error.
+        """
+        if combo is self.main_bar_type_cb:
+            return self.main_bar_type_options
+        return self.bar_type_options
+
     def _selected_bar_type_name(self, combo):
+        options = self._options_for(combo)
         index = combo.SelectedIndex
-        if index < 0 or index >= len(self.bar_type_options):
+        if index < 0 or index >= len(options):
             return "(none selected)"
-        return self.bar_type_options[index][0].split("  --  ")[0]
+        return options[index][0].split("  --  ")[0]
 
     def _selected_ls_mode(self):
         index = self.ls_mode_cb.SelectedIndex
@@ -877,10 +909,11 @@ class ColumnWindow(forms.WPFWindow):
         range, and being wrong here means offering a loop Revit will
         refuse with a modal dialog.
         """
+        options = self._options_for(self.tie_bar_type_cb)
         index = self.tie_bar_type_cb.SelectedIndex
-        if index < 0 or index >= len(self.bar_type_options):
+        if index < 0 or index >= len(options):
             return None
-        _label, bar_type = self.bar_type_options[index]
+        _label, bar_type = options[index]
         return bar_type_bend_diameter_mm(bar_type, internal_to_mm)
 
     def _diameter_of(self, combo):
@@ -891,20 +924,22 @@ class ColumnWindow(forms.WPFWindow):
         Returns ``None`` when nothing is selected, and the pure modules
         refuse on that rather than substituting a plausible number.
         """
+        options = self._options_for(combo)
         index = combo.SelectedIndex
-        if index < 0 or index >= len(self.bar_type_options):
+        if index < 0 or index >= len(options):
             return None
-        _label, bar_type = self.bar_type_options[index]
+        _label, bar_type = options[index]
         return bar_type_diameter_mm(bar_type, internal_to_mm)
 
     def _selected_bar_type_object(self, combo):
         """The actual ``RebarBarType`` behind a bar-type combo, for #120's
         Apply -- the placer needs the Revit object itself, not the label
         ``_selected_bar_type_name`` derives from it."""
+        options = self._options_for(combo)
         index = combo.SelectedIndex
-        if index < 0 or index >= len(self.bar_type_options):
+        if index < 0 or index >= len(options):
             return None
-        return self.bar_type_options[index][1]
+        return options[index][1]
 
     def _selected_hook_type_object(self, combo):
         """The actual ``RebarHookType`` behind a hook combo. Section 7

@@ -55,6 +55,8 @@ TC = "tests/test_column_xaml.py::"
 TR = "tests/test_column_host_rules.py::"
 COL_PLACE_BARS = "RFT.lib/rft/revit/column_place_bars.py"
 TPB = "tests/test_column_place_bars.py::"
+GRADES = "RFT.lib/rft/core/grades.py"
+BAR_TYPES = "RFT.lib/rft/revit/bar_types.py"
 COL_INPUTS = "RFT.lib/rft/core/column_inputs.py"
 COL_SPACING = "RFT.lib/rft/core/column_spacing.py"
 TI = "tests/test_column_inputs.py::"
@@ -433,6 +435,34 @@ CASES = [
      "#131 -- the set arrayed ACROSS its own face instead of along "
      "it, which put two bars 11.7 mm apart at a corner on the live "
      "column while every test passed"),
+
+    # ---- #133: fy shown, longitudinal filtered to T ------------------
+    (GRADES, '    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)',
+     '    return True',
+     "tests/test_bar_type_grade.py::"
+     "test_the_longitudinal_list_takes_T_types_only",
+     "#133 -- every type treated as high tensile, so an M bar is offered "
+     "for the vertical steel"),
+
+    (BAR_TYPES,
+     '        if high_tensile_only and not is_high_tensile_by_name(name):\n'
+     '            continue\n',
+     '',
+     "tests/test_bar_type_grade.py::"
+     "test_the_longitudinal_list_takes_T_types_only",
+     "#133 -- the longitudinal filter removed from the adapter"),
+
+    (BAR_TYPES, '        yield_mpa = bar_type_yield_mpa(bar_type, document)',
+     '        yield_mpa = 420.0',
+     "tests/test_bar_type_grade.py::"
+     "test_every_label_carries_the_yield_strength",
+     "#133 -- fy defaulted to the common value instead of read, so a type "
+     "with NO material claims 420 MPa"),
+
+    (COL_SCRIPT, 'high_tensile_only=True', 'high_tensile_only=False',
+     TC + "test_the_two_bar_pickers_are_filled_from_DIFFERENT_lists",
+     "#133 -- the window stops asking for the filtered list, so the "
+     "longitudinal picker offers M types again"),
 
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',

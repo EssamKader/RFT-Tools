@@ -70,6 +70,39 @@ ROLE_LABEL = {
     ROLE_SPACER: "Spacer bars",
 }
 
+#: The suffix a HIGH TENSILE bar type's name carries, in this owner's
+#: drawing convention: ``16T`` is high tensile, ``16M`` is not.
+HIGH_TENSILE_NAME_SUFFIX = "T"
+
+
+def is_high_tensile_by_name(type_name):
+    """Whether a bar type's NAME marks it high tensile (issue #133).
+
+    **This is name-matching, and the module docstring above forbids it.**
+    The owner decided it anyway, with the cost stated, and the reason is
+    specific: in the verification model every bar type resolves to
+    fy 420 MPa -- the ``M`` types are ASTM A615M Grade 420, where ``M``
+    means METRIC, not mild. Filtering on yield strength therefore
+    separates nothing, because nothing differs. The only thing that
+    distinguishes a T bar from an M bar in that project is the letter.
+
+    What this costs, recorded so it is not rediscovered as a bug:
+
+    - a correctly-specified 420 MPa bar named without a ``T`` is hidden
+      from the longitudinal picker, for a reason that is typographic;
+    - a project not using this convention gets an empty longitudinal
+      list;
+    - a bar named ``T`` with no material, or mild steel, is offered.
+
+    The yield strength is therefore SHOWN beside every type
+    (``bar_type_options``) so the engineer can see what the name does not
+    guarantee. The letter chooses the list; the number is on the page.
+    """
+    if not type_name:
+        return False
+    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)
+
+
 GRADE_ASSIGNMENT_SPEC_SECTION = "rev 2 section 1.1 (A34)"
 BAR_TYPE_SELECTION_SPEC_SECTION = "rev 2 section 1.1 (A42, supersedes A35)"
 # A45 (ticket #31/#25) supersedes A33: the required angle moved from 180 deg
