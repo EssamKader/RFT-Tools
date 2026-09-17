@@ -107,6 +107,22 @@ Currently ``SHAPE UNVERIFIED``:
   read from the Revit UI/API browser, not by re-probing this specific
   method. Still SHAPE UNVERIFIED on that narrower point. See
   ``rft/revit/bar_types.py``.
+- ``BuiltInCategory.OST_Rebar`` (issue #117) -- assumed to be a valid
+  ``FilteredElementCollector.OfCategory`` argument for placed ``Rebar``
+  elements, the same way ``OST_StructuralColumns`` already is; not
+  independently confirmed against a live host.
+- ``Rebar.LookupParameter("Partition")`` (issue #117) -- R26 confirmed the
+  ``Partition`` parameter's name, storage type (``String``) and empty
+  default live; it did NOT confirm which accessor reaches it from
+  IronPython. This fake follows the precedent of every other named (not
+  built-in) parameter this project reads -- ``b``, ``h`` on a
+  ``FamilySymbol`` -- and models it as ``LookupParameter``. If the real
+  accessor differs (a ``BuiltInParameter`` enum member, for instance), this
+  fake's green tests do not prove that.
+- ``Rebar.GetTypeId()`` (issue #117) -- used only to name FOREIGN rebar in
+  the ownership report (bar type name). Not confirmed live.  ``Rebar.
+  Quantity`` and ``Rebar.GetHostId()`` on the same object ARE confirmed
+  live (issue #109) and are not new assumptions.
 - ``pyrevit.forms.SelectFromList.show(items, multiselect=False,
   name_attr=..., title=..., button_name=...)`` (issue #20, S7) -- the
   explicit dropdown/list picker used to select bar and hook types. This is
@@ -315,6 +331,7 @@ class FakeBuiltInCategory(object):
     OST_Floors = object()
     OST_StructuralFoundation = object()
     OST_Levels = object()
+    OST_Rebar = object()
 
 
 class FakeFilteredElementCollector(object):
@@ -494,6 +511,67 @@ class FakeRebar(object):
     @staticmethod
     def CreateFromCurves(*args, **kwargs):
         return FakeRebarInstance(*args, **kwargs)
+
+
+class FakeRebarPartitionParameter(object):
+    """SHAPE UNVERIFIED -- stand-in for the ``Parameter`` object
+    ``Rebar.LookupParameter("Partition")`` is assumed to return (issue
+    #117/R26). The parameter's NAME, storage type and empty default ARE
+    confirmed live; this accessor is not. Writable, unlike every other
+    parameter fake in this module -- R26 is specifically about a value
+    THIS TOOL writes, not one it only reads.
+    """
+
+    def __init__(self, value=""):
+        self._value = value
+
+    def AsString(self):
+        return self._value
+
+    def Set(self, value):
+        self._value = value
+
+
+class FakeRebarElement(object):
+    """SHAPE UNVERIFIED except where noted -- stand-in for a placed
+    ``Rebar`` element already sitting in a host, as ``column_ownership``
+    reads (and tags) one (issue #117).
+
+    ``GetHostId()`` and ``Quantity`` are VERIFIED LIVE (issue #109,
+    ``issue-109-kept-write-tracer-bullet.md``): a closed tie built against
+    a column reported ``GetHostId() == 422078`` (the host's own id) and
+    ``Quantity == 1``. ``GetTypeId()`` and reaching ``Partition`` through
+    ``LookupParameter`` are NOT independently confirmed -- see this
+    module's header.
+    """
+
+    def __init__(self, host_id, id_value, bar_type_id=None, quantity=1,
+                partition=""):
+        self.Id = FakeElementId(id_value)
+        self._host_id = host_id
+        self.Quantity = quantity
+        self._bar_type_id = bar_type_id
+        self._partition = FakeRebarPartitionParameter(partition)
+        self._category = FakeBuiltInCategory.OST_Rebar
+
+    def GetHostId(self):
+        return self._host_id
+
+    def GetTypeId(self):
+        return self._bar_type_id
+
+    def LookupParameter(self, name):
+        if name == PARTITION_PARAMETER_NAME_FOR_FAKE:
+            return self._partition
+        return None
+
+
+#: Kept as a module-level constant, deliberately NOT imported from
+#: ``rft.revit.column_ownership`` -- this fake must recognise the parameter
+#: name the way the real Revit API would (by the literal string "Partition"
+#: the ticket confirmed live), not by sharing the adapter's own constant.
+#: Sharing it would let a typo in BOTH places cancel out and still pass.
+PARTITION_PARAMETER_NAME_FOR_FAKE = "Partition"
 
 
 class FakeRebarBarType(object):

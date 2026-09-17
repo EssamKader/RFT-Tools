@@ -71,6 +71,9 @@ COL_PLAN = "RFT.lib/rft/core/column_plan.py"
 TT = "tests/test_column_ties.py::"
 COL_HOST = "RFT.lib/rft/revit/column_host.py"
 TH = "tests/test_column_host_source.py::"
+# ---- #117: ownership (R24/R26) --------------------------------------
+COL_OWNERSHIP = "RFT.lib/rft/revit/column_ownership.py"
+TW = "tests/test_column_ownership.py::"
 TPL = "tests/test_column_plan.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
@@ -281,6 +284,27 @@ CASES = [
      'from .units import internal_to_mm as element_name',
      TH + "test_element_name_is_imported_from_the_beam_s_verified_helper",
      "the verified helper swapped for a local stand-in"),
+
+    # ---- #117: ownership is a PREFIX test, and one shared constant ----
+
+    (COL_OWNERSHIP, '    return value is not None and value.startswith(OWNERSHIP_PREFIX)',
+     '    return value == partition_tag(422078)',
+     TW + "test_a_cage_carrying_a_stale_host_id_is_still_ours",
+     "ownership narrowed from a PREFIX test to equality -- a copied cage's "
+     "stale host id would read as foreign"),
+
+    (COL_OWNERSHIP, '    return "%s%s" % (OWNERSHIP_PREFIX, host_id)',
+     '    return "RFT-COLUMN-%s" % host_id',
+     TW + "test_the_tag_is_exactly_the_prefix_plus_the_host_id",
+     "the write side building its tag from a literal instead of the "
+     "shared OWNERSHIP_PREFIX constant"),
+
+    (COL_OWNERSHIP, '    parameter = rebar.LookupParameter(PARTITION_PARAMETER_NAME)',
+     '    parameter = rebar.LookupParameter("Partition ")',
+     TW + "test_an_element_tagged_by_this_module_is_found_by_it_afterwards",
+     "Partition read through a literal instead of the shared "
+     "PARTITION_PARAMETER_NAME constant -- a tool that tags with one name "
+     "and searches with another silently owns nothing"),
 
     # ---- #110: the window composes nothing -----------------------
     (COL_SCRIPT, 'from rft.core.column_plan import (',
