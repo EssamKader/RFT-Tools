@@ -247,7 +247,8 @@ def test_a_subthreshold_loop_is_refused_before_any_element_is_created():
         subset=TieSubset(indices=(1, 2)), kind=KIND_CLOSED_LOOP,
         enclosed_indices=[1, 2], restrained_indices=[1, 2],
         centre_u_mm=0.0, centre_v_mm=0.0, half_u_mm=12.7, half_v_mm=12.7,
-        narrow_mm=25.4, min_buildable_mm=MIN_BUILDABLE_MM, reason="")
+        narrow_mm=25.4, min_buildable_mm=MIN_BUILDABLE_MM, reason="",
+        vertices=[])  # A1 refuses this tie before any geometry is read.
     plan = _Plan(ties=[bad], ladder=_ladder([50.0, 150.0]),
                 base_z_mm=3000.0, layout=layout)
 
@@ -272,7 +273,7 @@ def test_the_refusal_does_not_trust_kind_ALONE(monkeypatch):
         centre_u_mm=0.0, centre_v_mm=0.0, half_u_mm=12.0, half_v_mm=12.0,
         narrow_mm=24.0,
         min_buildable_mm=minimum_buildable_narrow_mm(BEND_DIAMETER_MM, TIE_DIA_MM),
-        reason="")
+        reason="", vertices=[])  # _ensure_buildable never reads geometry.
     with pytest.raises(TiePlacementError):
         place_ties_module._ensure_buildable(bad)
 
@@ -292,7 +293,8 @@ def test_no_element_at_all_is_created_when_A1_refuses():
         subset=TieSubset(indices=(1, 2)), kind=KIND_CLOSED_LOOP,
         enclosed_indices=[1, 2], restrained_indices=[1, 2],
         centre_u_mm=0.0, centre_v_mm=0.0, half_u_mm=12.7, half_v_mm=12.7,
-        narrow_mm=25.4, min_buildable_mm=MIN_BUILDABLE_MM, reason="")
+        narrow_mm=25.4, min_buildable_mm=MIN_BUILDABLE_MM, reason="",
+        vertices=[])  # A1 refuses this tie before any geometry is read.
     good = _outer_tie(layout)
     # The bad tie is SECOND: if the pre-check ran per-tie inside the loop
     # rather than over the whole plan up front, the good tie would already

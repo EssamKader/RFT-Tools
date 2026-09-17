@@ -81,11 +81,22 @@ TieSubset = namedtuple("TieSubset", "indices")
 #: the CENTRELINE half-dimensions -- what ``CreateFromCurves`` takes.
 #: ``reason`` is empty for a closed loop and names the failed bend test for
 #: a cross-tie, so the report never shows a cross-tie without saying why.
+#:
+#: ``vertices`` (#140) is the centreline polygon the tie's steel actually
+#: follows, in order: a closed loop's four corners, or a cross-tie's two
+#: end points. It exists so ``resolve_tie``'s own corner math,
+#: ``rft.ui.column_sketch``'s tie drawing and
+#: ``rft.revit.column_place_ties``'s curve builder read ONE object instead
+#: of each re-deriving the same four numbers into corners -- the thing
+#: #140 was filed to stop. ``half_u_mm``/``half_v_mm`` stay: A1's narrow
+#: test and the report still read them, and they are still the right
+#: description of a rectangle. This only stops them being the sole way to
+#: know where the steel goes.
 ResolvedTie = namedtuple(
     "ResolvedTie",
     "subset kind enclosed_indices restrained_indices "
     "centre_u_mm centre_v_mm half_u_mm half_v_mm narrow_mm "
-    "min_buildable_mm reason")
+    "min_buildable_mm reason vertices")
 
 Finding = namedtuple("Finding", "severity message")
 
@@ -188,11 +199,26 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
     if narrow >= minimum:
         kind = KIND_CLOSED_LOOP
         reason = ""
-        # A closed loop restrains the bars at its four corners.
-        corner_uv = [(centre_u - half_u + grow, centre_v - half_v + grow),
-                     (centre_u + half_u - grow, centre_v - half_v + grow),
-                     (centre_u + half_u - grow, centre_v + half_v - grow),
-                     (centre_u - half_u + grow, centre_v + half_v - grow)]
+        # The tie's own centreline polygon (#140's `vertices`) -- the same
+        # four corners `rft.ui.column_sketch` and
+        # `rft.revit.column_place_ties` have always drawn/placed from
+        # `centre`/`half` alone, wound so consecutive entries share an
+        # edge (the hook-overlap corner both hooks attach to).
+        vertices = [(centre_u - half_u, centre_v - half_v),
+                    (centre_u + half_u, centre_v - half_v),
+                    (centre_u + half_u, centre_v + half_v),
+                    (centre_u - half_u, centre_v + half_v)]
+        # A bar is restrained where it sits at one of the tie's corners --
+        # but a CORNER BAR sits at the un-grown bounding-box extreme, not
+        # on the tie's own (grown) centreline: `grow` is subtracted back
+        # off each corner of `vertices` to land on the bar itself. This is
+        # deliberately a SEPARATE list from `vertices`: the two answer
+        # different questions (where the steel runs vs. where a bar
+        # restrained by it sits) and #140 does not collapse them into one.
+        corner_bar_uv = [(centre_u - half_u + grow, centre_v - half_v + grow),
+                         (centre_u + half_u - grow, centre_v - half_v + grow),
+                         (centre_u + half_u - grow, centre_v + half_v - grow),
+                         (centre_u - half_u + grow, centre_v + half_v - grow)]
         # Scanned over EVERY bar, not only the enclosed ones. A subset's
         # bounding box can put a corner on a bar the subset does not name,
         # and that bar is still inside the bend -- it is restrained by the
@@ -201,7 +227,7 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
         restrained = [bar.index for bar in layout.bars
                       if any(abs(bar.u_mm - cu) < COINCIDENT_TOL_MM
                              and abs(bar.v_mm - cv) < COINCIDENT_TOL_MM
-                             for cu, cv in corner_uv)]
+                             for cu, cv in corner_bar_uv)]
     else:
         kind = KIND_CROSS_TIE
         reason = (
@@ -211,15 +237,23 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
             "exception, so it is never attempted."
             % (narrow, minimum, bend_diameter_mm, tie_dia_mm))
         # A cross-tie is a single leg between the subset's two extreme
-        # bars, and restrains exactly those two.
+        # bars, and restrains exactly those two. Its `vertices` are those
+        # same two bars' own centrelines -- not the grown bounding box
+        # `centre`/`half` describe -- because a cross-tie's steel runs bar
+        # to bar, matching what
+        # `rft.revit.column_place_ties._cross_tie_uv_segments_mm` has
+        # always built the placed curve from.
         restrained = [bars[0].index, bars[-1].index]
+        vertices = [(bars[0].u_mm, bars[0].v_mm),
+                    (bars[-1].u_mm, bars[-1].v_mm)]
 
     return ResolvedTie(
         subset=subset, kind=kind, enclosed_indices=indices,
         restrained_indices=sorted(set(restrained)),
         centre_u_mm=centre_u, centre_v_mm=centre_v,
         half_u_mm=half_u, half_v_mm=half_v,
-        narrow_mm=narrow, min_buildable_mm=minimum, reason=reason)
+        narrow_mm=narrow, min_buildable_mm=minimum, reason=reason,
+        vertices=vertices)
 
 
 def resolve_ties(subsets, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):

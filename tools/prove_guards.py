@@ -75,6 +75,8 @@ COL_PLAN = "RFT.lib/rft/core/column_plan.py"
 TT = "tests/test_column_ties.py::"
 COL_HOST = "RFT.lib/rft/revit/column_host.py"
 TH = "tests/test_column_host_source.py::"
+# ---- #140: ResolvedTie.vertices, the one polygon three consumers read --
+TV = "tests/test_column_tie_vertices.py::"
 # ---- #137: sketch the tie by clicking its bars ----------------------
 SKETCH_LAYOUT = "RFT.lib/rft/ui/sketch_layout.py"
 TSL = "tests/test_ui_sketch_layout.py::"
@@ -1067,6 +1069,84 @@ CASES = [
      T + "test_place_preflight_checks_face_gaps_before_the_transaction_opens",
      "the preflight re-nested inside an always-false non-constant "
      "condition (if 1 == 2:)"),
+
+    # ---- #140: ResolvedTie.vertices is the one polygon three consumers
+    # read, instead of each re-deriving the same four corners. Proven
+    # against the reordering/dropping this ticket's own guard names.
+
+    (COL_TIES,
+     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v + half_v),\n'
+     '                    (centre_u - half_u, centre_v + half_v)]',
+     'vertices = [(centre_u + half_u, centre_v - half_v),\n'
+     '                    (centre_u - half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v + half_v),\n'
+     '                    (centre_u - half_u, centre_v + half_v)]',
+     TV + "test_a_closed_loops_vertices_are_the_four_corners_resolve_tie_finds",
+     "#140 -- a closed loop's first two vertices swapped, so the polygon "
+     "no longer winds consecutive-corner-to-consecutive-corner"),
+
+    (COL_TIES,
+     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v + half_v),\n'
+     '                    (centre_u - half_u, centre_v + half_v)]',
+     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v - half_v),\n'
+     '                    (centre_u + half_u, centre_v + half_v)]',
+     TV + "test_a_closed_loops_vertices_are_the_four_corners_resolve_tie_finds",
+     "#140 -- a closed loop's fourth vertex dropped"),
+
+    (COL_TIES,
+     'vertices = [(bars[0].u_mm, bars[0].v_mm),\n'
+     '                    (bars[-1].u_mm, bars[-1].v_mm)]',
+     'vertices = [(bars[-1].u_mm, bars[-1].v_mm),\n'
+     '                    (bars[0].u_mm, bars[0].v_mm)]',
+     TV + "test_a_cross_ties_vertices_are_its_two_ends_from_the_layout",
+     "#140 -- a cross-tie's two ends swapped, so 'vertices' no longer "
+     "names the subset's own first/last bar in the order it was typed"),
+
+    (COL_PLACE_TIES,
+     '    corners = tie.vertices\n'
+     '    n = len(corners)\n'
+     '    return [(corners[i], corners[(i + 1) % n]) for i in range(n)]',
+     '    cu, cv = tie.centre_u_mm, tie.centre_v_mm\n'
+     '    hu, hv = tie.half_u_mm, tie.half_v_mm\n'
+     '    corners = [(cu - hu, cv - hv), (cu + hu, cv - hv),\n'
+     '               (cu + hu, cv + hv), (cu - hu, cv + hv)]\n'
+     '    n = len(corners)\n'
+     '    return [(corners[i], corners[(i + 1) % n]) for i in range(n)]',
+     TV + "test_a_reordered_closed_loop_vertex_list_changes_the_drawn_polygon",
+     "#140 -- the placer's curve builder reverted to re-deriving the "
+     "closed loop's corners from centre/half instead of reading "
+     "tie.vertices, so a mutated vertex order is silently ignored"),
+
+    (COL_PLACE_TIES,
+     '    return [(tie.vertices[0], tie.vertices[-1])]',
+     '    return [(tie.vertices[-1], tie.vertices[0])]',
+     TV + "test_a_cross_ties_vertices_match_the_placers_own_segment_builder",
+     "#140 -- the placer's cross-tie segment reversed, so the first "
+     "curve point is no longer the subset's first-named bar"),
+
+    (COL_SKETCH,
+     '    if tie.kind == KIND_CROSS_TIE:\n'
+     '        (u1, v1), (u2, v2) = tie.vertices[0], tie.vertices[-1]\n'
+     '        return [SketchLine(u1=u1, v1=v1, u2=u2, v2=v2, style="cross_tie")]\n'
+     '    return [SketchPolygon(points=list(tie.vertices), style=loop_style)]',
+     '    cu, cv = tie.centre_u_mm, tie.centre_v_mm\n'
+     '    hu, hv = tie.half_u_mm, tie.half_v_mm\n'
+     '    if tie.kind == KIND_CROSS_TIE:\n'
+     '        return [SketchLine(u1=cu - hu, v1=cv - hv, u2=cu + hu, v2=cv + hv,\n'
+     '                           style="cross_tie")]\n'
+     '    return [SketchPolygon(points=[\n'
+     '        (cu - hu, cv - hv), (cu + hu, cv - hv),\n'
+     '        (cu + hu, cv + hv), (cu - hu, cv + hv),\n'
+     '    ], style=loop_style)]',
+     TV + "test_a_reordered_closed_loop_vertex_list_changes_the_drawn_polygon",
+     "#140 -- the sketch reverted to re-deriving the tie's corners from "
+     "centre/half instead of drawing tie.vertices, so a mutated vertex "
+     "order never reaches the canvas"),
 ]
 
 
