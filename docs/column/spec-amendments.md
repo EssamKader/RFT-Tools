@@ -11,8 +11,9 @@ issue decided it.
 
 ## Status
 
-`specs/column-rft-detailing.md` is **LOCKED at v1**, with **two amendments** —
-**A1** against §6.2 and **A2** against §1. Everything else the Wayfinder cycle produced was a
+`specs/column-rft-detailing.md` is **LOCKED at v1**, with **three amendments** —
+**A1** against §6.2, **A2** against §1, and **A3** adding §13 (Placement), which
+the locked spec never had. Everything else the Wayfinder cycle produced was a
 decision *about* the spec (packaging, API mechanics, reuse) rather than a
 change to its text.
 
@@ -346,3 +347,145 @@ construction and follows a cover change for free.
 
 This supersedes #92's proposal to place single-bar sets for predictability.
 Sets stay; the constraint is what buys the predictability.
+
+
+---
+
+# A3 — §13 Placement: a section the spec never had
+
+`specs/column-rft-detailing.md` §0–§12 defines what the tool **reads,
+computes and judges**. Nothing in it defines what the tool **builds**. That
+was not an oversight in the spec — v1 was written before a write had ever
+survived a transaction in this project — but it became a gap the moment
+#109 proved one could.
+
+Decided by the owner, four rulings, after #92 and #109 had established what
+Revit actually does. **R23–R26 below are that section.**
+
+---
+
+## R23 — a second press REPLACES, and says so first
+
+Pressing Apply on a column that already holds this tool's reinforcement
+**deletes that reinforcement and rebuilds it**, after telling the engineer
+what will go:
+
+```
+This column already holds 12 elements placed by this tool.
+Apply will DELETE them and rebuild.
+
+   [ Replace ]   [ Cancel ]
+```
+
+**Why not refuse.** The engineer tunes a tie arrangement by pressing Apply,
+looking, and pressing again. A tool that refuses turns every iteration into
+a manual cleanup, and the arrangement is exactly the thing §6.1 makes them
+iterate on.
+
+**Why not add.** Adding is what code does when nobody decides. It produces
+a column carrying two cages that schedules as real steel, prices as real
+steel, and cannot be built.
+
+**The count is not decoration.** It is the engineer's only chance to notice
+that the tool's idea of "its own" reinforcement differs from theirs — for
+instance because a Partition was edited by hand (R26). A dialog that said
+only "Replace?" would hide exactly the case worth catching.
+
+## R24 — rebar the tool did not place is NEVER deleted, and is always reported
+
+The placer deletes **only** elements it owns under R26. Anything else
+hosted by the column — hand-modelled bars, another tool's output, a
+colleague's correction — is left untouched **and named in the Review
+report**.
+
+Both halves are the ruling. Leaving it alone stops a button press
+destroying someone's hand work. Reporting it stops the opposite failure:
+an engineer reading a report that describes our cage, looking at a model
+that contains ours *plus* three bars nobody mentioned, and trusting the
+quantities.
+
+**Not** "refuse if any foreign rebar is present". Most real columns have
+been touched by hand somewhere, and a tool that blocks on that is a tool
+nobody can use on a live project.
+
+## R25 — the whole cage is ONE transaction: all of it, or none of it
+
+One Revit transaction, named so it reads properly in the undo menu, wraps
+**the deletions of R23 and the whole rebuild together**.
+
+Three consequences, and the third is the one that would have been missed:
+
+- a failure anywhere leaves the model **exactly as it was**;
+- one Ctrl+Z undoes the placement, not thirty-eight;
+- **a failed rebuild cannot leave the engineer with neither cage.** Because
+  the delete and the rebuild share a transaction, rolling back the rebuild
+  restores the reinforcement R23 had just removed. Deleting in a separate,
+  already-committed transaction would produce the worst state available:
+  the old cage gone, the new one never built.
+
+**This is not defensive coding, it is the only workable design.** #109
+Finding 3 established that offering Revit an unbuildable loop fails *above*
+the call site — no null, nothing the surrounding `try`/`except` can catch.
+The placer therefore cannot promise to notice its own failure and clean up.
+The transaction is what makes the guarantee instead.
+
+It follows that **everything knowable must be checked before the
+transaction opens**: §6.1's blocking findings (`is_blocked`), and A1's bend
+threshold on every loop. A transaction is never opened on a plan already
+known to fail.
+
+## R26 — ownership is a visible `Partition`, not hidden data
+
+Each element the placer creates gets its host and the tool's mark written
+into the rebar **`Partition`** parameter — confirmed on the live model as a
+writable, currently empty string parameter:
+
+```
+Partition = RFT-COL-422078
+```
+
+**The ownership test is the `RFT-COL-` prefix**, not the number after it.
+The id is there so the value is self-describing in a schedule; a column
+copied with its cage keeps a stale id and must still be recognised as ours.
+
+**Why visible rather than extensible storage.** Hidden data cannot be
+wrong in a way anyone can see. An engineer can schedule Partition, filter
+by it, notice a cage the tool has lost track of, and fix it by typing.
+When ownership is a blob, an orphaned cage is undiagnosable and the only
+recovery is to delete rebar by hand and hope.
+
+The cost is accepted deliberately: a Partition can be edited or cleared by
+hand, and then the tool will not recognise its own work. **That is what
+R23's count exists to surface** — the engineer sees "3 elements" where they
+expected twelve, and knows something was retagged before anything is
+deleted.
+
+**Not `Comments`.** Engineers already write in Comments. A tool that owns
+that field competes for it and eventually overwrites somebody's note.
+
+---
+
+## The order the placer runs in
+
+Stated because the order carries the rulings, and code that does the same
+steps in a different order satisfies none of them:
+
+1. compose the `ColumnPlan` (#110) — one object, read once;
+2. **refuse** if `is_blocked(plan)`, before anything else;
+3. **refuse** any loop failing A1's bend threshold — #109 Finding 3 means
+   this cannot be left to Revit;
+4. find this tool's existing elements in the host by R26's prefix; count
+   foreign rebar separately;
+5. if any exist, show R23's dialog and stop on Cancel;
+6. **open one transaction** (R25);
+7. delete the owned elements;
+8. create ties and bars; apply R22's host-face constraints; assert R21's
+   hook tails fall inside the host extent; write R26's Partition;
+9. commit — or let anything at all roll the whole thing back;
+10. report, naming the foreign rebar R24 left alone.
+
+## Still open after this
+
+**Save / reopen persistence** of R22's constraints (#92 Q4) and **§6.3's
+alternation gap for cross-ties**, which has no corner to alternate. Neither
+blocks writing the placer; both must be closed before it ships.
