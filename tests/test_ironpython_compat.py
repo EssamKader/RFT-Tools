@@ -181,6 +181,7 @@ def test_the_suite_declares_every_third_party_module_it_imports():
     ALLOWED = {
         "pytest",       # installed by CI
         "yaml",         # installed by CI (the bundle.yaml guard)
+        "pyflakes",     # installed by CI (the undefined-name guard)
         "Autodesk",     # faked in tests/fake_revit_api.py, never installed
     }
     # Test-suite modules of our own, importable because conftest.py puts

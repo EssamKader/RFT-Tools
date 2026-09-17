@@ -57,10 +57,15 @@
          itself is testable under plain CPython. -->
     <SolidColorBrush x:Key="PassGreen" Color="#FF2E7D32"/>
 
-    <!-- #137: a bar the engineer has clicked, mid-tie. Its own colour --
+    <!-- #137: a bar the engineer has clicked, mid-tie. Its own colour,
          neither PassGreen (a section 6.1 verdict) nor SkyBlue (an applied
-         tie) -- so a pending selection is never mistaken for something
-         this tool has already judged. -->
+         tie), so a pending selection is never mistaken for something this
+         tool has already judged.
+
+         NO DOUBLE HYPHEN ANYWHERE IN THIS COMMENT. XML forbids one inside
+         a comment body, and this file is merged as a ResourceDictionary
+         Source by BOTH windows, so the one that was here killed both
+         tools at parse time. See tests/test_xaml_parses_as_xml.py. -->
     <SolidColorBrush x:Key="SelectionPurple" Color="#FF7A3FA0"/>
 
 </ResourceDictionary>
