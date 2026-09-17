@@ -152,7 +152,7 @@ def test_the_z_used_is_the_plan_s_base_PLUS_the_ladder_s_own_offset():
     created = _place(plan)
     curves = created[0].args[7]
     # Every corner of the outer tie shares the same world Z.
-    _, p0, p1 = curves[0]
+    p0, p1 = curves[0].GetEndPoint(0), curves[0].GetEndPoint(1)
     assert p0.Z == pytest.approx(mm(3000.0 + 777.0))
     assert p1.Z == pytest.approx(mm(3000.0 + 777.0))
 
@@ -187,8 +187,8 @@ def test_hook_tails_are_verified_by_reading_the_geometry_back():
     rebar = _place(plan)[0]  # would have raised TiePlacementError otherwise
     curves = rebar.GetCenterlineCurves(False, False, False, None, 0.0)
     box = rebar.args[5].get_BoundingBox(None)
-    _, start_tail, _ = curves[0]
-    _, _, end_tail = curves[-1]
+    start_tail = curves[0].GetEndPoint(0)
+    end_tail = curves[-1].GetEndPoint(1)
     for point in (start_tail, end_tail):
         assert box.Min.X <= point.X <= box.Max.X
         assert box.Min.Y <= point.Y <= box.Max.Y

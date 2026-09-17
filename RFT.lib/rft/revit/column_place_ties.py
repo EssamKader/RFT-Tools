@@ -48,7 +48,9 @@ execution and must compare LEGS, never the extremes of the curve array
 that here.
 """
 
-from Autodesk.Revit.DB import Line, XYZ
+from System.Collections.Generic import List
+
+from Autodesk.Revit.DB import Curve, Line, XYZ
 from Autodesk.Revit.DB.Structure import (
     MultiplanarOption,
     Rebar,
@@ -168,7 +170,15 @@ def _build_curves(origin_point, hand_dir, facing_dir, z_internal, uv_segments_mm
                 + hand_dir.Multiply(mm_to_internal(u_mm))
                 + facing_dir.Multiply(mm_to_internal(v_mm)))
 
-    return [Line.CreateBound(to_point(a), to_point(b)) for a, b in uv_segments_mm]
+    # A typed List[Curve], not a Python list. `CreateFromCurves` takes an
+    # IList<Curve>; the bar placer already builds one explicitly and this
+    # module did not, which is the kind of difference that works until a
+    # particular overload declines to coerce. Issue #127 was one shape
+    # mismatch reaching a live host in this file already.
+    curves = List[Curve]()
+    for a, b in uv_segments_mm:
+        curves.Add(Line.CreateBound(to_point(a), to_point(b)))
+    return curves
 
 
 def _within(value, lo, hi):
@@ -199,8 +209,12 @@ def _assert_hook_tails_inside_host_extent(host_element, rebar, tie):
             "Tie %s: Revit returned no centreline curves to verify hook "
             "tails against (R21)." % _tie_label(tie))
 
-    _, start_tail, _ = curves[0]
-    _, _, end_tail = curves[-1]
+    # GetEndPoint, never unpacking. A Revit `Curve` is not a sequence:
+    # unpacking one raises `TypeError: 'Line' object is not iterable` at
+    # the first tie, which is how issue #127 was found -- on a host, after
+    # this assertion had "passed" in every test run.
+    start_tail = curves[0].GetEndPoint(0)
+    end_tail = curves[-1].GetEndPoint(1)
     for end_label, point in (("start", start_tail), ("end", end_tail)):
         if not (_within(point.X, box.Min.X, box.Max.X)
                 and _within(point.Y, box.Min.Y, box.Max.Y)):
