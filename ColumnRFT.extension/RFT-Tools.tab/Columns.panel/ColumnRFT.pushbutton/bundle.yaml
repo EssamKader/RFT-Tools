@@ -1,19 +1,25 @@
-title: "Column\nRFT"
+title: "Column"
 tooltip: >-
   Reinforcement for ONE floor-to-floor segment of a rectangular concrete
   column: longitudinal bars as a single perimeter layout, confinement-zone
   and middle-zone ties, and the inner ties that restrain intermediate bars.
 
-  PLACES NOTHING YET (issue #87). The window picks a column, refuses the
-  ones out of scope with the reason, and shows what it read: section, the
-  cover read FROM the element, and the clear height measured to the
-  support face. The bar inputs (#88), tie topology (#89), sketch (#90) and
-  Review report (#91) are separate tickets and their tabs are disabled.
+  PLACES. Pick a column, state the bars and the tie arrangement, read the
+  Review page, and Apply builds the cage in ONE transaction -- so a
+  failure anywhere leaves the model exactly as it was and one Ctrl+Z
+  undoes the whole placement. Pressing Apply again REPLACES this tool's
+  own reinforcement, after telling you how many elements will go; rebar
+  it did not place is never touched, and is named in the report.
 
-  SCOPE, when it ships: one segment only. Foundation starter bars/dowels
-  (C1), multi-storey stacks beyond the one top-of-support splice (C2) and
+  Section 6.1 is a gate, not a note: a tie arrangement that leaves a bar
+  unrestrained, or exceeds the 300 mm branch spacing, is refused before
+  any transaction opens.
+
+  SCOPE: one segment only. Foundation starter bars/dowels (C1),
+  multi-storey stacks beyond the one top-of-support splice (C2) and
   non-rectangular sections (C3) are out of scope by decision, not by
-  omission.
+  omission. An out-of-scope column is refused with the reason, not
+  detailed halfway.
 
   See specs/column-rft-detailing.md and ColumnRFT.extension/CONTEXT.md.
 author: Essam Kader
