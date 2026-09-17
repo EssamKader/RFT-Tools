@@ -548,3 +548,35 @@ So:
 letter chooses the list; the engineer reads the grade. Both halves are the
 ruling — the filter without the label would be the tool hiding its own
 reasoning, and that is what R27 refuses.
+
+
+### WITHDRAWN in part (#135) — the filter is gone, the label stays
+
+**The T filter emptied the picker on the live model and has been removed.**
+
+`ColumnRFT.Trail.rvt` holds **eleven** bar types — `10M` … `57M`, element
+ids 53649–53681 — and **no T-named type has ever existed in it**. The
+filter therefore selected nothing, and the Longitudinal dropdown came up
+blank.
+
+**How the mistake was made, because it is the instructive part.** The
+evidence for R27 came from a live probe that reported fifteen types
+including `10T`…`16T`, with `NEOM_*` shared parameters and `10M` at element
+id **1542445**. The document actually being detailed has `10M` at **53672**.
+Those are two different projects: the MCP connection answered from another
+open document, and nobody checked the ids matched the column under test.
+
+A live probe is only evidence about the document it ran against. **This
+project had already learned that a fake can be laxer than the API; the same
+discipline applies to a probe — it must be pinned to the element in
+question, not merely to "the live host".**
+
+**What survives:** every picker label carries the type's `fy`. That half was
+never in doubt, and it is the half that does the work — the engineer sees
+420 MPa beside `16M` and knows the name says "metric", not "mild". Hiding a
+bar they need is worse than showing one they must judge.
+
+`bar_type_options(..., high_tensile_only=True)` remains in the adapter,
+tested, unused by either window. It is the correct implementation of a rule
+this project's models cannot currently express; it costs nothing to keep and
+would otherwise be rewritten from scratch the day a T-named project appears.

@@ -459,10 +459,11 @@ CASES = [
      "#133 -- fy defaulted to the common value instead of read, so a type "
      "with NO material claims 420 MPa"),
 
-    (COL_SCRIPT, 'high_tensile_only=True', 'high_tensile_only=False',
-     TC + "test_the_two_bar_pickers_are_filled_from_DIFFERENT_lists",
-     "#133 -- the window stops asking for the filtered list, so the "
-     "longitudinal picker offers M types again"),
+    (COL_SCRIPT, '        options = bar_type_options(revit.doc, internal_to_mm)',
+     '        options = bar_type_options(revit.doc, internal_to_mm, high_tensile_only=True)',
+     TC + "test_both_bar_pickers_show_EVERY_type",
+     "#135 -- the withdrawn T filter reintroduced into the window, which "
+     "empties the longitudinal picker on a project with no T-named types"),
 
     # ---- #120: the Apply path, R23/R25 ------------------------------
     (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',

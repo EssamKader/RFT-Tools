@@ -400,28 +400,30 @@ class ColumnWindow(forms.WPFWindow):
         with that too: every ``M`` type in the live model is ASTM A615M
         **Grade 420**, where the M means METRIC, not mild.
 
-        The two pickers get DIFFERENT lists (#133, owner's ruling):
+        BOTH pickers get EVERY type (#135, withdrawing #133's filter).
 
-        - longitudinal: T-named types only. The letter is the filter,
-          because in a project where every type reads 420 MPa the yield
-          strength separates nothing.
-        - ties: everything. Mild is permitted for a tie, not required, so
-          nothing is hidden from this one.
+        R27 briefly filtered the longitudinal picker to T-named types. On
+        the live model that emptied it: `ColumnRFT.Trail.rvt` holds eleven
+        bar types, all named `..M`, all ASTM A615M Grade 420. The filter
+        was written against a probe of a DIFFERENT document that happened
+        to be active on the connection, and no T type has ever existed
+        here.
+
+        The grade is still SHOWN beside every type, which is the half that
+        survives: hiding a bar the engineer needs is worse than showing one
+        they must judge, and the label is what lets them judge it.
 
         ``bar_type_options`` is generic and the reuse audit clears it for
         reuse, so this is shared with the beam tool rather than copied.
         """
-        tie_options = bar_type_options(revit.doc, internal_to_mm)
-        main_options = bar_type_options(revit.doc, internal_to_mm,
-                                        high_tensile_only=True)
-        for combo, options in ((self.main_bar_type_cb, main_options),
-                               (self.tie_bar_type_cb, tie_options)):
+        options = bar_type_options(revit.doc, internal_to_mm)
+        for combo in (self.main_bar_type_cb, self.tie_bar_type_cb):
             combo.Items.Clear()
             for label, _bar_type in options:
                 combo.Items.Add(label)
             combo.IsEnabled = True
-        self.bar_type_options = tie_options
-        self.main_bar_type_options = main_options
+        self.bar_type_options = options
+        self.main_bar_type_options = options
 
     def _populate_hook_types(self):
         """Fill BOTH hook dropdowns, separately.
