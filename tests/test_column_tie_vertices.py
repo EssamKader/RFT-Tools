@@ -67,6 +67,26 @@ def _independent_cross_tie_endpoints(tie, layout):
     return [(start_bar.u_mm, start_bar.v_mm), (end_bar.u_mm, end_bar.v_mm)]
 
 
+def _same_cycle(actual, expected):
+    """The same closed polygon, wound the same way, allowed to START
+    anywhere.
+
+    #140's claim is that a loop's vertices ARE its four corners. R31 then
+    ruled where the hook closure sits, which is ``vertices[0]`` -- so the
+    starting point is now a separate decision with its own tests, and
+    pinning it here as well would make these two tests fail for a reason
+    they are not about.
+
+    Rotation only, never reversal: the winding is load-bearing (R21's
+    hook orientation reads it) and is still compared exactly.
+    """
+    if len(actual) != len(expected):
+        return False
+    return any(list(actual) == [expected[(start + i) % len(expected)]
+                                for i in range(len(expected))]
+               for start in range(len(expected)))
+
+
 # --------------------------------------------------------------------- #
 # A closed loop's vertices are the four corners resolve_tie always found.
 
@@ -76,7 +96,8 @@ def test_a_closed_loops_vertices_are_the_four_corners_resolve_tie_finds():
     tie = resolve_tie(outer_perimeter_subset(len(layout.bars)), layout,
                       TIE_DIA_MM, BAR_DIA_MM, BEND_DIAMETER_MM)
     assert tie.kind == KIND_CLOSED_LOOP
-    assert tie.vertices == _independent_closed_loop_corners(tie, layout)
+    assert _same_cycle(tie.vertices,
+                       _independent_closed_loop_corners(tie, layout))
     assert len(tie.vertices) == 4
 
 
@@ -86,7 +107,8 @@ def test_an_inner_closed_loops_vertices_match_too():
     tie = resolve_tie(TieSubset((0, 1, 2, 3)), layout, TIE_DIA_MM, BAR_DIA_MM,
                       BEND_DIAMETER_MM)
     assert tie.kind == KIND_CLOSED_LOOP
-    assert tie.vertices == _independent_closed_loop_corners(tie, layout)
+    assert _same_cycle(tie.vertices,
+                       _independent_closed_loop_corners(tie, layout))
 
 
 # --------------------------------------------------------------------- #

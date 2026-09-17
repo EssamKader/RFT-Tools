@@ -15,9 +15,12 @@ import pytest
 
 from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_ties import (
+    apex_index,
     branch_coordinate,
     clear_span_between_bars_mm,
+    rotate_to_closure,
     tie_legs,
+    top_index,
     KIND_CLOSED_LOOP,
     KIND_CROSS_TIE,
     SEVERITY_BLOCKING,
@@ -602,3 +605,92 @@ def test_a_closed_loop_records_no_span_because_it_has_no_bar_to_bar_leg():
     lay = layout()
     loop = ties([], lay)[0]
     assert loop.leg_clear_spans_mm == [None] * 4
+
+# --------------------------------------------------------------------- #
+# R31 (#149) -- where the hook closure sits
+
+
+def _signed_area_of(points):
+    total = 0.0
+    n = len(points)
+    for i in range(n):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % n]
+        total += x1 * y2 - x2 * y1
+    return total
+
+
+def test_a_triangle_closes_at_the_bar_the_owner_named():
+    """R31, checked against the owner's own example rather than against
+    the rule that produced it: `T 1 9 3` closes at bar 1 and `T 8 6 4` at
+    bar 6.
+    """
+    lay = layout()
+    bars = dict((b.index, b) for b in lay.bars)
+    for indices, apex_bar in (((1, 9, 3), 1), ((8, 6, 4), 6)):
+        tie = ties([TieSubset(indices, triangle=True)], lay)[1]
+        closure = tie.vertices[0]
+        # The closure is the GROWN vertex, so it sits outboard of the bar
+        # along the bisector -- same u here, further out in v.
+        assert closure[0] == pytest.approx(bars[apex_bar].u_mm, abs=0.01), (
+            "%r should close at bar %d" % (indices, apex_bar))
+        assert abs(closure[1]) > abs(bars[apex_bar].v_mm), (
+            "the closure is the tie's own corner, outboard of the bar")
+
+
+def test_the_apex_is_the_vertex_opposite_the_LONGEST_leg():
+    """The rule behind it, asked of the geometry directly. The base is the
+    longest side -- which is how a triangle is drawn, and how the owner
+    named theirs."""
+    apex_at_top = [(0.0, 100.0), (-100.0, -50.0), (100.0, -50.0)]
+    assert apex_index(apex_at_top) == 0
+
+    rotated = [(-100.0, -50.0), (100.0, -50.0), (0.0, 100.0)]
+    assert apex_index(rotated) == 2, (
+        "the apex is a property of the shape, not of where the list starts")
+
+
+def test_a_rectangle_closes_at_its_top():
+    lay = layout()
+    loop = ties([], lay)[0]
+    closure = loop.vertices[0]
+    assert closure[1] == pytest.approx(max(v for _u, v in loop.vertices)), (
+        "R31: the rectangle closes at the top, not the bottom-left corner "
+        "it used to")
+    assert closure[0] == pytest.approx(min(
+        u for u, v in loop.vertices
+        if v == pytest.approx(closure[1]))), (
+        "of the two top corners, the left -- keeping the u convention the "
+        "closure had before R31 moved it")
+
+
+def test_moving_the_closure_does_NOT_change_the_winding():
+    """The reason this is a rotation and never a reversal. R21 fixed
+    Left/Left against the DIRECTION the curves run; reversing the list to
+    put a different vertex first would point both hook tails out of the
+    concrete, which is the defect R21 exists to prevent and #145 had to
+    fix once already.
+    """
+    lay = layout()
+    for tie in ties([TieSubset((1, 9, 3), triangle=True)], lay):
+        if len(tie.vertices) < 3:
+            continue
+        for start in range(len(tie.vertices)):
+            rotated = rotate_to_closure(tie.vertices, start)
+            assert _signed_area_of(rotated) == pytest.approx(
+                _signed_area_of(tie.vertices)), (
+                "rotating the closure changed the winding")
+
+
+def test_rotate_to_closure_keeps_every_vertex():
+    original = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
+    assert sorted(rotate_to_closure(original, 2)) == sorted(original)
+    assert rotate_to_closure(original, 2)[0] == (1.0, 1.0)
+
+
+def test_the_top_of_a_rectangle_is_unambiguous_when_two_corners_share_it():
+    """Both top corners have the same v, so the tie-break has to be
+    deterministic or the closure moves between runs."""
+    square = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+    assert top_index(square) == 3
+    assert square[top_index(square)] == (-1.0, 1.0)
