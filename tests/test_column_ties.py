@@ -9,12 +9,14 @@ read and never assumed as a multiple.
 """
 
 import itertools
+import math
 
 import pytest
 
 from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_ties import (
     branch_coordinate,
+    clear_span_between_bars_mm,
     tie_legs,
     KIND_CLOSED_LOOP,
     KIND_CROSS_TIE,
@@ -526,3 +528,77 @@ def test_a_rectangle_still_contributes_all_four_of_its_legs():
                                for leg in tie_legs(loop)) if c is not None]
     assert len(verticals) == 2 and len(horizontals) == 2
     assert verticals[0] != verticals[1]
+
+# --------------------------------------------------------------------- #
+# R30 (#146) -- a diagonal bridges the gap it crosses
+
+
+def test_the_diagonal_span_is_the_owners_own_arithmetic():
+    """R30's measure, checked against the number the owner gave:
+
+        sqr hypotenuse = sqr 152 + sqr 146
+
+    read off the section's own clear distances. CLEAR, not centre to
+    centre -- the same currency ``Gap.clear_mm`` already uses.
+    """
+    lay = layout()
+    bars = dict((b.index, b) for b in lay.bars)
+    span = clear_span_between_bars_mm(bars[1], bars[9], BAR)
+
+    assert span == pytest.approx(210.4, abs=0.5), (
+        "expected the hypotenuse of 152 and 146")
+    assert span == pytest.approx(math.hypot(151.7, 145.8), abs=0.5)
+
+
+def test_a_purely_horizontal_leg_reports_its_PLAIN_clear_distance():
+    """The clamp. Two bars level with each other are zero apart on that
+    axis, not MINUS a bar diameter -- unclamped the square put 15.9 mm
+    back in and a horizontal leg claimed a span it does not have."""
+    lay = layout()
+    bars = dict((b.index, b) for b in lay.bars)
+    span = clear_span_between_bars_mm(bars[9], bars[3], BAR)
+    centre_to_centre = abs(bars[9].u_mm - bars[3].u_mm)
+    assert span == pytest.approx(centre_to_centre - BAR)
+
+
+def test_a_triangles_diagonal_BRIDGES_the_gap_it_crosses():
+    """R30, and the owner's engineering point: the cross-tie is not
+    necessary because the triangles already tie those bars.
+
+    The perimeter tie's two vertical legs are 360 mm apart and no tie puts
+    a vertical leg between them. Four diagonals cross that gap at 210 mm
+    each, which is inside the 300 mm limit, so the arrangement stands on
+    its own.
+    """
+    lay = layout()
+    resolved = ties([TieSubset((1, 9, 3), triangle=True),
+                     TieSubset((8, 6, 4), triangle=True)], lay)
+    findings = validate(lay, resolved)
+    assert not findings, [f.message for f in findings]
+
+
+def test_a_diagonal_TOO_LONG_to_be_doing_that_job_does_not_bridge():
+    """The other side of R30, without which it would be a licence rather
+    than a rule. On a four-bar column the same triangle's diagonal spans
+    568 mm clear -- far past 300 -- so the 360 mm gap is still unbroken
+    and section 6.1 still refuses it.
+    """
+    lay = layout(count_b=2, count_h=2)
+    resolved = ties([TieSubset((0, 1, 2), triangle=True)], lay)
+    spans = [s for s in resolved[1].leg_clear_spans_mm if s is not None]
+    assert max(spans) > 300.0, "this layout is supposed to be the long case"
+
+    messages = " ".join(f.message for f in validate(lay, resolved))
+    assert "vertical legs (u)" in messages, (
+        "a diagonal past the 300 mm limit must not bridge the gap it "
+        "crosses")
+
+
+def test_a_closed_loop_records_no_span_because_it_has_no_bar_to_bar_leg():
+    """A loop's legs run corner to corner, so there is no bar pair to
+    measure between -- and every one of them is axis aligned, so R30 never
+    asks. Recorded as None rather than as a number that would be wrong if
+    anyone read it."""
+    lay = layout()
+    loop = ties([], lay)[0]
+    assert loop.leg_clear_spans_mm == [None] * 4

@@ -732,3 +732,73 @@ That Figure 13-3 says this in so many words. It draws diagonal cross-ties in
 several sections and says nothing about how they are measured for the 300 mm
 limit; the owner read the rule as applying between branches parallel to the
 face, and that reading is recorded here as a ruling, not as a citation.
+
+
+---
+
+## R30 — a diagonal leg bridges the gap it crosses, measured by the hypotenuse
+
+**Decided by the owner** (#146), on seeing the tool demand a cross-tie the
+engineering did not need:
+
+> from engineering p.o.v the tie bar is not neccery … it already tied with
+> triangular stirrup so no neccery calculation and if neccery i think
+> hypotonus is the right call
+
+and, asked what the hypotenuse is measured from:
+
+> from column numbers  sqr hypotenus = sqr 152 + sqr 146
+
+### What it refines
+
+**R29 stands: a diagonal leg is not a branch AT a coordinate.** It does not sit
+at a `u` or a `v`, and crediting it with one is what the bounding-box reading
+did wrong.
+
+R30 answers the question R29 left: a diagonal is still steel, and it still
+holds the core at both its ends. So it **bridges** the gap it crosses — it
+supports at its two endpoints — provided it is short enough to be doing that
+job.
+
+### The measure
+
+The hypotenuse of the two **clear** distances between the bars the leg joins:
+
+    span = sqrt( (Δu − bar) ² + (Δv − bar) ² )
+
+On the verification column, bar 1 to bar 9 is 167.6 mm across and 161.7 mm up,
+less one 15.9 mm bar each way — **152 and 146, giving 210 mm**, which is the
+owner's own arithmetic.
+
+**Clear, not centre to centre**, because section 6.1's other test already works
+in clear distances (`Gap.clear_mm` is centre to centre minus one bar diameter).
+One currency, not two.
+
+**Between the BARS, not between the tie's vertices.** The same diagonal
+measures 199 × 192 between grown centreline vertices and 152 × 146 between the
+bars. R30 is about the second pair, so the span is recorded by `resolve_tie` —
+the only place that knows both — as `ResolvedTie.leg_clear_spans_mm`, rather
+than re-derived by a reader that has only the polygon.
+
+Each component is **clamped at zero**: two bars level with each other are zero
+apart on that axis, not minus a bar diameter. Unclamped, the square put the
+15.9 mm back and a purely horizontal leg reported a span it does not have.
+
+### What it changes
+
+On the column that prompted it — `T 1 9 3` and `T 8 6 4`, 450 × 600 — the
+perimeter tie's two vertical legs are 360 mm apart and no tie puts a vertical
+leg between them. Four diagonals cross that gap at **210 mm** each, so the
+arrangement stands on its own and **the cross-tie is no longer demanded**.
+
+The limit still bites where it should: on a four-bar column the same triangle's
+diagonal spans **568 mm** clear, far past 300, and the 360 mm gap stays
+unbroken.
+
+### What is NOT claimed
+
+That Figure 13-3 states this. It draws diagonal cross-ties in several sections
+and says nothing about how they are measured for the 300 mm limit. This is the
+owner's reading of what the limit is *for* — the unsupported span between
+points where the core is held — and it is recorded as a ruling, like R29, not
+as a citation.

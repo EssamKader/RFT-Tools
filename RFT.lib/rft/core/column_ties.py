@@ -124,11 +124,23 @@ TieSubset.__new__.__defaults__ = (False,)
 #: narrow test and the report still read them, and they are still the
 #: right description of a rectangle. This only stops them being the sole
 #: way to know where the steel goes.
+#:
+#: ``leg_clear_spans_mm`` (R30) is one entry per leg of ``vertices``, in the
+#: same order: the hypotenuse of the two CLEAR distances between the bars
+#: that leg joins, or ``None`` where the leg does not run bar to bar.
+#:
+#: It is recorded HERE rather than derived by the reader because a leg's
+#: endpoints are the tie's GROWN centreline, not the bars. On the
+#: verification column the diagonal from bar 1 to bar 9 measures 199 x 192
+#: between grown vertices and 152 x 146 clear between the bars themselves,
+#: and R30 is about the second pair. Only ``resolve_tie`` knows both, so
+#: only ``resolve_tie`` can say.
 ResolvedTie = namedtuple(
     "ResolvedTie",
     "subset kind enclosed_indices restrained_indices "
     "centre_u_mm centre_v_mm half_u_mm half_v_mm narrow_mm "
-    "min_buildable_mm reason vertices")
+    "min_buildable_mm reason vertices leg_clear_spans_mm")
+ResolvedTie.__new__.__defaults__ = (None,)
 
 Finding = namedtuple("Finding", "severity message")
 
@@ -209,6 +221,32 @@ def is_buildable(tie):
     if tie.kind != KIND_CLOSED_LOOP:
         return True
     return tie.narrow_mm >= tie.min_buildable_mm
+
+
+def clear_span_between_bars_mm(bar_a, bar_b, bar_diameter_mm):
+    """The distance R30 measures a diagonal leg by: the hypotenuse of the
+    two CLEAR distances between the bars it joins.
+
+    Clear, not centre to centre, and per component before the hypotenuse
+    -- the owner's own formula, given as
+
+        sqr hypotenuse = sqr 152 + sqr 146
+
+    from the numbers on the section: 152 mm clear along the 450 face and
+    146 mm clear along the 600 face give 211 mm. Section 6.1's other test
+    already works in clear distances (``Gap.clear_mm`` is centre to centre
+    minus one bar diameter), so this is the same currency rather than a
+    second one.
+    """
+    # Clamped at zero per component. Two bars level with each other are
+    # zero apart on that axis, not MINUS a bar diameter -- unclamped, the
+    # square put 15.9 mm back in and a purely horizontal leg reported a
+    # span it does not have. R30 only ever asks this of a diagonal, where
+    # both components are real, so this guards a number that is READ
+    # rather than one that is used.
+    du = max(0.0, abs(bar_a.u_mm - bar_b.u_mm) - bar_diameter_mm)
+    dv = max(0.0, abs(bar_a.v_mm - bar_b.v_mm) - bar_diameter_mm)
+    return math.sqrt(du * du + dv * dv)
 
 
 def tangent_length_mm(bend_diameter_mm, interior_angle_rad):
@@ -444,8 +482,18 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
     us = [v[0] for v in vertices]
     vs = [v[1] for v in vertices]
 
+    # R30: one span per leg, in the SAME order as `vertices` -- which is
+    # the normalised order, not the typed one, so the bars are read back
+    # through `ordered_indices` rather than `indices`.
+    ordered_bars = [layout.bars[i] for i in ordered_indices]
+    leg_clear_spans = [
+        clear_span_between_bars_mm(ordered_bars[i],
+                                   ordered_bars[(i + 1) % 3], bar_dia_mm)
+        for i in range(3)]
+
     return ResolvedTie(
         subset=subset, kind=KIND_TRIANGLE, enclosed_indices=indices,
+        leg_clear_spans_mm=leg_clear_spans,
         restrained_indices=sorted(indices),
         centre_u_mm=(max(us) + min(us)) / 2.0,
         centre_v_mm=(max(vs) + min(vs)) / 2.0,
@@ -533,8 +581,19 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
         vertices = [(bars[0].u_mm, bars[0].v_mm),
                     (bars[-1].u_mm, bars[-1].v_mm)]
 
+    if kind == KIND_CROSS_TIE:
+        # One leg, bar to bar, so it has a clear span like a triangle's.
+        leg_clear_spans = [clear_span_between_bars_mm(bars[0], bars[-1],
+                                                      bar_dia_mm)]
+    else:
+        # A closed loop's legs run corner to corner, not bar to bar, so
+        # there is no bar pair to measure between -- and every one of them
+        # is axis aligned, so R30 never asks.
+        leg_clear_spans = [None] * 4
+
     return ResolvedTie(
         subset=subset, kind=kind, enclosed_indices=indices,
+        leg_clear_spans_mm=leg_clear_spans,
         restrained_indices=sorted(set(restrained)),
         centre_u_mm=centre_u, centre_v_mm=centre_v,
         half_u_mm=half_u, half_v_mm=half_v,
@@ -723,10 +782,24 @@ def _branch_spacing_findings(layout, ties):
     for axis, label in ((0, "vertical legs (u)"), (1, "horizontal legs (v)")):
         coords = set()
         for tie in ties:
-            for leg in tie_legs(tie):
+            legs = tie_legs(tie)
+            spans = tie.leg_clear_spans_mm or [None] * len(legs)
+            for position, leg in enumerate(legs):
                 coordinate = branch_coordinate(leg, axis)
                 if coordinate is not None:
                     coords.add(round(coordinate, 6))
+                    continue
+                # R30: a DIAGONAL leg is still steel across the gap. It
+                # does not sit at a coordinate (R29), but it holds the
+                # core at both of its ends, so it supports there -- if it
+                # is short enough to be doing that job, measured by the
+                # hypotenuse of the two clear distances between the bars
+                # it joins.
+                span = spans[position] if position < len(spans) else None
+                if span is None or span > MAX_TIE_BRANCH_SPACING_MM:
+                    continue
+                for point in leg:
+                    coords.add(round(point[0] if axis == 0 else point[1], 6))
         ordered = sorted(coords)
         for lower, upper in zip(ordered, ordered[1:]):
             if upper - lower > MAX_TIE_BRANCH_SPACING_MM:
