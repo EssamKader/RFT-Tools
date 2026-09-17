@@ -144,6 +144,26 @@ def minimum_buildable_narrow_mm(bend_diameter_mm, tie_dia_mm):
     return bend_diameter_mm + tie_dia_mm
 
 
+def is_buildable(tie):
+    """A1: whether this tie's loop can physically be bent.
+
+    PURE, and the only place the comparison is made. It was written twice
+    -- once in the tie placer's own pre-check, once in the Apply path's
+    gate -- because both must refuse before offering anything to Revit
+    (#109 Finding 3: an unbendable loop fails ABOVE the call site and is
+    not catchable). Two copies of one detailing decision is how the beam
+    tool's ZONE_LAYOUT_FLAGS drifted, so it is asked here and nowhere
+    else.
+
+    A cross-tie has no loop to bend, so the threshold does not apply to
+    it -- its narrow dimension is below the minimum BY DESIGN, and gating
+    it would refuse exactly the detail A1 exists to permit.
+    """
+    if tie.kind != KIND_CLOSED_LOOP:
+        return True
+    return tie.narrow_mm >= tie.min_buildable_mm
+
+
 def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
     """One subset, turned into a rectangle and judged against A1.
 

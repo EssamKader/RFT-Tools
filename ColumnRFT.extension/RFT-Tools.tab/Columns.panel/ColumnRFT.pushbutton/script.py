@@ -74,6 +74,7 @@ from rft.revit.bar_types import (
     hook_angle_deg, hook_type_options, list_stirrup_hook_types,
 )
 from rft.revit.column_host import ColumnHostError, read_column
+from rft.revit import column_placer
 from rft.revit.units import internal_to_mm
 from rft.ui.column_sketch import (
     cross_section_captions, cross_section_shapes, zone_strip_shapes,
@@ -113,7 +114,7 @@ PROVENANCE_NAMES = ("section_source_tb", "cover_source_tb", "base_source_tb",
                     "total_bars_source_tb", "ls_source_tb", "l0_source_tb",
                     "s0_source_tb", "spacing_flags_tb",
                     "longitudinal_status_tb", "ties_status_tb",
-                    "report_tb", "tie_findings_tb")
+                    "report_tb", "tie_findings_tb", "place_status_tb")
 
 #: Read-outs on the two input tabs. Cleared with the rest on a re-pick:
 #: a new column changes L0, S0 and the middle-zone maximum, so leaving
@@ -177,6 +178,7 @@ class ColumnWindow(forms.WPFWindow):
         self.mode_a_rb.Checked += self.on_spacing_mode_changed
         self.mode_b_rb.Checked += self.on_spacing_mode_changed
         self.build_report_btn.Click += self.on_build_report_click
+        self.apply_place_btn.Click += self.on_apply_click
         # The sketch redraws when the canvas is first sized, which is
         # after the window is laid out -- a canvas has no ActualWidth
         # before that, and scaling to zero draws nothing.
@@ -239,6 +241,7 @@ class ColumnWindow(forms.WPFWindow):
         self.ties = None
         self.tie_findings = []
         self.review_status_tb.Text = "Apply the bar and tie inputs first."
+        self.place_status_tb.Text = "Apply the bar and tie inputs first."
         self._clear_canvases()
 
     # ---------------------------------------------------------- dispatch
@@ -613,6 +616,107 @@ class ColumnWindow(forms.WPFWindow):
                "  %d spacing flag(s) -- see the report."
                % len(self.spacing.flags)))
 
+    # ------------------------------------------------------------ apply
+    def on_apply_click(self, sender, args):
+        """WPF click handler for A3's Apply path (#120, R23/R25). No Revit
+        work itself -- everything from step 4 (finding this tool's own
+        elements) onward must run in an API context, same as Pick (#57)."""
+        if self.column is None or self.plan is None:
+            self.place_status_tb.Text = (
+                "Pick a column and Apply both the Longitudinal and Ties "
+                "tabs first.")
+            return
+
+        main_bar_type = self._selected_bar_type_object(self.main_bar_type_cb)
+        tie_bar_type = self._selected_bar_type_object(self.tie_bar_type_cb)
+        outer_hook_type = self._selected_hook_type_object(self.outer_hook_cb)
+        inner_hook_type = self._selected_hook_type_object(self.inner_hook_cb)
+        missing = [label for label, value in (
+            ("a main bar type", main_bar_type),
+            ("a tie bar type", tie_bar_type),
+            ("an outer hook type", outer_hook_type),
+            ("an inner hook type", inner_hook_type)) if value is None]
+        if missing:
+            self.place_status_tb.Text = (
+                "Select %s before Apply." % " and ".join(missing))
+            return
+
+        self._dispatch_to_revit_context(
+            lambda: self._apply_in_context(
+                main_bar_type, tie_bar_type, outer_hook_type,
+                inner_hook_type),
+            "Apply")
+
+    def _apply_in_context(self, bar_type, tie_bar_type, outer_hook_type,
+                          inner_hook_type):
+        """A3 steps 2-10. Steps 2/3 (refuse) and 6-10 (the transaction) are
+        `column_placer`'s; this method's own job is steps 4/5 -- read what
+        exists, and show R23's dialog -- because a WPF dialog is UI, and
+        `column_placer` never shows one.
+        """
+        plan = self.plan
+        host_element = self.column
+        doc = revit.doc
+
+        try:
+            column_placer.refuse_if_not_ready(plan)
+        except column_placer.ColumnPlacementError as ex:
+            self.place_status_tb.Text = str(ex)
+            forms.alert(str(ex), title="Apply refused")
+            return
+
+        # A3 step 4: this tool's own elements, and the foreign rebar R24
+        # requires reporting -- ONE read, so the count the dialog shows
+        # below and the set Apply deletes/reports can never disagree.
+        ours, foreign = column_placer.existing_elements(doc, host_element)
+
+        # A3 step 5 / R23: shown ONLY when elements of ours exist -- a
+        # first placement shows nothing. Stops on Cancel, before anything
+        # is touched.
+        if ours:
+            proceed = forms.alert(
+                "This column already holds {} element{} placed by this "
+                "tool.\nApply will DELETE them and rebuild.".format(
+                    len(ours), "" if len(ours) == 1 else "s"),
+                title="Replace existing reinforcement?",
+                ok=False, yes=True, no=True)
+            if not proceed:
+                self.place_status_tb.Text = "Cancelled -- nothing changed."
+                return
+
+        try:
+            # A3 steps 6-10, one transaction (R25): column_placer.apply
+            # re-checks steps 2/3 itself, so a plan this method's own
+            # refuse_if_not_ready call somehow missed still cannot reach a
+            # transaction.
+            result = column_placer.apply(
+                doc, host_element, plan, ours, foreign,
+                bar_type, tie_bar_type, outer_hook_type, inner_hook_type)
+        except column_placer.ColumnPlacementError as ex:
+            self.place_status_tb.Text = str(ex)
+            forms.alert(str(ex), title="Apply refused")
+            return
+        except Exception as ex:
+            # R25: the transaction has already rolled back, so the model
+            # is unchanged -- only the diagnosis differs.
+            message = "Apply FAILED and was rolled back -- {}: {}".format(
+                type(ex).__name__, ex)
+            self.place_status_tb.Text = message
+            forms.alert(message, title="Apply failed -- rolled back")
+            return
+
+        message = "Placed {} tie(s) and {} bar set(s).".format(
+            len(result.ties_created), len(result.bars_created))
+        if result.replaced_count:
+            message = "Replaced {} element(s). {}".format(
+                result.replaced_count, message)
+        if result.foreign:
+            # R24: named, never silently present.
+            message += " {} foreign rebar element(s) left untouched (id {}).".format(
+                len(result.foreign),
+                ", ".join(str(f.element_id) for f in result.foreign))
+        self.place_status_tb.Text = message
+
     # --------------------------------------------------------- sketch
     def on_canvas_size_changed(self, sender, args):
         self.redraw_sketch()
@@ -792,6 +896,25 @@ class ColumnWindow(forms.WPFWindow):
             return None
         _label, bar_type = self.bar_type_options[index]
         return bar_type_diameter_mm(bar_type, internal_to_mm)
+
+    def _selected_bar_type_object(self, combo):
+        """The actual ``RebarBarType`` behind a bar-type combo, for #120's
+        Apply -- the placer needs the Revit object itself, not the label
+        ``_selected_bar_type_name`` derives from it."""
+        index = combo.SelectedIndex
+        if index < 0 or index >= len(self.bar_type_options):
+            return None
+        return self.bar_type_options[index][1]
+
+    def _selected_hook_type_object(self, combo):
+        """The actual ``RebarHookType`` behind a hook combo. Section 7
+        keeps the outer/inner pickers independently selectable, and #120's
+        Apply reads each combo separately rather than assuming one applies
+        to both roles."""
+        index = combo.SelectedIndex
+        if index < 0 or index >= len(self.hook_type_options):
+            return None
+        return self.hook_type_options[index][1]
 
 
 # The window must outlive main(). A modeless window whose only reference is

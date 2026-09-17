@@ -80,6 +80,10 @@ TPL = "tests/test_column_plan.py::"
 # ---- #118: the tie placer -------------------------------------
 COL_PLACE_TIES = "RFT.lib/rft/revit/column_place_ties.py"
 TPT = "tests/test_column_place_ties.py::"
+# ---- #120: the Apply path (R23/R25) -----------------------------
+COL_PLACER = "RFT.lib/rft/revit/column_placer.py"
+TCP = "tests/test_column_placer.py::"
+TCA = "tests/test_column_apply.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -380,16 +384,57 @@ CASES = [
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
      "A1 -- the pre-check over the whole plan deleted from place_ties"),
 
-    (COL_PLACE_TIES, '    if tie.kind != KIND_CLOSED_LOOP:\n        return\n',
+    (COL_TIES, '    if tie.kind != KIND_CLOSED_LOOP:\n        return True\n',
      '',
      TPT + "test_a_cross_tie_is_never_gated_by_A1_its_geometry_is_not_a_loop",
      "A1 -- a legitimate cross-tie (narrow < minimum BY DESIGN) wrongly "
-     "refused once the CLOSED_LOOP-only guard is removed"),
+     "refused once the CLOSED_LOOP-only guard is removed from core's "
+     "is_buildable, which BOTH the tie placer and the Apply path ask"),
 
-    (COL_PLACE_TIES, '    if tie.narrow_mm < tie.min_buildable_mm:',
-     '    if False:',
+    (COL_TIES, '    return tie.narrow_mm >= tie.min_buildable_mm',
+     '    return True',
      TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
-     "A1 -- the narrow-vs-minimum comparison itself disabled"),
+     "A1 -- the narrow-vs-minimum comparison itself disabled in core"),
+
+    (COL_PLACER, '        if is_buildable(tie):',
+     '        if True:',
+     "tests/test_column_placer.py::"
+     "test_apply_never_opens_a_transaction_for_an_unbuildable_tie",
+     "A1 -- the Apply path's gate made unconditionally permissive, so "
+     "an unbuildable loop reaches a transaction even though the tie "
+     "placer would go on to refuse it. DELETING the two lines instead "
+     "leaves a bare raise in the loop, refusing EVERY tie -- still "
+     "raising, still opening nothing, indistinguishable from working, "
+     "and that is how this guard came back MISSED the first time."),
+
+    # ---- #120: the Apply path, R23/R25 ------------------------------
+    (COL_PLACER, '    refuse_if_not_ready(plan)\n\n    transaction = Transaction(doc, TRANSACTION_NAME)',
+     '    transaction = Transaction(doc, TRANSACTION_NAME)',
+     TCP + "test_apply_never_opens_a_transaction_when_blocked",
+     "R25 -- apply's own refuse_if_not_ready gate deleted, so a "
+     "transaction opens on a plan already known to fail"),
+
+    (COL_PLACER,
+     '        for element in ours:\n'
+     '            doc.Delete(element.Id)\n'
+     '\n'
+     '        ties_created = _place_ties_by_role(',
+     '        for element in ours:\n'
+     '            doc.Delete(element.Id)\n'
+     '        transaction.Commit()\n'
+     '        transaction = Transaction(doc, TRANSACTION_NAME)\n'
+     '        transaction.Start()\n'
+     '\n'
+     '        ties_created = _place_ties_by_role(',
+     TCP + "test_a_failed_rebuild_leaves_the_original_cage_intact",
+     "R25 -- the deletions committed in their own transaction before the "
+     "rebuild, so a failed rebuild cannot restore what is already gone "
+     "(the worst state R25 exists to rule out)"),
+
+    (COL_SCRIPT, '        if ours:\n',
+     '        if False and ours:\n',
+     TCA + "test_the_dialog_is_gated_behind_ours_being_non_empty",
+     "R23 -- the replace dialog skipped even when elements of ours exist"),
 
     # ---- rc2 live failure: Location.Point.Z is not the elevation -------
     (COL_HOST, '                        probe_z)',

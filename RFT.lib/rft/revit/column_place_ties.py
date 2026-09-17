@@ -56,7 +56,7 @@ from Autodesk.Revit.DB.Structure import (
     RebarStyle,
 )
 
-from ..core.column_ties import KIND_CLOSED_LOOP, describe_subset
+from ..core.column_ties import KIND_CLOSED_LOOP, describe_subset, is_buildable
 from .units import mm_to_internal
 
 
@@ -104,23 +104,22 @@ def _tie_label(tie):
 def _ensure_buildable(tie):
     """A1's bend threshold, checked before this tie is offered to Revit.
 
-    Recomputes the comparison rather than reading ``tie.kind`` alone: a
-    ``ResolvedTie`` that says ``KIND_CLOSED_LOOP`` while its own numbers
-    fail the test is refused here exactly as one that never got that far
-    would be. #109 Finding 3 is why this cannot be "try it and see" --
-    Revit's own refusal for an unbendable loop is not catchable at the
-    call site.
+    The comparison itself is :func:`rft.core.column_ties.is_buildable`,
+    asked rather than repeated: the Apply path must make the same decision
+    before it opens a transaction, and two copies of one detailing rule is
+    how the beam tool's ZONE_LAYOUT_FLAGS drifted. #109 Finding 3 is why
+    this cannot be "try it and see" -- Revit's own refusal for an
+    unbendable loop is not catchable at the call site.
     """
-    if tie.kind != KIND_CLOSED_LOOP:
+    if is_buildable(tie):
         return
-    if tie.narrow_mm < tie.min_buildable_mm:
-        raise TiePlacementError(
-            "Tie %s: narrow dimension %.1f mm is below the %.1f mm A1 "
-            "threshold (bend diameter + tie diameter) and cannot be bent. "
-            "Refused before any element was offered to Revit -- issue #109 "
-            "Finding 3 found this fails above the call site, uncatchable, "
-            "so it must never be reached."
-            % (_tie_label(tie), tie.narrow_mm, tie.min_buildable_mm))
+    raise TiePlacementError(
+        "Tie %s: narrow dimension %.1f mm is below the %.1f mm A1 "
+        "threshold (bend diameter + tie diameter) and cannot be bent. "
+        "Refused before any element was offered to Revit -- issue #109 "
+        "Finding 3 found this fails above the call site, uncatchable, "
+        "so it must never be reached."
+        % (_tie_label(tie), tie.narrow_mm, tie.min_buildable_mm))
 
 
 def _closed_loop_uv_segments_mm(tie):
