@@ -289,3 +289,23 @@ def test_the_spacing_section_reads_the_built_values_not_the_limits():
     built = [line for line in lines if "to be built" in line]
     assert any("200 mm" in line for line in built)
     assert any("300 mm" in line for line in built)
+
+def test_the_report_says_a_triangle_does_NOT_alternate():
+    """R32, ruled by the owner: "no alter in triangle".
+
+    The line above it promises the hook corner alternates between
+    consecutive levels (section 6.3). Left alone that reads as a promise
+    the triangles do not keep -- a triangle's closure is its apex, fixed
+    by its geometry, with no second corner to move to.
+
+    Stated unconditionally because it is a RULE rather than a fact about
+    this ladder: the ladder carries the same mirror map whatever shapes
+    the ties are, and does not know which they are.
+    """
+    text = report_text()
+    assert "does not alternate" in text.lower(), text
+    assert "apex" in text.lower()
+    # The alternation claim itself must SURVIVE -- R32 qualifies it, it
+    # does not delete it. A closed loop still alternates.
+    assert "alternates between consecutive levels" in text
+

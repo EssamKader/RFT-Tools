@@ -867,3 +867,51 @@ unchanged for **every** starting position rather than argued for in a comment.
 second corner to alternate to under this rule** — its apex is one vertex, fixed
 by its geometry. That is not resolved here; it is written down so #92's
 alternation gap is entered knowing it.
+## R32 — a triangle does not alternate
+
+**Decided by the owner** (#149), on the collision R31 recorded rather than
+resolved:
+
+> no alter in triangle
+
+### The collision it closes
+
+Section 6.3 moves the hook corner between consecutive levels, and
+`TieLevel.mirrored` carries that as a level-indexed mirror map (#70 proved it
+is ONE rebar set plus a per-bar transform, never a set per level).
+
+R31 then fixed a triangle's closure at its **apex** — the vertex opposite its
+longest leg. A triangle has three vertices and only one of them is the apex, so
+**there is nowhere to alternate to** without either moving the closure onto the
+base, which R31 forbids, or mirroring the whole triangle, which is a different
+tie.
+
+### The rule
+
+- **A triangle's closure stays at its apex on every level.** It does not
+  alternate.
+- **A closed loop still alternates**, unchanged. Four corners give section 6.3
+  somewhere to move to, which is the case the rule was written for.
+- A cross-tie has no closure at all — one leg, two ends, no corner — so the
+  question does not arise for it either. That half was already open in #92 and
+  this ruling does not disturb it.
+
+### Where it shows
+
+Alternation is **modelled and reported, not yet placed**: `TieLevel.mirrored`
+exists, the report lists which levels carry M, and the placer does not read it
+(the gap tracked by #92). So the only thing that could be wrong today was the
+report's own sentence, which promised alternation without qualification.
+
+It now carries R32 beside it. Stated **unconditionally**, because it is a rule
+rather than a fact about a particular ladder: `tie_level_section` takes the
+ladder alone, the mirror map is the same whatever shapes the ties are, and the
+ladder does not know which they are. Making the line conditional would mean
+threading the tie list into the ladder's own section to say something that is
+true regardless.
+
+### What this leaves for #92
+
+The placer still does not apply the mirror. When it does, **it must skip
+triangles** — and that is now a stated rule with a test behind it rather than
+something to be rediscovered from the geometry.

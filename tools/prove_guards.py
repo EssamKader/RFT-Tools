@@ -363,6 +363,14 @@ CASES = [
      '     "test_the_top_of_a_rectangle_is_unambiguous_when_two_corners_share_it"',
      "the tie-break between the two top corners dropped, so the "
      "closure depends on which corner the list happened to reach first"),
+    # ---- R32 (#149): a triangle does not alternate
+
+    (COL_REPORT,
+     '        "A TRIANGLE does not alternate (R32): its closure stays at the "',
+     '        "A TRIANGLE alternates like any other tie: "',
+     "tests/test_column_report.py::test_the_report_says_a_triangle_does_NOT_alternate",
+     "the report promising alternation a triangle cannot keep -- its "
+     "closure is the apex, fixed by R31, with no second corner to move to"),
 
     # ---- #87: the column window ---------------------------------
 
