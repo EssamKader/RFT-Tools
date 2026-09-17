@@ -249,6 +249,49 @@ def _vec_distance(a, b):
     return math.sqrt(_vec_dot(d, d))
 
 
+def _signed_area(points):
+    """Twice the shoelace-formula signed area of a simple polygon -- its
+    SIGN says which way the vertex list winds; its magnitude is not used
+    and is never treated as an actual area.
+    """
+    total = 0.0
+    n = len(points)
+    for i in range(n):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % n]
+        total += x1 * y2 - x2 * y1
+    return total
+
+
+def _rectangle_corners(centre_u, centre_v, half_u, half_v):
+    """The exact 4-corner order a closed loop's rectangle has always
+    wound in (``resolve_tie``'s closed-loop branch calls this directly --
+    there is no second copy of this list to drift from it). Pulled out so
+    a triangle's required winding (R21, R28) is DERIVED from this one
+    place, never hard-coded elsewhere as "counterclockwise".
+    """
+    return [(centre_u - half_u, centre_v - half_v),
+            (centre_u + half_u, centre_v - half_v),
+            (centre_u + half_u, centre_v + half_v),
+            (centre_u - half_u, centre_v + half_v)]
+
+
+#: The winding EVERY closed polygon this module returns must share,
+#: derived from :func:`_rectangle_corners`'s own order rather than
+#: asserted as "counterclockwise" -- so the two can never quietly drift
+#: apart. This is load-bearing, not cosmetic: R21 chose
+#: ``RebarHookOrientation.Left``/``Left`` because it is the ONE
+#: combination that turns both 135-degree hook tails INTO the concrete
+#: for THIS winding (see ``rft.revit.column_place_ties``'s own docstring,
+#: and #78's caveat that the constant is right only as long as the
+#: winding does not change without it). A triangle's three vertices
+#: arrive in whatever order the engineer clicked or typed them, which
+#: promises nothing about winding -- see ``_resolve_triangle_tie``.
+_RECTANGLE_WINDING_SIGN = (
+    1.0 if _signed_area(_rectangle_corners(0.0, 0.0, 1.0, 1.0)) > 0.0
+    else -1.0)
+
+
 def _interior_angle_rad(prev_pt, vertex_pt, next_pt):
     """The angle AT ``vertex_pt``, between its two neighbours -- the bend
     a tie's steel actually turns through there.
@@ -321,24 +364,47 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
     centroid = (sum(p[0] for p in points) / 3.0,
                sum(p[1] for p in points) / 3.0)
 
+    # R21/R28: hook orientation (`RebarHookOrientation.Left`/``Left``,
+    # `rft.revit.column_place_ties`) is interpreted against a FIXED
+    # winding, never against the order the engineer happened to click or
+    # type. `T 1 3 5` and `T 5 3 1` name the same triangle and MUST wind
+    # the same way, or Left/Left's tails land outside the concrete on
+    # whichever order disagrees -- the exact defect R21 fixed for a
+    # rectangle, otherwise reachable again here purely by click order.
+    #
+    # `ordered_indices`/`ordered_points` are a SEPARATE, possibly-reversed
+    # working copy -- `indices` (and so `enclosed_indices`/
+    # `restrained_indices` below) keeps reporting the bars in the order
+    # the engineer actually typed them; only the winding-SENSITIVE values
+    # (angles, vertices, the refusal message's bar number) are computed
+    # against the normalised copy.
+    ordered_indices, ordered_points = indices, points
+    if _signed_area(points) * _RECTANGLE_WINDING_SIGN < 0.0:
+        ordered_indices = list(reversed(indices))
+        ordered_points = list(reversed(points))
+
     thetas = []
     axes = []
     for i in range(3):
-        prev_pt, next_pt = points[(i - 1) % 3], points[(i + 1) % 3]
-        thetas.append(_interior_angle_rad(prev_pt, points[i], next_pt))
-        axis = _outward_bisector(prev_pt, points[i], next_pt, centroid)
+        prev_pt = ordered_points[(i - 1) % 3]
+        next_pt = ordered_points[(i + 1) % 3]
+        thetas.append(_interior_angle_rad(prev_pt, ordered_points[i], next_pt))
+        axis = _outward_bisector(prev_pt, ordered_points[i], next_pt, centroid)
         if axis is None:
             raise ValueError(
                 "Triangle %r: bars %d, %d and %d are collinear -- a "
                 "triangle needs three points that are not on one line."
-                % (describe_subset(subset), indices[0], indices[1],
-                   indices[2]))
+                % (describe_subset(subset), ordered_indices[0],
+                   ordered_indices[1], ordered_indices[2]))
         axes.append(axis)
 
     grow = bar_dia_mm / 2.0 + tie_dia_mm / 2.0
+    # ordered_points, NOT points: `axes` and `thetas` were computed in the
+    # normalised order above, and pairing them with the typed order would
+    # push each bar along a bisector belonging to a different vertex.
     vertices = [
-        (points[i][0] + axes[i][0] * (grow / math.sin(thetas[i] / 2.0)),
-         points[i][1] + axes[i][1] * (grow / math.sin(thetas[i] / 2.0)))
+        (ordered_points[i][0] + axes[i][0] * (grow / math.sin(thetas[i] / 2.0)),
+         ordered_points[i][1] + axes[i][1] * (grow / math.sin(thetas[i] / 2.0)))
         for i in range(3)]
 
     tangents = [tangent_length_mm(bend_diameter_mm, theta)
@@ -362,7 +428,7 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
                 "%.1f degrees, and its two legs measure %.1f mm and "
                 "%.1f mm -- too sharp for a %.1f mm bend plus a %.1f mm "
                 "tie (A1, generalised to a triangle)."
-                % (describe_subset(subset), indices[sharp],
+                % (describe_subset(subset), ordered_indices[sharp],
                    math.degrees(thetas[sharp]), leg_lengths[sharp], other,
                    bend_diameter_mm, tie_dia_mm))
 
@@ -421,10 +487,7 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
         # `rft.revit.column_place_ties` have always drawn/placed from
         # `centre`/`half` alone, wound so consecutive entries share an
         # edge (the hook-overlap corner both hooks attach to).
-        vertices = [(centre_u - half_u, centre_v - half_v),
-                    (centre_u + half_u, centre_v - half_v),
-                    (centre_u + half_u, centre_v + half_v),
-                    (centre_u - half_u, centre_v + half_v)]
+        vertices = _rectangle_corners(centre_u, centre_v, half_u, half_v)
         # A bar is restrained where it sits at one of the tie's corners --
         # but a CORNER BAR sits at the un-grown bounding-box extreme, not
         # on the tie's own (grown) centreline: `grow` is subtracted back

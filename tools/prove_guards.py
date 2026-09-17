@@ -258,6 +258,33 @@ CASES = [
      "NameError at the FIRST bar circle: concrete, cover and tie draw, "
      "then bars, dimensions and every caption are silently lost"),
 
+    # ---- #141 review: the triangle's winding, on which R21's hook
+    # ---- orientation depends
+
+    (COL_TIES,
+     '    if _signed_area(points) * _RECTANGLE_WINDING_SIGN < 0.0:',
+     '    if False:',
+     "tests/test_column_triangular_ties.py::"
+     '     "test_the_same_triangle_typed_either_way_round_winds_the_same"',
+     "the winding normalisation switched off, so T 1 3 5 and T 5 3 1 "
+     "wind oppositely and Left/Left hooks one of them outward (R21)"),
+
+    (COL_TIES,
+     '        (ordered_points[i][0] + axes[i][0] * (grow / math.sin(thetas[i] / 2.0)),',
+     '        (points[i][0] + axes[i][0] * (grow / math.sin(thetas[i] / 2.0)),',
+     "tests/test_column_triangular_ties.py::"
+     '     "test_the_same_triangle_typed_either_way_round_winds_the_same"',
+     "each vertex pushed along a bisector belonging to a DIFFERENT "
+     "vertex, by pairing the typed order with the normalised angles"),
+
+    (COL_TIES,
+     '        vertices = _rectangle_corners(centre_u, centre_v, half_u, half_v)',
+     '        vertices = list(reversed(_rectangle_corners(centre_u, centre_v, half_u, half_v)))',
+     "tests/test_column_triangular_ties.py::"
+     '     "test_a_triangle_winds_the_SAME_WAY_a_closed_loop_does"',
+     "the closed loop's own winding reversed, which must break the "
+     "triangle's agreement with it rather than silently redefining it"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',

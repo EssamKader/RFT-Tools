@@ -230,3 +230,81 @@ def test_the_report_names_it_a_triangle_never_a_loop():
     assert "triangle" in lines
     assert "Tie 0 1 9: triangle" in lines
     assert "closed loop" not in lines.split("Tie 0 1 9")[1]
+
+# --------------------------------------------------------------------- #
+# Winding: R21's hook orientation is read against a FIXED one
+
+
+def _signed_area(points):
+    """Twice the shoelace signed area. Written out here rather than
+    imported from the module under test, so the test cannot agree with a
+    broken implementation by sharing it."""
+    total = 0.0
+    n = len(points)
+    for i in range(n):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % n]
+        total += x1 * y2 - x2 * y1
+    return total
+
+
+def test_the_same_triangle_typed_either_way_round_winds_the_same():
+    """Review finding on #144. `T 1 3 5` and `T 5 3 1` name ONE triangle,
+    and the vertex list is what `column_place_ties` turns into consecutive
+    curves. R21 fixed the hooks to Left/Left because that is the one
+    combination turning both 135 degree tails INTO the concrete for the
+    winding a rectangle has -- so a reversed winding puts them outside,
+    which is exactly the defect the owner first reported.
+
+    Reachable here purely by the order bars were clicked, so it is
+    normalised and asserted rather than left to the placer's tail
+    assertion to refuse after the fact.
+    """
+    forward = triangle_tie((0, 3, 6))
+    backward = triangle_tie((6, 3, 0))
+
+    assert _signed_area(forward.vertices) == pytest.approx(
+        _signed_area(backward.vertices)), (
+        "the same three bars in the opposite order produced a different "
+        "winding, so one of the two would hook its tails outward")
+    assert forward.vertices == backward.vertices
+
+
+def test_a_triangle_winds_the_SAME_WAY_a_closed_loop_does():
+    """Derived from the rectangle rather than asserted as
+    "counterclockwise": the two must agree because ONE hook-orientation
+    constant is applied to both, and a test that hard-coded the direction
+    would keep passing if the rectangle's own corner order ever changed.
+    """
+    loop = resolve_tie(TieSubset((0, 2, 6, 8)), layout(),
+                       TIE_DIA_MM, BAR_DIA_MM, BEND_DIAMETER_MM)
+    triangle = triangle_tie((0, 3, 6))
+
+    loop_sign = _signed_area(loop.vertices) > 0.0
+    triangle_sign = _signed_area(triangle.vertices) > 0.0
+    assert loop_sign == triangle_sign, (
+        "a triangle winds the opposite way to a closed loop, so the one "
+        "RebarHookOrientation R21 fixed cannot be right for both")
+
+
+def test_the_refusal_names_THE_SAME_BAR_whichever_way_round_it_is_typed():
+    """The normalisation may reverse the working order, and the refusal's
+    bar number is read out of that reversed copy. Naming a different
+    vertex depending on the order the engineer typed would be a message
+    about the wrong bar, which is worse than no message.
+
+    A 200 mm bend rather than the live 10M's 40 mm: on this layout no
+    triangle is unbuildable at 40 mm, so a test using the real value would
+    assert nothing at all.
+    """
+    sharp_bend_mm = 200.0
+    messages = []
+    for order in ((0, 1, 9), (9, 1, 0)):
+        with pytest.raises(ValueError) as refused:
+            triangle_tie(order, bend_diameter_mm=sharp_bend_mm)
+        messages.append(str(refused.value))
+
+    assert "bar 1" in messages[0], messages[0]
+    assert "bar 1" in messages[1], (
+        "typed the other way round, the refusal named a different vertex: "
+        "%s" % messages[1])
