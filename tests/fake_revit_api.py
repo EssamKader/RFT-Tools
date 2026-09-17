@@ -23,6 +23,16 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``Rebar.GetCenterlineCurves(adjustForSelfIntersection, suppressHooks,
+  suppressBendRadius, multiplanarOption, tolerance)`` (issue #118) -- the
+  5-argument signature, the tolerance argument and
+  ``MultiplanarOption.IncludeOnlyPlanarCurves`` are all confirmed on Revit
+  2024 build 24.3.40.26. Called on tie 423209 in one execution:
+  ``(False, False, False, ...)`` returned **11 curves including 5 arcs**
+  (hooks and bend radii present) and ``(False, True, True, ...)`` returned
+  **4** (suppressed). The hooks-included read returns the tails R21 was
+  decided on, so the flag settings ``rft.revit.column_place_ties`` uses are
+  the ones that were measured.
 - ``Rebar.LookupParameter("Partition")``, ``BuiltInCategory.OST_Rebar``
   and ``Rebar.GetTypeId()`` (issue #117) -- all three were written as
   assumptions and have since been probed on Revit 2024 build 24.3.40.26
@@ -126,6 +136,25 @@ Currently ``SHAPE UNVERIFIED``:
   environment) -- the three pushbuttons' selection helpers are therefore
   UNEXECUTED, not merely shape-unverified. See each pushbutton's own
   module docstring and docs/beam/verification/s7-grades.md.
+- ``Rebar.GetCenterlineCurves(...)`` was listed here by issue #118 and has
+  since been VERIFIED LIVE -- see the entry in the verified list above. The
+  API is confirmed; what follows is about this FAKE, which is a different
+  claim and remains true.
+
+  **This fake's hook-tail geometry is NOT a model of Revit's real hook
+  math.** Real hook placement depends on the hook type's angle, length
+  multiplier and the bend radius, none of which this fake computes. What
+  it DOES reproduce, deliberately, is the qualitative fact
+  issue-109 Finding 4 and issue-78 measured live: for a fixed loop
+  winding, ``RebarHookOrientation.Left`` on both ends turns a tail INWARD
+  (toward the column's own vertical centreline) and ``Right`` turns it
+  OUTWARD. It does this by offsetting each tail from its anchor point
+  toward or away from ``host.Location.Point``'s (X, Y) -- a shortcut valid
+  only because a column's plan centre lies on that line at every
+  elevation, which is NOT how the real API computes a hook tail. A test
+  built on this fake proves the ADAPTER's assertion logic is
+  self-consistent (Left passes, Right/mixed fails); it does not and cannot
+  prove Revit's real hooks land where this fake says they do.
 """
 
 import math
@@ -379,6 +408,22 @@ class FakeRebarStyle(object):
 
 class FakeRebarHookOrientation(object):
     Left = object()
+    # #118 (R21): the column tie placer must offer Revit `Left`/`Left`
+    # ONLY -- `Right` bent both 135deg hook tails out of the core, live
+    # (issue #109 Finding 4, issue #78). Added here so a mutation
+    # (`Left` -> `Right`) is something the fake can actually distinguish,
+    # rather than a value the fake would have rejected outright.
+    Right = object()
+
+
+class FakeMultiplanarOption(object):
+    """SHAPE UNVERIFIED -- `Autodesk.Revit.DB.Structure.MultiplanarOption`,
+    an argument to `Rebar.GetCenterlineCurves` quoted in
+    `docs/column/verification/issue-109-kept-write-tracer-bullet.md` from a
+    live call. Only doc-quoted, never independently confirmed to exist
+    with this member or spelling."""
+
+    IncludeOnlyPlanarCurves = object()
 
 
 class FakeRebarHookAngleParameter(object):
@@ -489,6 +534,16 @@ class FakeRebarShapeDrivenAccessor(object):
         )
 
 
+#: How far a synthetic hook tail moves from its anchor point, toward or
+#: away from the column's own vertical centreline -- see
+#: `FakeRebarInstance.GetCenterlineCurves`'s docstring and the module
+#: header's "This fake's hook-tail geometry is NOT a model of Revit's real
+#: hook math" note. An arbitrary but generous offset: large enough that a
+#: tie corner near the column's cover moves clearly outside the host's
+#: bounding box when pushed outward, on every column this suite builds.
+_FAKE_HOOK_TAIL_OFFSET_INTERNAL = 200.0 / 304.8
+
+
 class FakeRebarInstance(object):
     """SHAPE UNVERIFIED -- stand-in for the `Rebar` element returned by
     `CreateFromCurves`. Real return type/members not confirmed; this only
@@ -501,6 +556,45 @@ class FakeRebarInstance(object):
 
     def GetShapeDrivenAccessor(self):
         return self._accessor
+
+    def GetCenterlineCurves(self, adjust_for_self_intersection, suppress_hooks,
+                            suppress_bend_radius, multiplanar_option, tolerance):
+        """SHAPE UNVERIFIED -- see tests/fake_revit_api.py's module header
+        for the full caveat. Reproduces only the qualitative fact issue-109
+        Finding 4 / issue-78 measured live: with hooks included
+        (`suppress_hooks=False`), `RebarHookOrientation.Left` moves a tail
+        toward the host's own `Location.Point` (X, Y) -- inward, toward the
+        column's vertical centreline -- and `Right` moves it away.
+
+        Positional args below mirror exactly what
+        `rft.revit.column_place_ties._place_one_tie` passes to
+        `Rebar.CreateFromCurves`: `args[5]` is `host`, `args[6]` is `norm`,
+        `args[7]` is `curves`, `args[8]`/`args[9]` are the start/end
+        `RebarHookOrientation`. A caller passing a differently-shaped call
+        gets a wrong answer from this fake, not a loud failure -- this is
+        exactly the kind of coupling `SHAPE UNVERIFIED` exists to flag.
+        """
+        curves = list(self.args[7])
+        if suppress_hooks or not curves:
+            return curves
+
+        host = self.args[5]
+        centre = host.Location.Point
+        orient_start, orient_end = self.args[8], self.args[9]
+
+        def tail(anchor, orientation):
+            direction = FakeXYZ(centre.X - anchor.X, centre.Y - anchor.Y, 0.0)
+            if direction.X == 0.0 and direction.Y == 0.0:
+                direction = FakeXYZ(1.0, 0.0, 0.0)
+            direction = direction.Normalize()
+            sign = 1.0 if orientation is FakeRebarHookOrientation.Left else -1.0
+            return anchor + direction.Multiply(sign * _FAKE_HOOK_TAIL_OFFSET_INTERNAL)
+
+        _, start_anchor, _ = curves[0]
+        _, _, end_anchor = curves[-1]
+        start_hook = FakeLine.CreateBound(tail(start_anchor, orient_start), start_anchor)
+        end_hook = FakeLine.CreateBound(end_anchor, tail(end_anchor, orient_end))
+        return [start_hook] + curves + [end_hook]
 
 
 class FakeRebar(object):
@@ -1037,6 +1131,7 @@ def install():
     structure.RebarHostData = FakeRebarHostData
     structure.RebarStyle = FakeRebarStyle
     structure.RebarHookOrientation = FakeRebarHookOrientation
+    structure.MultiplanarOption = FakeMultiplanarOption
     structure.Rebar = FakeRebar
     structure.RebarBarType = FakeRebarBarType
     structure.RebarHookType = FakeRebarHookType
