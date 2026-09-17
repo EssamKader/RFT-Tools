@@ -1177,26 +1177,26 @@ CASES = [
     # against the reordering/dropping this ticket's own guard names.
 
     (COL_TIES,
-     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v + half_v),\n'
-     '                    (centre_u - half_u, centre_v + half_v)]',
-     'vertices = [(centre_u + half_u, centre_v - half_v),\n'
-     '                    (centre_u - half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v + half_v),\n'
-     '                    (centre_u - half_u, centre_v + half_v)]',
+     'return [(centre_u - half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v + half_v),\n'
+     '            (centre_u - half_u, centre_v + half_v)]',
+     'return [(centre_u + half_u, centre_v - half_v),\n'
+     '            (centre_u - half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v + half_v),\n'
+     '            (centre_u - half_u, centre_v + half_v)]',
      TV + "test_a_closed_loops_vertices_are_the_four_corners_resolve_tie_finds",
      "#140 -- a closed loop's first two vertices swapped, so the polygon "
      "no longer winds consecutive-corner-to-consecutive-corner"),
 
     (COL_TIES,
-     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v + half_v),\n'
-     '                    (centre_u - half_u, centre_v + half_v)]',
-     'vertices = [(centre_u - half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v - half_v),\n'
-     '                    (centre_u + half_u, centre_v + half_v)]',
+     'return [(centre_u - half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v + half_v),\n'
+     '            (centre_u - half_u, centre_v + half_v)]',
+     'return [(centre_u - half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v - half_v),\n'
+     '            (centre_u + half_u, centre_v + half_v)]',
      TV + "test_a_closed_loops_vertices_are_the_four_corners_resolve_tie_finds",
      "#140 -- a closed loop's fourth vertex dropped"),
 
