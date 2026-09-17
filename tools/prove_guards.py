@@ -726,10 +726,17 @@ CASES = [
      TT + "test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule",
      "cross-ties ignored again -- only nested loops can satisfy 300 mm"),
 
-    (COL_TIES, '    if along <= BRANCH_AXIS_TOL_MM:',
-     '    if False:',
-     TT + "test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS",
-     "a cross-tie counted on BOTH axes -- a branch no steel provides"),
+    # R20's 'counted on BOTH axes' case is GONE, deliberately, and this
+    # note is what replaces it. Under R29 the defect is unreachable by
+    # mutating either line: for a cross-tie's wrong axis the `across`
+    # test rejects it, and with that test switched off the `along` test
+    # rejects it anyway, and vice versa. Two independent guards, so no
+    # single mutation can produce the defect -- which is a property of
+    # the code, not a hole in the proving. Each guard is proven
+    # separately by R29's diagonal and zero-length cases below, and
+    # test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS still asserts
+    # the behaviour directly. Contriving a two-line mutation to keep the
+    # count up would be proving the prover, not the guard.
 
     # ---- #90: the perimeter model and the sketch ----------------
 
