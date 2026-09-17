@@ -336,6 +336,66 @@ _RECTANGLE_WINDING_SIGN = (
     else -1.0)
 
 
+def rotate_to_closure(vertices, closure_index):
+    """The same polygon, wound the same way, starting at
+    ``closure_index`` (R31).
+
+    ROTATION, never reversal. ``vertices[0]`` is where the tie's two hook
+    tails meet -- ``_closed_loop_uv_segments_mm`` winds so ``curves[0]``'s
+    start and ``curves[-1]``'s end coincide there -- so moving the closure
+    means starting the list elsewhere. Rotating leaves the winding
+    untouched, which is what keeps R21's ``Left``/``Left`` hook
+    orientation correct: that constant is read against the DIRECTION the
+    curves run, not against which vertex happens to be first.
+    """
+    count = len(vertices)
+    return [vertices[(closure_index + i) % count] for i in range(count)]
+
+
+def apex_index(vertices):
+    """The vertex opposite the longest leg (R31): a triangle's apex.
+
+    The longest leg is the base -- which is how a triangle is drawn and
+    how the owner named theirs. On the verification column `T 1 9 3` has
+    legs of 398, 277 and 277 mm, so the 398 mm leg between bars 9 and 3 is
+    the base and bar 1 is the apex; `T 8 6 4` gives bar 6 the same way.
+    Both are exactly the bars the owner named.
+
+    Ties are broken by taking the FIRST longest leg, so an equilateral
+    triangle still gets one answer rather than an arbitrary one.
+    """
+    count = len(vertices)
+    longest = None
+    base = 0
+    for i in range(count):
+        length = _vec_distance(vertices[i], vertices[(i + 1) % count])
+        if longest is None or length > longest + COINCIDENT_TOL_MM:
+            longest = length
+            base = i
+    # The leg runs from `base` to `base + 1`; the remaining vertex of a
+    # triangle is the one after that.
+    return (base + 2) % count
+
+
+def top_index(vertices):
+    """The vertex a rectangle closes at (R31): its top.
+
+    Highest ``v``, and of the two corners that share it the one at lower
+    ``u`` -- the left. The tie-break is a CHOICE, not a rule: the owner
+    ruled "the top", and a rectangle has two top corners. Left keeps the
+    same u convention the closure had before this ticket, when it sat at
+    the bottom-LEFT corner, so only the half that was ruled on moves.
+    """
+    best = 0
+    for i in range(1, len(vertices)):
+        if vertices[i][1] > vertices[best][1] + COINCIDENT_TOL_MM:
+            best = i
+        elif (abs(vertices[i][1] - vertices[best][1]) <= COINCIDENT_TOL_MM
+              and vertices[i][0] < vertices[best][0]):
+            best = i
+    return best
+
+
 def _interior_angle_rad(prev_pt, vertex_pt, next_pt):
     """The angle AT ``vertex_pt``, between its two neighbours -- the bend
     a tie's steel actually turns through there.
@@ -451,6 +511,14 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
          ordered_points[i][1] + axes[i][1] * (grow / math.sin(thetas[i] / 2.0)))
         for i in range(3)]
 
+    # R31: the closure goes to the apex. Rotated AFTER the winding
+    # normalisation and together with the angles and bars, so every
+    # position-indexed list below still lines up with `vertices`.
+    apex = apex_index(vertices)
+    vertices = rotate_to_closure(vertices, apex)
+    thetas = rotate_to_closure(thetas, apex)
+    ordered_indices = rotate_to_closure(ordered_indices, apex)
+
     tangents = [tangent_length_mm(bend_diameter_mm, theta)
                for theta in thetas]
     leg_lengths = [_vec_distance(vertices[i], vertices[(i + 1) % 3])
@@ -541,7 +609,9 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
         # `rft.revit.column_place_ties` have always drawn/placed from
         # `centre`/`half` alone, wound so consecutive entries share an
         # edge (the hook-overlap corner both hooks attach to).
+        # R31: the closure moves off the bottom-left corner to the top.
         vertices = _rectangle_corners(centre_u, centre_v, half_u, half_v)
+        vertices = rotate_to_closure(vertices, top_index(vertices))
         # A bar is restrained where it sits at one of the tie's corners --
         # but a CORNER BAR sits at the un-grown bounding-box extreme, not
         # on the tie's own (grown) centreline: `grow` is subtracted back

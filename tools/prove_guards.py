@@ -329,6 +329,41 @@ CASES = [
      "the clamp removed, so a leg with no extent on one axis squares "
      "a NEGATIVE clear distance back into its span"),
 
+    # ---- R31 (#149): where the hook closure sits
+
+    (COL_TIES,
+     '    return (base + 2) % count',
+     '    return base',
+     "tests/test_column_ties.py::"
+     '     "test_the_apex_is_the_vertex_opposite_the_LONGEST_leg"',
+     "the apex taken as an END of the base rather than the vertex "
+     "opposite it, so a triangle closes on its base"),
+
+    (COL_TIES,
+     '        vertices = rotate_to_closure(vertices, top_index(vertices))',
+     '        pass',
+     "tests/test_column_ties.py::"
+     '     "test_a_rectangle_closes_at_its_top"',
+     "the rectangle left closing at the bottom-left corner it used "
+     "to, against the owner's ruling"),
+
+    (COL_TIES,
+     '    return [vertices[(closure_index + i) % count] for i in range(count)]',
+     '    return [vertices[(closure_index - i) % count] for i in range(count)]',
+     "tests/test_column_ties.py::"
+     '     "test_moving_the_closure_does_NOT_change_the_winding"',
+     "the rotation turned into a REVERSAL, which puts both 135 degree "
+     "hook tails outside the concrete (R21, and #145's defect again)"),
+
+    (COL_TIES,
+     '        elif (abs(vertices[i][1] - vertices[best][1]) <= COINCIDENT_TOL_MM\n'
+     '              and vertices[i][0] < vertices[best][0]):',
+     '        elif False:',
+     "tests/test_column_ties.py::"
+     '     "test_the_top_of_a_rectangle_is_unambiguous_when_two_corners_share_it"',
+     "the tie-break between the two top corners dropped, so the "
+     "closure depends on which corner the list happened to reach first"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',

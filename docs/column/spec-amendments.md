@@ -802,3 +802,68 @@ and says nothing about how they are measured for the 300 mm limit. This is the
 owner's reading of what the limit is *for* — the unsupported span between
 points where the core is held — and it is recorded as a ruling, like R29, not
 as a citation.
+
+
+---
+
+## R31 — the hook closure sits at a triangle's apex and a rectangle's top
+
+**Decided by the owner** (#149):
+
+> the hook closure shall always be at the top of rectangle in our case bar 1
+> and 6 whether hook is 90 or 135
+
+and, asked where exactly — bar 1 is the section's **bottom**-middle and bar 6
+the **top**-middle, so the two halves of the sentence name different points —
+the owner chose **the triangle's apex, and the rectangle's top**.
+
+### What the closure is
+
+`vertices[0]`. `_closed_loop_uv_segments_mm` winds so `curves[0]`'s start and
+`curves[-1]`'s end coincide there, and that coincident point is where both hook
+tails attach. Moving the closure means starting the vertex list elsewhere.
+
+| tie | before | after |
+|---|---|---|
+| perimeter | bottom-left corner | top-left corner |
+| `T 1 9 3` | bar 3's vertex | **bar 1's** vertex |
+| `T 8 6 4` | bar 4's vertex | **bar 6's** vertex |
+
+### The rule
+
+- **A triangle closes at its apex — the vertex opposite the LONGEST leg.** The
+  longest side is the base; that is how a triangle is drawn and how the owner
+  named theirs. `T 1 9 3` has legs of 398, 277 and 277 mm, so the 398 mm leg
+  between bars 9 and 3 is the base and bar 1 is the apex. `T 8 6 4` gives bar 6
+  the same way. **Both are exactly the bars the owner named**, which is the
+  check that the rule and the example agree rather than merely coinciding.
+- **A rectangle closes at its top.** Of the two top corners, the left.
+- **Independent of hook type.** The ruling says "whether hook is 90 or 135",
+  and nothing in the closure reads the hook.
+
+### What is a choice rather than a rule
+
+**The left of the two top corners.** A rectangle has two, the owner ruled "the
+top", and something has to break the tie deterministically or the closure moves
+between runs. Left keeps the `u` convention the closure already had when it sat
+at the bottom-**left**, so only the half that was actually ruled on moves.
+Recorded here so it is visible as a default, not mistaken for the ruling.
+
+### Rotation, never reversal
+
+The load-bearing constraint. **R21 fixed `RebarHookOrientation.Left`/`Left`
+against the DIRECTION the curves run**, not against which vertex is first, and
+#145 already had to fix a triangle that wound whichever way the engineer typed
+it. Reversing a vertex list to bring a different corner to the front would
+point both 135° tails out of the concrete — the exact defect R21 exists to
+prevent.
+
+`rotate_to_closure` rotates and never reverses, and the winding is asserted
+unchanged for **every** starting position rather than argued for in a comment.
+
+### Its collision with §6.3, stated before it is met
+
+§6.3 alternates the closure between levels up the cage. **A triangle has no
+second corner to alternate to under this rule** — its apex is one vertex, fixed
+by its geometry. That is not resolved here; it is written down so #92's
+alternation gap is entered knowing it.
