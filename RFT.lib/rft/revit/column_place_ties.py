@@ -81,16 +81,19 @@ _HOOK_ORIENTATION = RebarHookOrientation.Left
 _USE_EXISTING_SHAPE_IF_POSSIBLE = True
 _CREATE_NEW_SHAPE = True
 
-#: SHAPE UNVERIFIED -- `GetCenterlineCurves`'s 5-argument signature is
-#: quoted in `docs/column/verification/issue-109-kept-write-tracer-bullet.md`
-#: as `(adjustForSelfIntersection, suppressHooks, suppressBendRadius,
-#: multiplanarOption, tolerance)`, called there with hooks and bend radii
-#: SUPPRESSED (`true, true`) for a different purpose (Finding 1/2's
-#: position check). This module wants the OPPOSITE -- hooks and bend radii
-#: INCLUDED, per the ticket's "read the centreline back with hooks and
-#: bend radii" -- so both flags are `False` below. The tolerance argument
-#: and the `MultiplanarOption` enum's exact members are not independently
-#: confirmed against a live host; see tests/fake_revit_api.py's header.
+#: VERIFIED LIVE (Revit 2024 build 24.3.40.26, RevitAPI 24.3.40.0, tie
+#: 423209 in `ColumnRFT.Trail.rvt`). Both flag settings were called on the
+#: same element in one execution:
+#:
+#:     (False, False, False, IncludeOnlyPlanarCurves, 0) -> 11 curves, 5 arcs
+#:     (False, True,  True,  IncludeOnlyPlanarCurves, 0) ->  4 curves, 0 arcs
+#:
+#: and the hooks-included read returned the tails R21 was decided on. This
+#: module wants hooks and bend radii INCLUDED, so both flags are `False`.
+#: The 5-argument signature, the tolerance argument and
+#: `MultiplanarOption.IncludeOnlyPlanarCurves` are confirmed, not assumed.
+#: What remains unverified is the FAKE's hook-tail math, not the API --
+#: see tests/fake_revit_api.py's header.
 _READBACK_TOLERANCE = 0.0
 
 

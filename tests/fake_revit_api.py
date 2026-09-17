@@ -23,6 +23,17 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``Rebar.GetCenterlineCurves(adjustForSelfIntersection, suppressHooks,
+  suppressBendRadius, multiplanarOption, tolerance)`` (issue #118) -- the
+  5-argument signature, the tolerance argument and
+  ``MultiplanarOption.IncludeOnlyPlanarCurves`` are all confirmed on Revit
+  2024 build 24.3.40.26. Called on tie 423209 in one execution:
+  ``(False, False, False, ...)`` returned **11 curves including 5 arcs**
+  (hooks and bend radii present) and ``(False, True, True, ...)`` returned
+  **4** (suppressed). The hooks-included read returns the tails R21 was
+  decided on, so the flag settings ``rft.revit.column_place_ties`` uses are
+  the ones that were measured.
+
 - ``RebarHostData`` does NOT expose ``GetFaces(RebarFaceType)`` /
   ``GetCoverType(face) -> ElementId`` — that whole shape, including the
   ``RebarFaceType`` enum itself, does not exist. The real shape is
@@ -114,16 +125,10 @@ Currently ``SHAPE UNVERIFIED``:
   environment) -- the three pushbuttons' selection helpers are therefore
   UNEXECUTED, not merely shape-unverified. See each pushbutton's own
   module docstring and docs/beam/verification/s7-grades.md.
-- ``Rebar.GetCenterlineCurves(adjustForSelfIntersection, suppressHooks,
-  suppressBendRadius, multiplanarOption, tolerance)`` (issue #118, the
-  column tie placer) -- the 5-argument shape is quoted in
-  ``docs/column/verification/issue-109-kept-write-tracer-bullet.md`` from a
-  live call, but that call suppressed hooks and bend radii; this project has
-  never called it the OTHER way (hooks/bend radii INCLUDED, which
-  ``rft.revit.column_place_ties``'s R21 assertion needs) against a live
-  host. ``Autodesk.Revit.DB.Structure.MultiplanarOption`` and its
-  ``IncludeOnlyPlanarCurves`` member are likewise only doc-quoted, never
-  independently confirmed.
+- ``Rebar.GetCenterlineCurves(...)`` was listed here by issue #118 and has
+  since been VERIFIED LIVE -- see the entry in the verified list above. The
+  API is confirmed; what follows is about this FAKE, which is a different
+  claim and remains true.
 
   **This fake's hook-tail geometry is NOT a model of Revit's real hook
   math.** Real hook placement depends on the hook type's angle, length
