@@ -913,7 +913,7 @@ class ColumnWindow(forms.WPFWindow):
                 canvas.Children.Add(line)
             elif isinstance(shape, SketchCircle):
                 x, y = to_px(shape.u, shape.v)
-                r_px = max(shape.r * scale, MIN_BAR_RADIUS_PX)
+                r_px = max(shape.r * transform.scale, MIN_BAR_RADIUS_PX)
                 ellipse = WpfEllipse()
                 ellipse.Width = 2.0 * r_px
                 ellipse.Height = 2.0 * r_px

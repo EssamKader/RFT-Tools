@@ -236,6 +236,26 @@ CASES = [
      "test_a_duplicated_placeholder_is_refused_loudly",
      "a duplicated merge slipping through as one"),
 
+    # ---- the two checks that need no Revit: markup that parses,
+    # ---- and a name that exists (the blank sketch, and both windows
+    # ---- dying at ResourceDictionary.Source)
+
+    (STYLES_XAML,
+     '         tie), so a pending selection is never mistaken for something this',
+     '         tie) -- so a pending selection is never mistaken for something',
+     "tests/test_xaml_parses_as_xml.py",
+     "the house em dash back inside a XAML comment. XML forbids a "
+     "double hyphen in a comment body, and this file is merged by BOTH "
+     "windows, so it killed the beam tool as well as the column one"),
+
+    (COL_SCRIPT,
+     '                r_px = max(shape.r * transform.scale, MIN_BAR_RADIUS_PX)',
+     '                r_px = max(shape.r * scale, MIN_BAR_RADIUS_PX)',
+     "tests/test_pushbutton_scripts_resolve_their_names.py",
+     "the deleted local read back into the drawing loop, which raises "
+     "NameError at the FIRST bar circle: concrete, cover and tie draw, "
+     "then bars, dimensions and every caption are silently lost"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',
