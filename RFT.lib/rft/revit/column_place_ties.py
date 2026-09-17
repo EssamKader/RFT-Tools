@@ -58,7 +58,7 @@ from Autodesk.Revit.DB.Structure import (
     RebarStyle,
 )
 
-from ..core.column_ties import KIND_CLOSED_LOOP, describe_subset, is_buildable
+from ..core.column_ties import KIND_CROSS_TIE, describe_subset, is_buildable
 from .units import mm_to_internal
 
 
@@ -125,12 +125,16 @@ def _ensure_buildable(tie):
 
 
 def _closed_loop_uv_segments_mm(tie):
-    """The tie's rectangle as 4 consecutive-corner segments, local (u, v)
-    mm, wound so ``curves[0]``'s start and ``curves[-1]``'s end coincide --
-    the hook-overlap corner both hooks attach to.
+    """The tie's closed polygon as N consecutive-corner segments, local
+    (u, v) mm, wound so ``curves[0]``'s start and ``curves[-1]``'s end
+    coincide -- the hook-overlap corner both hooks attach to.
 
-    #140: reads ``tie.vertices`` rather than re-deriving the four corners
-    from ``centre``/``half`` -- this module, `rft.ui.column_sketch` and
+    N is 4 for a rectangle (``KIND_CLOSED_LOOP``) and 3 for a triangle
+    (``KIND_TRIANGLE``, #141) -- this function does not care which, since
+    ``tie.vertices`` already carries however many corners the tie has.
+
+    #140: reads ``tie.vertices`` rather than re-deriving the corners from
+    ``centre``/``half`` -- this module, `rft.ui.column_sketch` and
     `rft.core.column_ties.resolve_tie`'s own restrained-bar scan now all
     read the one polygon `resolve_tie` composed, instead of three
     independent derivations that happened to agree.
@@ -154,9 +158,14 @@ def _cross_tie_uv_segments_mm(tie, layout):
 
 
 def _uv_segments_mm(tie, layout):
-    if tie.kind == KIND_CLOSED_LOOP:
-        return _closed_loop_uv_segments_mm(tie)
-    return _cross_tie_uv_segments_mm(tie, layout)
+    """Every non-cross-tie kind is a closed polygon (#141 adds a second
+    one, the triangle, beside the rectangle) and shares the same
+    consecutive-corner segment builder; only a cross-tie -- a single leg,
+    not a polygon at all -- gets its own.
+    """
+    if tie.kind == KIND_CROSS_TIE:
+        return _cross_tie_uv_segments_mm(tie, layout)
+    return _closed_loop_uv_segments_mm(tie)
 
 
 def _build_curves(origin_point, hand_dir, facing_dir, z_internal, uv_segments_mm):

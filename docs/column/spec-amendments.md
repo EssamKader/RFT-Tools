@@ -580,3 +580,89 @@ bar they need is worse than showing one they must judge.
 tested, unused by either window. It is the correct implementation of a rule
 this project's models cannot currently express; it costs nothing to keep and
 would otherwise be rewritten from scratch the day a T-named project appears.
+
+
+---
+
+## R28 — a triangle is a genuine three-sided closed tie, and A1 generalises rather than needing a new rule
+
+**Decided by the owner** (#141), across two comments. *"in addition to loop
+stirrups i want to be able to make triangle stirrups"* set the definition
+before any figure was produced; a supplied page then supplied the
+**citation**, not the definition.
+
+### The citation
+
+**Egyptian Detailing Guide (2001), Figure 13-3, p. 78** — the same figure
+`specs/column-rft-detailing.md` §12 already cites for §6's restraint tiers
+and inner-tie geometry. Recorded earlier in the ticket as "figure number
+unknown"; that half of the blocker is closed, and no new source is opened
+by this ruling.
+
+### What "triangle" means here
+
+A **genuine three-sided closed tie through three bars** — never a diamond
+(a rotated square, still four 90-degree corners, already buildable under
+A1 unchanged), never a bounding box, never a diagonal corner tie that
+happens to look three-sided in a photograph. If a future ticket needs the
+diamond or the diagonal corner detail, it is a different shape with a
+different citation, not a variant of this one.
+
+### The bend test: A1 generalised, not replaced
+
+A1 (`minimum_buildable_narrow_mm`) is the special case, for a 90-degree
+corner, of a rule that holds for any polygon vertex. At a vertex of
+interior angle `theta`, a bend of pin radius `r = bend_diameter / 2` has
+its tangent points at `t = r / tan(theta / 2)` from the vertex along each
+leg (`rft.core.column_ties.tangent_length_mm`). A leg between vertices `i`
+and `j` must fit both bends plus A1's own clearance:
+
+    leg_length  >=  t_i + t_j + tie_diameter
+
+**At theta = 90 degrees this is exactly `bend_diameter + tie_diameter`** —
+`minimum_buildable_narrow_mm` as written today —
+(`test_tangent_length_reduces_to_A1_at_90_degrees`). That reduction is the
+entire argument for using the generalised test without a new citation: it
+is A1's own rule, stated once, for whichever polygon the tool is asked to
+build.
+
+**What this does NOT claim:** that the code permits an acute tie corner at
+any particular minimum angle, or that `bend_diameter` is the same for an
+acute bend as for a 90-degree one. The test says only what the bend
+geometry the tie is already asked to make can physically close — the same
+question A1 asks, for the same reason A1 asks it (Revit refuses the rest
+with a modal dialog, not an exception).
+
+### On failure, refuse — never degrade
+
+A1 degrades an unbuildable rectangle to a cross-tie, because a rectangle
+that cannot close still restrains its two named bars as a single leg. A
+triangle has no such fallback with a source behind it: choosing one
+(a cross-tie between two of its three bars? a smaller triangle nobody
+asked for?) is a detailing decision this ticket was never given authority
+to make. So `rft.core.column_ties._resolve_triangle_tie` **raises**,
+naming the sharp vertex's angle and its two leg lengths, and constructs no
+`ResolvedTie` of any kind. This is the one place the column tool's tie
+resolution refuses outright rather than resolving to something weaker.
+
+### The rest of the shape, briefly
+
+- **Notation**: a `T`-marked line in the Ties box (`"T 1 3 5"`); an
+  unmarked line is unchanged (loop or cross-tie, exactly as R19 left it).
+  `TieSubset` gained a `triangle` field defaulting to `False` — one
+  subset, a second fact about it, not a second way to describe geometry
+  (#140's own point, applied here).
+- **Geometry**: the three vertices are the three bar centres, each pushed
+  outward along its own interior-angle bisector by `grow / sin(theta / 2)`,
+  `grow = bar/2 + tie/2` — the same `grow` A1's rectangle already uses,
+  applied per-vertex instead of per-axis.
+- **Restraint**: a triangle restrains exactly its three named bars — no
+  bounding-box corner can land on a fourth, because there is no bounding
+  box.
+- **UI**: `Add tie` gains a Loop / Triangle choice (`tie_shape_cb`); the
+  window cannot run under CPython, so that half is proven by source-level
+  guard and mutation (`tools/prove_guards.py`), not by import.
+- **Placement/sketch**: three segments through the existing
+  `_uv_segments_mm` dispatch and a 3-point `SketchPolygon` through the
+  existing (kind-agnostic) drawing path — #140's `ResolvedTie.vertices` is
+  what makes both need no triangle-specific code at all.

@@ -45,8 +45,19 @@ not a narrow reading -- it is the whole reason inner ties exist. The outer
 perimeter tie has only four corners, so on a ten-bar column it restrains
 four bars and leaves six for the inner ties, which is exactly the situation
 Figure 13-3's sections are drawn to solve.
+
+## Triangles (#141, R28)
+
+A THIRD tie topology, beside the closed loop and the cross-tie: a genuine
+three-sided closed tie through three bars. It is dispatched from the same
+``resolve_tie`` entry point, keyed off ``TieSubset.triangle``, rather than
+given a parallel API -- one subset, one resolver, one ``ResolvedTie``
+shape for every kind. See ``_resolve_triangle_tie`` and
+``docs/column/spec-amendments.md`` R28 for the citation and the
+generalised-A1 argument.
 """
 
+import math
 from collections import namedtuple
 
 from .column_layout import (
@@ -56,6 +67,13 @@ from .column_layout import (
 
 KIND_CLOSED_LOOP = "closed loop"
 KIND_CROSS_TIE = "cross-tie"
+#: #141 (R28). A genuine three-sided closed tie through three bars --
+#: never a bounding box, and never printed as a loop (the report's
+#: ``tie.kind`` string is what tells the two apart; see
+#: ``tie_report_lines``). See ``docs/column/spec-amendments.md`` R28 for
+#: the citation (Egyptian Detailing Guide 2001, Figure 13-3, p. 78) and
+#: the generalised-A1 argument.
+KIND_TRIANGLE = "triangle"
 
 #: Tolerance for "is this bar at that corner". Bar positions are tens of
 #: millimetres apart, so this only has to survive float arithmetic.
@@ -75,7 +93,15 @@ COINCIDENT_TOL_MM = 1.0e-6
 #: A plain list of bar numbers says everything the old form said (a run is
 #: just a list) and says the thing it could not. Order is kept as typed:
 #: for a cross-tie the first and last entries are its two ends.
-TieSubset = namedtuple("TieSubset", "indices")
+#:
+#: ``triangle`` (#141) is a second, orthogonal fact about the SAME subset --
+#: not a second way to describe its geometry. ``indices`` still says which
+#: bars; ``triangle`` says whether the topology is a genuine three-sided
+#: closed tie rather than a loop or cross-tie. It defaults to ``False`` so
+#: every existing positional/keyword call (``TieSubset((1, 6))``,
+#: ``TieSubset(indices=...)``) is unchanged.
+TieSubset = namedtuple("TieSubset", "indices triangle")
+TieSubset.__new__.__defaults__ = (False,)
 
 #: A subset resolved into geometry and judged. ``half_u``/``half_v`` are
 #: the CENTRELINE half-dimensions -- what ``CreateFromCurves`` takes.
@@ -83,15 +109,15 @@ TieSubset = namedtuple("TieSubset", "indices")
 #: a cross-tie, so the report never shows a cross-tie without saying why.
 #:
 #: ``vertices`` (#140) is the centreline polygon the tie's steel actually
-#: follows, in order: a closed loop's four corners, or a cross-tie's two
-#: end points. It exists so ``resolve_tie``'s own corner math,
-#: ``rft.ui.column_sketch``'s tie drawing and
-#: ``rft.revit.column_place_ties``'s curve builder read ONE object instead
-#: of each re-deriving the same four numbers into corners -- the thing
-#: #140 was filed to stop. ``half_u_mm``/``half_v_mm`` stay: A1's narrow
-#: test and the report still read them, and they are still the right
-#: description of a rectangle. This only stops them being the sole way to
-#: know where the steel goes.
+#: follows, in order: a closed loop's four corners, a cross-tie's two end
+#: points, or a triangle's three corners (#141). It exists so
+#: ``resolve_tie``'s own corner math, ``rft.ui.column_sketch``'s tie
+#: drawing and ``rft.revit.column_place_ties``'s curve builder read ONE
+#: object instead of each re-deriving the same numbers into corners -- the
+#: thing #140 was filed to stop. ``half_u_mm``/``half_v_mm`` stay: A1's
+#: narrow test and the report still read them, and they are still the
+#: right description of a rectangle. This only stops them being the sole
+#: way to know where the steel goes.
 ResolvedTie = namedtuple(
     "ResolvedTie",
     "subset kind enclosed_indices restrained_indices "
@@ -168,11 +194,194 @@ def is_buildable(tie):
 
     A cross-tie has no loop to bend, so the threshold does not apply to
     it -- its narrow dimension is below the minimum BY DESIGN, and gating
-    it would refuse exactly the detail A1 exists to permit.
+    it would refuse exactly the detail A1 exists to permit. A triangle
+    (#141) is the same story from a different cause: it is refused at
+    CONSTRUCTION time in ``_resolve_triangle_tie`` if it cannot be bent, so
+    every ``ResolvedTie`` of ``KIND_TRIANGLE`` that exists at all has
+    already passed the generalised A1 test.
     """
     if tie.kind != KIND_CLOSED_LOOP:
         return True
     return tie.narrow_mm >= tie.min_buildable_mm
+
+
+def tangent_length_mm(bend_diameter_mm, interior_angle_rad):
+    """A1, generalised to any polygon vertex (#141).
+
+    At a vertex of interior angle ``theta``, bent with pin radius
+    ``bend_diameter_mm / 2``, the straight distance from the vertex to
+    where the bend goes tangent to each leg is::
+
+        t = r / tan(theta / 2)
+
+    **At theta = 90 degrees this is exactly bend_diameter / 2** -- so a
+    leg between two square corners needs ``t + t + tie_dia ==
+    bend_diameter + tie_diameter``, which is
+    :func:`minimum_buildable_narrow_mm` exactly as written today. See
+    ``test_tangent_length_reduces_to_A1_at_90_degrees``: that reduction is
+    the entire argument for using this formula without a new citation
+    (issue #141, second ticket comment; R28).
+    """
+    return (bend_diameter_mm / 2.0) / math.tan(interior_angle_rad / 2.0)
+
+
+def _vec_sub(a, b):
+    return (a[0] - b[0], a[1] - b[1])
+
+
+def _vec_add(a, b):
+    return (a[0] + b[0], a[1] + b[1])
+
+
+def _vec_dot(a, b):
+    return a[0] * b[0] + a[1] * b[1]
+
+
+def _vec_unit(a):
+    length = math.sqrt(_vec_dot(a, a))
+    if length == 0.0:
+        return (0.0, 0.0)
+    return (a[0] / length, a[1] / length)
+
+
+def _vec_distance(a, b):
+    d = _vec_sub(a, b)
+    return math.sqrt(_vec_dot(d, d))
+
+
+def _interior_angle_rad(prev_pt, vertex_pt, next_pt):
+    """The angle AT ``vertex_pt``, between its two neighbours -- the bend
+    a tie's steel actually turns through there.
+    """
+    e1 = _vec_unit(_vec_sub(prev_pt, vertex_pt))
+    e2 = _vec_unit(_vec_sub(next_pt, vertex_pt))
+    cosine = max(-1.0, min(1.0, _vec_dot(e1, e2)))
+    return math.acos(cosine)
+
+
+def _outward_bisector(prev_pt, vertex_pt, next_pt, centroid):
+    """The unit direction ``vertex_pt`` moves along to grow the polygon
+    outward (#141's offset construction) -- the angle bisector at
+    ``vertex_pt``, on the side away from ``centroid`` rather than assumed
+    from a winding order the caller (three arbitrarily-ordered bars) does
+    not promise.
+
+    Returns ``None`` when the three points are collinear (``theta`` ==
+    180 degrees): there is no bisector to offset along, and no genuine
+    triangle either.
+    """
+    e1 = _vec_unit(_vec_sub(prev_pt, vertex_pt))
+    e2 = _vec_unit(_vec_sub(next_pt, vertex_pt))
+    axis = _vec_unit(_vec_add(e1, e2))
+    if axis == (0.0, 0.0):
+        return None
+    to_centroid = _vec_sub(centroid, vertex_pt)
+    if _vec_dot(axis, to_centroid) > 0.0:
+        axis = (-axis[0], -axis[1])
+    return axis
+
+
+def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
+                          bend_diameter_mm):
+    """A triangle (#141): a genuine three-sided closed tie through three
+    bars, never a diamond, never a bounding box.
+
+    Vertices are the three bar centres, each pushed outward along its own
+    angle bisector by ``grow / sin(theta / 2)`` where
+    ``grow = bar/2 + tie/2`` -- the design settled in the ticket's second
+    comment. Buildability generalises A1 (:func:`tangent_length_mm`): a
+    leg between two vertices must be at least as long as their two tangent
+    lengths plus the tie diameter, or the bends would overlap and Revit
+    cannot bend it.
+
+    On failure this RAISES, naming the sharp vertex's angle and its two
+    leg lengths -- it does NOT degrade to a cross-tie the way a
+    rectangle's ``resolve_tie`` does. Picking a fallback detail for an
+    unbuildable triangle is a detailing decision with no source, per the
+    ticket's second comment ("On failure, refuse -- do not degrade").
+    """
+    indices = list(subset.indices)
+    if len(indices) != 3:
+        raise ValueError(
+            "Triangle %r touches %d bars: a triangle is a genuine "
+            "three-sided closed tie through exactly three bars, never a "
+            "bounding box." % (describe_subset(subset), len(indices)))
+    if len(set(indices)) != len(indices):
+        raise ValueError(
+            "Triangle %r names a bar twice. A triangle's three vertices "
+            "must be three distinct bars." % describe_subset(subset))
+    for index in indices:
+        if not (0 <= index < len(layout.bars)):
+            raise ValueError(
+                "Bar index %d is outside the perimeter's 0..%d."
+                % (index, len(layout.bars) - 1))
+
+    bars = [layout.bars[i] for i in indices]
+    points = [(bar.u_mm, bar.v_mm) for bar in bars]
+    centroid = (sum(p[0] for p in points) / 3.0,
+               sum(p[1] for p in points) / 3.0)
+
+    thetas = []
+    axes = []
+    for i in range(3):
+        prev_pt, next_pt = points[(i - 1) % 3], points[(i + 1) % 3]
+        thetas.append(_interior_angle_rad(prev_pt, points[i], next_pt))
+        axis = _outward_bisector(prev_pt, points[i], next_pt, centroid)
+        if axis is None:
+            raise ValueError(
+                "Triangle %r: bars %d, %d and %d are collinear -- a "
+                "triangle needs three points that are not on one line."
+                % (describe_subset(subset), indices[0], indices[1],
+                   indices[2]))
+        axes.append(axis)
+
+    grow = bar_dia_mm / 2.0 + tie_dia_mm / 2.0
+    vertices = [
+        (points[i][0] + axes[i][0] * (grow / math.sin(thetas[i] / 2.0)),
+         points[i][1] + axes[i][1] * (grow / math.sin(thetas[i] / 2.0)))
+        for i in range(3)]
+
+    tangents = [tangent_length_mm(bend_diameter_mm, theta)
+               for theta in thetas]
+    leg_lengths = [_vec_distance(vertices[i], vertices[(i + 1) % 3])
+                  for i in range(3)]
+    edge_minimums = [tangents[i] + tangents[(i + 1) % 3] + tie_dia_mm
+                     for i in range(3)]
+
+    for i in range(3):
+        j = (i + 1) % 3
+        if leg_lengths[i] < edge_minimums[i]:
+            # The sharper of the edge's two ends is the actual culprit --
+            # a bigger tangent length needs a longer leg -- so it, not
+            # both, is named. Its OTHER leg is reported alongside it (the
+            # two legs the ticket's refusal message asks for).
+            sharp = i if thetas[i] <= thetas[j] else j
+            other = leg_lengths[(sharp - 1) % 3]
+            raise ValueError(
+                "Triangle %s cannot be bent: bar %d's vertex angle is "
+                "%.1f degrees, and its two legs measure %.1f mm and "
+                "%.1f mm -- too sharp for a %.1f mm bend plus a %.1f mm "
+                "tie (A1, generalised to a triangle)."
+                % (describe_subset(subset), indices[sharp],
+                   math.degrees(thetas[sharp]), leg_lengths[sharp], other,
+                   bend_diameter_mm, tie_dia_mm))
+
+    margins = [leg_lengths[i] - edge_minimums[i] for i in range(3)]
+    tightest = margins.index(min(margins))
+
+    us = [v[0] for v in vertices]
+    vs = [v[1] for v in vertices]
+
+    return ResolvedTie(
+        subset=subset, kind=KIND_TRIANGLE, enclosed_indices=indices,
+        restrained_indices=sorted(indices),
+        centre_u_mm=(max(us) + min(us)) / 2.0,
+        centre_v_mm=(max(vs) + min(vs)) / 2.0,
+        half_u_mm=(max(us) - min(us)) / 2.0,
+        half_v_mm=(max(vs) - min(vs)) / 2.0,
+        narrow_mm=leg_lengths[tightest],
+        min_buildable_mm=edge_minimums[tightest],
+        reason="", vertices=vertices)
 
 
 def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
@@ -181,7 +390,15 @@ def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
     The rectangle is the bounding box of the enclosed bars' centrelines,
     grown by half a bar plus half a tie -- the tie's centreline wraps
     outside the bars it holds.
+
+    A ``triangle``-marked subset (#141) is dispatched to
+    :func:`_resolve_triangle_tie` instead: it is a genuine three-sided
+    closed tie, not a rectangle, and shares none of this function's
+    bounding-box arithmetic.
     """
+    if subset.triangle:
+        return _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
+                                     bend_diameter_mm)
     indices = subset_indices(subset, len(layout.bars))
     bars = [layout.bars[i] for i in indices]
     us = [bar.u_mm for bar in bars]
@@ -371,6 +588,11 @@ def _branch_spacing_findings(layout, ties):
     Evaluated per axis on the tie legs' own coordinates, and including the
     concrete faces is deliberately NOT done -- the rule is about branches,
     and a face is not one.
+
+    A triangle (#141) falls through to the default (non-cross-tie) branch
+    below, contributing its vertex bounding box's two edges per axis --
+    the same conservative reading a closed loop's rectangle already gives.
+    Nothing in #141 asks for a tighter, triangle-specific spacing rule.
     """
     findings = []
     for axis, label in ((0, "vertical legs (u)"), (1, "horizontal legs (v)")):
@@ -416,6 +638,10 @@ def tie_report_lines(ties):
 
     #91 had to leave this section saying "not guessed here". It can be
     written now.
+
+    A triangle (#141) prints ``tie.kind`` exactly like every other tie --
+    ``KIND_TRIANGLE`` is the string "triangle", so it is named as one and
+    never printed as a loop, with no special-casing needed here.
     """
     lines = []
     for position, tie in enumerate(ties):
@@ -442,6 +668,12 @@ def parse_tie_subsets(text):
     comments are ignored, so a topology can be annotated and pasted
     between columns.
 
+    A line starting with ``T`` (#141), e.g. ``"T 1 3 5"``, is a genuine
+    three-sided closed tie through those three bars -- never a bounding
+    box, and never degraded to anything else on failure (see
+    ``_resolve_triangle_tie``). An UNMARKED line still means exactly what
+    it always has: a loop (three or more bars) or a cross-tie (two).
+
     A TEXT control rather than a list widget with add/remove buttons: the
     whole topology is visible and editable at once, it copies between
     columns, and it needs no widget state to stay in step with the model.
@@ -457,11 +689,15 @@ def parse_tie_subsets(text):
         if not line:
             continue
         parts = [p for p in line.replace(",", " ").split() if p]
+        triangle = bool(parts) and parts[0].upper() == "T"
+        if triangle:
+            parts = parts[1:]
         if len(parts) < 2:
             raise ValueError(
                 "Line %d (%r): a tie is the bar numbers it touches, at "
                 "least two -- '1 6' is a cross-tie from bar 1 to bar 6, "
-                "'0 1 2 3' is a loop around those four."
+                "'0 1 2 3' is a loop around those four, 'T 1 3 5' is a "
+                "triangle through exactly three."
                 % (number, raw.strip()))
         try:
             indices = tuple(int(p) for p in parts)
@@ -469,10 +705,15 @@ def parse_tie_subsets(text):
             raise ValueError(
                 "Line %d (%r): every value must be a whole bar number."
                 % (number, raw.strip()))
-        subsets.append(TieSubset(indices=indices))
+        subsets.append(TieSubset(indices=indices, triangle=triangle))
     return subsets
 
 
 def format_tie_subsets(subsets):
-    """The inverse, for restoring what was typed."""
-    return "\n".join(describe_subset(s) for s in subsets)
+    """The inverse, for restoring what was typed. A triangle-marked
+    subset (#141) round-trips its ``T`` prefix; an unmarked one is exactly
+    ``describe_subset`` as before.
+    """
+    return "\n".join(
+        ("T " + describe_subset(s)) if s.triangle else describe_subset(s)
+        for s in subsets)

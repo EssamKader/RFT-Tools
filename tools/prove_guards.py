@@ -513,6 +513,61 @@ CASES = [
      "Canvas is no longer hit-testable over empty area and the grown "
      "BAR_PICK_RADIUS_PX buys nothing"),
 
+    # ---- #141: triangular ties -- the Loop / Triangle UI half ---------
+    (COL_SCRIPT, '        triangle = self._tie_shape_is_triangle()',
+     '        triangle = False',
+     TC + "test_add_tie_writes_a_T_marked_line_only_for_triangle",
+     "#141 -- Add tie stopped asking which shape is selected, so a "
+     "Triangle pick would silently write an unmarked (loop) line"),
+
+    (COL_SCRIPT,
+     '        if triangle and len(self._tie_selection) != 3:\n'
+     '            self.tie_selection_caption_tb.Text = (\n'
+     '                "A triangle touches exactly three bars -- %d selected. "\n'
+     '                "Clear the selection and pick exactly three."\n'
+     '                % len(self._tie_selection))\n'
+     '            return\n',
+     '',
+     TC + "test_add_tie_refuses_a_triangle_of_the_wrong_bar_count",
+     "#141 -- the exactly-three-bars refusal removed, so a Triangle pick "
+     "of any count would be written as though it were valid"),
+
+    (COL_SCRIPT, '            line = "T " + line',
+     '            pass',
+     TC + "test_add_tie_writes_a_T_marked_line_only_for_triangle",
+     "#141 -- the T marker dropped, so a Triangle selection would write "
+     "an unmarked line indistinguishable from a loop"),
+
+    (COL_SCRIPT, 'TIE_SHAPE_CHOICES = ("Loop", "Triangle")',
+     'TIE_SHAPE_CHOICES = ("Triangle", "Loop")',
+     TC + "test_the_tie_shape_combo_exists_with_loop_and_triangle",
+     "#141 -- the combo's two entries swapped, so _tie_shape_is_triangle "
+     "(SelectedIndex == 1) would read Loop as Triangle and vice versa"),
+
+    # ---- #141: triangular ties -- the core geometry ---------------
+    (COL_TIES, '    if len(indices) != 3:',
+     '    if False:',
+     "tests/test_column_triangular_ties.py::"
+     "test_a_triangle_needs_exactly_three_bars",
+     "#141 -- a triangle subset of any bar count silently accepted, "
+     "instead of refusing anything but exactly three"),
+
+    (COL_TIES, '        if leg_lengths[i] < edge_minimums[i]:',
+     '        if False:',
+     "tests/test_column_triangular_ties.py::"
+     "test_an_unbuildable_triangle_is_refused_by_name",
+     "#141 -- the generalised A1 bend test disabled, so an unbendable "
+     "triangle would be built rather than refused"),
+
+    (COL_TIES, '    if axis == (0.0, 0.0):\n        return None',
+     '    if axis == (1.0, 1.0):\n        return None',
+     "tests/test_column_triangular_ties.py::"
+     "test_collinear_bars_are_refused_not_silently_degenerate",
+     "#141 -- the collinear-bisector guard given an anchor that can never "
+     "match a unit vector, so three collinear bars would divide by "
+     "sin(pi/2) instead of being refused -- which happens to not crash, "
+     "so the refusal message and ValueError are what this catches"),
+
     # ---- #133: fy shown, longitudinal filtered to T ------------------
     (GRADES, '    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)',
      '    return True',
