@@ -1163,10 +1163,13 @@ def test_bar_type_options_sort_by_diameter_and_label_the_real_diameter(monkeypat
 
     options = bar_type_options(None, from_internal_units=lambda v: v)
 
+    # The third field is the yield strength (issue #133). `document` is
+    # None here, so there is nothing to read it from and the label says so
+    # rather than defaulting to a plausible 420.
     assert [label for label, _element in options] == [
-        "10M  --  9.5 mm",
-        "16M  --  15.9 mm",
-        "25M  --  25.4 mm",
+        "10M  --  9.5 mm  --  fy unknown",
+        "16M  --  15.9 mm  --  fy unknown",
+        "25M  --  25.4 mm  --  fy unknown",
     ]
     assert [element for _label, element in options] == [ten_m, sixteen_m, twentyfive_m]
 

@@ -23,10 +23,18 @@ diameter, so two selections cannot express a Ø12 top bar and a Ø16 bottom
 bar in the same beam -- the normal case. A42 moves to one selection per bar
 ROLE instead. Grade stops being a selection axis: inferring a
 ``RebarBarType``'s grade from the type itself is exactly what A35's note
-already ruled out (a `RebarBarType` carries a diameter, not a grade), so
-A34's assignment is now the LABEL each role's picker carries and a line in
-the report -- the engineer's selection is the assertion, not something this
-module can verify. The bar diameter itself is no longer typed anywhere; it
+already ruled out, so A34's assignment is now the LABEL each role's picker
+carries and a line in the report -- the engineer's selection is the
+assertion, not something this module can verify.
+
+**Correction (issue #133, R27).** A35's note gave the reason as "a
+`RebarBarType` carries a diameter, not a grade". That is false: it carries
+a Material, and the material carries a yield strength -- 13 of the
+verification model's 15 types resolve to a real fy. The POLICY above
+survives unchanged, because it never depended on the reason: the engineer
+still selects and this module still does not infer. What changed is that
+``rft.revit.bar_types`` now SHOWS the grade beside every type, so the
+label states a fact instead of an aspiration. The bar diameter itself is no longer typed anywhere; it
 comes from the selected type via ``rft.revit.bar_types.bar_type_diameter_mm``.
 """
 
@@ -69,6 +77,39 @@ ROLE_LABEL = {
     ROLE_CRACK: "Crack/skin bars",
     ROLE_SPACER: "Spacer bars",
 }
+
+#: The suffix a HIGH TENSILE bar type's name carries, in this owner's
+#: drawing convention: ``16T`` is high tensile, ``16M`` is not.
+HIGH_TENSILE_NAME_SUFFIX = "T"
+
+
+def is_high_tensile_by_name(type_name):
+    """Whether a bar type's NAME marks it high tensile (issue #133).
+
+    **This is name-matching, and the module docstring above forbids it.**
+    The owner decided it anyway, with the cost stated, and the reason is
+    specific: in the verification model every bar type resolves to
+    fy 420 MPa -- the ``M`` types are ASTM A615M Grade 420, where ``M``
+    means METRIC, not mild. Filtering on yield strength therefore
+    separates nothing, because nothing differs. The only thing that
+    distinguishes a T bar from an M bar in that project is the letter.
+
+    What this costs, recorded so it is not rediscovered as a bug:
+
+    - a correctly-specified 420 MPa bar named without a ``T`` is hidden
+      from the longitudinal picker, for a reason that is typographic;
+    - a project not using this convention gets an empty longitudinal
+      list;
+    - a bar named ``T`` with no material, or mild steel, is offered.
+
+    The yield strength is therefore SHOWN beside every type
+    (``bar_type_options``) so the engineer can see what the name does not
+    guarantee. The letter chooses the list; the number is on the page.
+    """
+    if not type_name:
+        return False
+    return type_name.strip().upper().endswith(HIGH_TENSILE_NAME_SUFFIX)
+
 
 GRADE_ASSIGNMENT_SPEC_SECTION = "rev 2 section 1.1 (A34)"
 BAR_TYPE_SELECTION_SPEC_SECTION = "rev 2 section 1.1 (A42, supersedes A35)"

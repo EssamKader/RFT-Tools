@@ -404,18 +404,46 @@ FakeElementId.InvalidElementId = FakeElementId(-1)
 
 class FakeUnitTypeId(object):
     Millimeters = object()
+    #: issue #133 -- stress, for a bar type's yield strength.
+    Megapascals = object()
+
+
+#: Internal units per unit, by FakeUnitTypeId member. LENGTH is 1 foot ==
+#: 304.8 mm. STRESS is measured from the live model: ASTM A615M Grade 420
+#: reads 128016000.0 internally, and 128016000.0 / 420 == 304800.
+_INTERNAL_PER_UNIT = {
+    id(FakeUnitTypeId.Millimeters): 1.0 / 304.8,
+    id(FakeUnitTypeId.Megapascals): 304800.0,
+}
 
 
 class FakeUnitUtils(object):
-    """1 internal unit == 1 foot; 1 foot == 304.8 mm (matches real Revit)."""
+    """Converts ACCORDING TO THE UNIT TYPE.
+
+    It used to ignore the unit argument and always apply the length
+    factor, which meant a yield strength in MPa came back as a length in
+    millimetres and the tests could not see it (issue #133). A fake that
+    accepts an argument and ignores it is the same failure as a fake that
+    offers a member the API does not have.
+    """
 
     @staticmethod
-    def ConvertToInternalUnits(value, _unit_type_id):
-        return value / 304.8
+    def _factor(unit_type_id):
+        try:
+            return _INTERNAL_PER_UNIT[id(unit_type_id)]
+        except KeyError:
+            raise AssertionError(
+                "FakeUnitUtils was handed a unit it does not model. Add it "
+                "to _INTERNAL_PER_UNIT with the factor measured live, "
+                "rather than letting it convert as a length.")
 
     @staticmethod
-    def ConvertFromInternalUnits(value, _unit_type_id):
-        return value * 304.8
+    def ConvertToInternalUnits(value, unit_type_id):
+        return value * FakeUnitUtils._factor(unit_type_id)
+
+    @staticmethod
+    def ConvertFromInternalUnits(value, unit_type_id):
+        return value / FakeUnitUtils._factor(unit_type_id)
 
 
 class FakeTransaction(object):
@@ -965,17 +993,59 @@ class FakeRebarBarType(object):
     way it is reachable live -- through ``SYMBOL_NAME_PARAM``.
     """
 
-    def __init__(self, bar_nominal_diameter=None, name=None, id_value=None):
+    def __init__(self, bar_nominal_diameter=None, name=None, id_value=None,
+                 material_id=None):
         self.BarNominalDiameter = bar_nominal_diameter
         self._name = name
         self.Id = id_value
+        #: issue #133. ``None`` models a type with NO material assigned --
+        #: which is not hypothetical: 10T and 14T are like that in the
+        #: verification model, and their yield strength is unknown to
+        #: Revit itself.
+        self._material_id = material_id
 
     def get_Parameter(self, built_in_parameter):
         if built_in_parameter is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
             if self._name is None:
                 return None
             return FakeStringParameter(self._name)
+        if built_in_parameter is FakeBuiltInParameter.MATERIAL_ID_PARAM:
+            if self._material_id is None:
+                return None
+            return FakeElementIdParameter(self._material_id)
         return None
+
+
+class FakeStructuralAsset(object):
+    """``PropertySetElement.GetStructuralAsset()``'s return value.
+
+    Only ``MinimumYieldStress`` is modelled, in INTERNAL units, because
+    that is the only member the adapter reads and inventing more of the
+    asset surface would be guessing (issue #133).
+    """
+
+    def __init__(self, minimum_yield_stress):
+        self.MinimumYieldStress = minimum_yield_stress
+
+
+class FakePropertySetElement(object):
+    """What ``Material.StructuralAssetId`` resolves to."""
+
+    def __init__(self, asset):
+        self._asset = asset
+
+    def GetStructuralAsset(self):
+        return self._asset
+
+
+class FakeMaterial(object):
+    """A structural material. ``StructuralAssetId`` may be ``None``: a
+    material with no structural asset is as real as a bar type with no
+    material, and both end at "fy unknown"."""
+
+    def __init__(self, structural_asset_id=None, name="Fake Material"):
+        self.StructuralAssetId = structural_asset_id
+        self.Name = name
 
 
 class FakeBuiltInParameter(object):
@@ -991,6 +1061,9 @@ class FakeBuiltInParameter(object):
     # RebarHookType -- the only route to a name from IronPython, since
     # ``.Name`` is hidden behind ElementType (see FakeRebarBarType).
     SYMBOL_NAME_PARAM = object()
+    # VERIFIED LIVE (issue #133): a RebarBarType's Material, the first
+    # link in the chain to its yield strength.
+    MATERIAL_ID_PARAM = object()
     # The column adapter's reads (#106). Each is exercised live.
     CLEAR_COVER_OTHER = object()
     CLEAR_COVER_TOP = object()

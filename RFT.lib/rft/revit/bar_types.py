@@ -23,7 +23,10 @@ unconfirmed) -- see tests/fake_revit_api.py's header for the running list.
 
 import math
 
-from Autodesk.Revit.DB import FilteredElementCollector
+from Autodesk.Revit.DB import (
+    BuiltInParameter, FilteredElementCollector, UnitTypeId, UnitUtils)
+
+from ..core.grades import is_high_tensile_by_name
 from Autodesk.Revit.DB.Structure import Rebar, RebarBarType, RebarHookType, RebarStyle
 
 
@@ -214,7 +217,46 @@ def element_name(element):
     return "<unnamed, id {}>".format(element.Id)
 
 
-def bar_type_options(document, from_internal_units):
+def bar_type_yield_mpa(bar_type, document):
+    """A bar type's yield strength in MPa, or ``None`` when the document
+    does not say.
+
+    VERIFIED LIVE (Revit 2024 build 24.3.40.26): the chain is
+    ``MATERIAL_ID_PARAM`` -> ``Material.StructuralAssetId`` ->
+    ``PropertySetElement.GetStructuralAsset().MinimumYieldStress``,
+    converted with ``UnitUtils.ConvertFromInternalUnits(...,
+    UnitTypeId.Megapascals)``. 13 of the verification model's 15 bar types
+    resolve; ``10T`` and ``14T`` have no material at all.
+
+    This closes the factual half of A42, which asserted that "a
+    ``RebarBarType`` carries a diameter, not a grade". It carries both.
+    A42's POLICY -- the engineer selects, the tool does not infer -- is
+    unchanged by this function: it reports, it does not choose.
+
+    Returns ``None`` rather than raising or substituting a default. An
+    unknown yield strength is a fact about the model and the picker says
+    so; inventing 420 because it is common would be the kind of plausible
+    guess this project refuses everywhere else.
+    """
+    if document is None or bar_type is None:
+        return None
+    parameter = bar_type.get_Parameter(BuiltInParameter.MATERIAL_ID_PARAM)
+    if parameter is None:
+        return None
+    material = document.GetElement(parameter.AsElementId())
+    if material is None:
+        return None
+    asset_holder = document.GetElement(material.StructuralAssetId)
+    if asset_holder is None:
+        return None
+    asset = asset_holder.GetStructuralAsset()
+    if asset is None:
+        return None
+    return UnitUtils.ConvertFromInternalUnits(
+        asset.MinimumYieldStress, UnitTypeId.Megapascals)
+
+
+def bar_type_options(document, from_internal_units, high_tensile_only=False):
     """``(label, bar_type)`` pairs for the per-role picker, sorted by
     diameter -- ascending and numeric, not by name.
 
@@ -232,10 +274,19 @@ def bar_type_options(document, from_internal_units):
     """
     rows = []
     for bar_type in list_bar_types(document):
+        name = element_name(bar_type)
+        # #133: the longitudinal role takes T-named types only. The letter
+        # chooses the list; the fy beside it is what the letter does not
+        # guarantee.
+        if high_tensile_only and not is_high_tensile_by_name(name):
+            continue
         diameter_mm = bar_type_diameter_mm(bar_type, from_internal_units)
+        yield_mpa = bar_type_yield_mpa(bar_type, document)
+        grade = ("fy unknown" if yield_mpa is None
+                 else "{:.0f} MPa".format(yield_mpa))
         rows.append(
             (
-                "{}  --  {:.1f} mm".format(element_name(bar_type), diameter_mm),
+                "{}  --  {:.1f} mm  --  {}".format(name, diameter_mm, grade),
                 bar_type,
                 diameter_mm,
             )

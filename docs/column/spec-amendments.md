@@ -489,3 +489,62 @@ steps in a different order satisfies none of them:
 **Save / reopen persistence** of R22's constraints (#92 Q4) and **§6.3's
 alternation gap for cross-ties**, which has no corner to alternate. Neither
 blocks writing the placer; both must be closed before it ships.
+
+
+---
+
+## R27 — the picker shows `fy`, and the longitudinal role takes `T` names only
+
+**Decided by the owner** (#133), after the Longitudinal picker listed
+`10M`…`57M` and read as entirely mild steel.
+
+### The premise it corrects
+
+It is not mild. Every `M` type in the verification model is **ASTM A615M
+Grade 420** — the `M` is the METRIC bar designation, not "mild". Read live
+on Revit 2024 build 24.3.40.26:
+
+| types | fy |
+|---|---|
+| `10M` … `57M` (11) | **420 MPa** |
+| `12T`, `16T` | **420 MPa** |
+| `10T`, `14T` | **unknown** — no material assigned |
+
+The chain is `MATERIAL_ID_PARAM` → `Material.StructuralAssetId` →
+`PropertySetElement.GetStructuralAsset().MinimumYieldStress`, converted
+with `UnitUtils.ConvertFromInternalUnits(..., UnitTypeId.Megapascals)`.
+
+**This disproves A42's stated reason** — *"a `RebarBarType` carries a
+diameter, not a grade"*. It carries both. A42's **policy** is unchanged:
+the tool reports, it does not choose.
+
+### The rule
+
+- **Every label carries `fy`** beside the diameter. A type with no material
+  reads `fy unknown`, never a defaulted 420 — the label exists precisely
+  because a name guarantees nothing (`16M` is 15.9 mm), and this is the
+  same problem one field over.
+- **The longitudinal picker takes `T`-named types only.**
+- **The tie picker is unfiltered.** Mild is *permitted* for a tie, not
+  required; filtering this project's tie list to mild would empty it,
+  because it holds no fy 240 material at all.
+
+### What the ruling costs, on the record
+
+Filtering by name is what `rft/core/grades.py`'s own docstring forbids —
+*"never inferred from the document by name-matching"*. The owner chose it
+knowing that, for a specific reason: **in a project where every type reads
+420 MPa, yield strength separates nothing.** The letter is the only
+discriminator that exists.
+
+So:
+
+- a correctly-specified 420 MPa bar named without a `T` is hidden from the
+  longitudinal picker, for a reason that is typographic;
+- a project not using this convention gets an empty longitudinal list;
+- a `T`-named type with no material, or with mild steel, is still offered.
+
+**The number shown beside each type is what makes that visible.** The
+letter chooses the list; the engineer reads the grade. Both halves are the
+ruling — the filter without the label would be the tool hiding its own
+reasoning, and that is what R27 refuses.
