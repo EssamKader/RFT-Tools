@@ -75,6 +75,12 @@ KIND_CROSS_TIE = "cross-tie"
 #: the generalised-A1 argument.
 KIND_TRIANGLE = "triangle"
 
+#: How square a leg must be to count as a branch on an axis (R29).
+#: Legs are built from bar positions that are aligned by
+#: construction, so this only has to survive float arithmetic -- it is
+#: NOT a licence for a nearly-diagonal leg to count as a branch.
+BRANCH_AXIS_TOL_MM = 1.0e-6
+
 #: Tolerance for "is this bar at that corner". Bar positions are tens of
 #: millimetres apart, so this only has to survive float arithmetic.
 COINCIDENT_TOL_MM = 1.0e-6
@@ -644,6 +650,52 @@ def validate(layout, ties):
     return findings
 
 
+def tie_legs(tie):
+    """Every straight leg of a tie, as ``(start, end)`` point pairs.
+
+    Reads ``vertices`` (#140) and nothing else, so one function answers
+    "where does this tie's steel actually run" for a loop, a cross-tie and
+    a triangle alike. A cross-tie is the two-point open case: one leg, not
+    a closed circuit.
+    """
+    points = tie.vertices
+    if len(points) < 2:
+        return []
+    if len(points) == 2:
+        return [(points[0], points[1])]
+    return [(points[i], points[(i + 1) % len(points)])
+            for i in range(len(points))]
+
+
+def branch_coordinate(leg, axis):
+    """Where this leg sits on ``axis`` -- or ``None`` when it is diagonal
+    and therefore not a branch at all (R29).
+
+    ``axis`` 0 asks for a VERTICAL leg: one that runs in v at a constant
+    u, so its u is the coordinate. ``axis`` 1 asks for a horizontal leg.
+
+    **R29, decided by the owner (#146): a diagonal leg does not count.**
+    Section 6.1's 300 mm limit is read as applying between branches
+    parallel to the face. A leg running corner to corner crosses the gap
+    but is not a branch across it, and crediting it with one -- which is
+    what reading a triangle's BOUNDING BOX did -- claims steel at a
+    coordinate where there is only a vertex.
+
+    The direction of the wrongness is why this is a fix rather than a
+    preference: ``validate``'s own rule is that it may demand restraint
+    that proves unnecessary and may never miss restraint that was needed.
+    A bounding box misses.
+    """
+    (u1, v1), (u2, v2) = leg
+    along = abs(v1 - v2) if axis == 0 else abs(u1 - u2)
+    across = abs(u1 - u2) if axis == 0 else abs(v1 - v2)
+    if across > BRANCH_AXIS_TOL_MM:
+        return None
+    if along <= BRANCH_AXIS_TOL_MM:
+        return None
+    return u1 if axis == 0 else v1
+
+
 def _branch_spacing_findings(layout, ties):
     """Section 6.1's other limit: never more than 300 mm between two tie
     branches.
@@ -652,35 +704,29 @@ def _branch_spacing_findings(layout, ties):
     concrete faces is deliberately NOT done -- the rule is about branches,
     and a face is not one.
 
-    A triangle (#141) falls through to the default (non-cross-tie) branch
-    below, contributing its vertex bounding box's two edges per axis --
-    the same conservative reading a closed loop's rectangle already gives.
-    Nothing in #141 asks for a tighter, triangle-specific spacing rule.
+    Every kind is read the same way, through ``tie_legs`` and
+    ``branch_coordinate``: a leg counts on an axis when it RUNS along that
+    axis, whatever shape it belongs to. That replaces three separate
+    readings -- a rectangle's four bounding-box edges, R20's thin-axis
+    test for a cross-tie, and #141's bounding box for a triangle -- with
+    the one question the rule actually asks.
+
+    The rectangle and the axis-aligned cross-tie are unchanged by this:
+    a rectangle's four legs ARE its bounding box's edges, and a cross-tie
+    from bar 1 to bar 6 runs the full height at u = 0, which is a vertical
+    leg at u = 0 and nothing horizontally -- exactly what R20 said. What
+    changes is that a triangle contributes only its genuinely axis-aligned
+    leg, and a DIAGONAL cross-tie now contributes nothing rather than a
+    coordinate on its thinner axis (R29).
     """
     findings = []
     for axis, label in ((0, "vertical legs (u)"), (1, "horizontal legs (v)")):
         coords = set()
         for tie in ties:
-            centre = tie.centre_u_mm if axis == 0 else tie.centre_v_mm
-            half = tie.half_u_mm if axis == 0 else tie.half_v_mm
-            if tie.kind == KIND_CROSS_TIE:
-                # R20. A cross-tie is a single bar, not a rectangle, so it
-                # contributes ONE coordinate rather than two -- and only on
-                # the axis it is thin across. The cross-tie from bar 1 to
-                # bar 6 runs the full height at u = 0: that is a vertical
-                # leg at u = 0, and nothing at all horizontally.
-                #
-                # Skipping cross-ties entirely (the behaviour until this
-                # ticket) meant the 300 mm rule could only ever be met by
-                # NESTED CLOSED LOOPS, so the tool pushed the engineer away
-                # from the detail they would actually draw toward heavier
-                # ones. Found by detailing a real column with it.
-                other_half = tie.half_v_mm if axis == 0 else tie.half_u_mm
-                if half <= other_half:
-                    coords.add(round(centre, 6))
-                continue
-            coords.add(round(centre - half, 6))
-            coords.add(round(centre + half, 6))
+            for leg in tie_legs(tie):
+                coordinate = branch_coordinate(leg, axis)
+                if coordinate is not None:
+                    coords.add(round(coordinate, 6))
         ordered = sorted(coords)
         for lower, upper in zip(ordered, ordered[1:]):
             if upper - lower > MAX_TIE_BRANCH_SPACING_MM:

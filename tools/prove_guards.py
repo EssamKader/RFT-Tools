@@ -285,6 +285,24 @@ CASES = [
      "the closed loop's own winding reversed, which must break the "
      "triangle's agreement with it rather than silently redefining it"),
 
+    # ---- R29 (#146): a diagonal leg is not a branch
+
+    (COL_TIES,
+     '    if across > BRANCH_AXIS_TOL_MM:',
+     '    if False:',
+     "tests/test_column_ties.py::"
+     '     "test_a_diagonal_leg_is_NOT_a_branch_on_either_axis"',
+     "R29 switched off, so a diagonal leg is credited as a branch on "
+     "both axes and section 6.1 passes steel it should block"),
+
+    (COL_TIES,
+     '    if along <= BRANCH_AXIS_TOL_MM:',
+     '    if False:',
+     "tests/test_column_ties.py::"
+     '     "test_a_zero_length_leg_is_no_branch_at_all"',
+     "a zero-length leg reading as aligned on BOTH axes, inventing "
+     "two branches out of one point"),
+
     # ---- #87: the column window ---------------------------------
 
     (COL_XAML, '                <ResourceDictionary Source=\"SharedStyles.xaml\"/>\n',
@@ -700,16 +718,25 @@ CASES = [
      TT + "test_a_cross_tie_line_is_two_bar_numbers",
      "every tie line rejected, so no topology can be stated"),
 
-    # ---- R20: a cross-tie is a leg -------------------------------
-    (COL_TIES, '                if half <= other_half:',
-     '                if False:',
+    # ---- R20: a cross-tie is a leg. Retargeted by R29 (#146): the
+    # ---- cross-tie special case these used to mutate is gone, and
+    # ---- one leg reading now answers for every kind.
+    (COL_TIES, '    if len(points) < 2:',
+     '    if len(points) < 3:',
      TT + "test_a_cross_tie_COUNTS_as_a_branch_for_the_300_mm_rule",
      "cross-ties ignored again -- only nested loops can satisfy 300 mm"),
 
-    (COL_TIES, '                other_half = tie.half_v_mm if axis == 0 else tie.half_u_mm',
-     '                other_half = half',
-     TT + "test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS",
-     "a cross-tie counted on BOTH axes -- a branch no steel provides"),
+    # R20's 'counted on BOTH axes' case is GONE, deliberately, and this
+    # note is what replaces it. Under R29 the defect is unreachable by
+    # mutating either line: for a cross-tie's wrong axis the `across`
+    # test rejects it, and with that test switched off the `along` test
+    # rejects it anyway, and vice versa. Two independent guards, so no
+    # single mutation can produce the defect -- which is a property of
+    # the code, not a hole in the proving. Each guard is proven
+    # separately by R29's diagonal and zero-length cases below, and
+    # test_a_cross_tie_is_a_leg_only_on_the_axis_it_SPANS still asserts
+    # the behaviour directly. Contriving a two-line mutation to keep the
+    # count up would be proving the prover, not the guard.
 
     # ---- #90: the perimeter model and the sketch ----------------
 
