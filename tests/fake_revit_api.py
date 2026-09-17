@@ -118,8 +118,9 @@ Currently ``SHAPE UNVERIFIED``:
   ``RebarConstraintsManager.GetAllHandles()`` /
   ``GetConstraintCandidatesForHandle(handle)`` /
   ``SetPreferredConstraintForHandle(handle, candidate)``, and a candidate's
-  ``IsToHostFaceOrCover()`` / ``IsToCover()`` / ``GetTargetElementId()`` /
-  ``PlanarFace`` / ``SetDistanceToTargetHostFace(offset)`` (issue #119,
+  ``IsToHostFaceOrCover()`` / ``IsToCover()`` / ``GetTargetElement()`` /
+  ``GetTargetHostFaceAndTransform(index, transform)`` /
+  ``SetDistanceToTargetHostFace(offset)`` (issue #119,
   R22). Names are exactly what the ticket and #92's live verification note
   give; none of this shape has been independently re-probed against a
   live host by this repository's own code -- #92 measured the BEHAVIOUR
@@ -490,13 +491,30 @@ class FakeRebarShapeDrivenAccessor(object):
         )
 
 
+class FakeConstraintTarget(object):
+    """What ``RebarConstraint.GetTargetElement()`` returns -- an Element.
+    Only ``.Id`` is read, so only ``.Id`` is offered: a fake that invented
+    more of the Element surface would be back to guessing.
+    """
+
+    def __init__(self, element_id):
+        self.Id = element_id
+
+
 class FakeRebarConstraintCandidate(object):
     """SHAPE UNVERIFIED (issue #119, R22) -- stand-in for whatever
     ``RebarConstraintsManager.GetConstraintCandidatesForHandle`` returns.
     Names match the ticket and #92's verification note exactly:
-    ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElementId()``,
-    ``PlanarFace`` (a property, carrying a ``FakePlanarFace``), and
-    ``SetDistanceToTargetHostFace(offset)``.
+    ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElement()``,
+    ``GetTargetHostFaceAndTransform(index, transform)`` and
+    ``SetDistanceToTargetHostFace(offset)`` -- all VERIFIED to exist by
+    reflection over the live ``RebarConstraint``.
+
+    An earlier version of this fake exposed ``GetTargetElementId()`` and a
+    ``PlanarFace`` property. **Neither exists on the real class**, and
+    because the fake offered them the suite passed on code that could not
+    run. That is the failure mode this module's header exists to prevent,
+    caught only by reflecting over the live type.
     """
 
     def __init__(self, to_host_face_or_cover=True, to_cover=False,
@@ -504,7 +522,7 @@ class FakeRebarConstraintCandidate(object):
         self._to_host_face_or_cover = to_host_face_or_cover
         self._to_cover = to_cover
         self._target_element_id = target_element_id
-        self.PlanarFace = planar_face
+        self._planar_face = planar_face
         self.label = label
         #: What the module under test actually called this with -- the
         #: mutation-proving surface for R22's sign rule.
@@ -516,8 +534,13 @@ class FakeRebarConstraintCandidate(object):
     def IsToCover(self):
         return self._to_cover
 
-    def GetTargetElementId(self):
-        return self._target_element_id
+    def GetTargetElement(self):
+        if self._target_element_id is None:
+            return None
+        return FakeConstraintTarget(self._target_element_id)
+
+    def GetTargetHostFaceAndTransform(self, index, transform):
+        return self._planar_face
 
     def SetDistanceToTargetHostFace(self, value):
         self.distance_to_target_host_face = value
@@ -924,6 +947,18 @@ class FakeSolid(object):
         self.Volume = volume
 
 
+class FakeTransform(object):
+    """Only ``Transform.Identity`` is used -- it is passed to
+    ``GetTargetHostFaceAndTransform`` as the transform to fill in, and this
+    module never reads it back. VERIFIED to exist on the live API.
+    """
+
+    Identity = None
+
+
+FakeTransform.Identity = FakeTransform()
+
+
 class FakePlanarFace(object):
     def __init__(self, normal):
         self.FaceNormal = normal
@@ -1098,6 +1133,7 @@ def install():
     db.View = FakeView3D
     db.Solid = FakeSolid
     db.PlanarFace = FakePlanarFace
+    db.Transform = FakeTransform
     db.ViewDetailLevel = FakeViewDetailLevel
     db.FindReferenceTarget = FakeFindReferenceTarget
     db.ElementCategoryFilter = FakeElementCategoryFilter

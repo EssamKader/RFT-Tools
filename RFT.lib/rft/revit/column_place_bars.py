@@ -62,14 +62,20 @@ once" rule.
   reading of published Revit API documentation, not a live confirmation.
   Which direction the array grows in is entirely up to Revit's own
   handling of the seed bar's shape -- untested, and orthogonal to R22.
-- ``RebarConstraintsManager.GetAllHandles()``,
-  ``GetConstraintCandidatesForHandle(handle)``,
-  ``SetPreferredConstraintForHandle(handle, candidate)``, and a
-  candidate's ``IsToHostFaceOrCover()`` / ``IsToCover()`` /
-  ``GetTargetElementId()`` / ``PlanarFace`` / ``SetDistanceToTargetHostFace
-  (offset)``. These names are exactly what the ticket and #92's
-  verification note give; this module calls them as stated and invents no
-  further members.
+VERIFIED LIVE by reflection over ``RebarConstraint`` and
+``RebarConstraintsManager`` (Revit 2024 build 24.3.40.26, RevitAPI
+24.3.40.0): ``GetAllHandles()``, ``GetConstraintCandidatesForHandle``,
+``SetPreferredConstraintForHandle``, ``IsToHostFaceOrCover()``,
+``IsToCover()``, ``GetTargetElement()``,
+``GetTargetHostFaceAndTransform(index, transform)`` and
+``SetDistanceToTargetHostFace(offset)`` all exist with these names.
+
+  **``GetTargetElementId()`` and a ``PlanarFace`` property do NOT exist**
+  and an earlier draft of this module called both. They came from reading
+  #92's write-up, which described the recipe in prose that reads like API
+  names. The write-up now gives the literal calls. The lesson is the
+  cheaper half: *a fake written from prose will happily match the
+  invention, and a green suite then proves nothing about the host.*
 """
 
 from System.Collections.Generic import List
@@ -169,8 +175,8 @@ def _is_near_face_normal(normal, u_mm, v_mm, hand, facing):
 
 def _host_face_candidate(mgr, handle, host_id, u_mm, v_mm, hand, facing):
     """R22's candidate filter for one handle: ``IsToHostFaceOrCover()``,
-    **not** ``IsToCover()``, targets the host, and whose ``PlanarFace``
-    normal is the near face on the axis it governs.
+    **not** ``IsToCover()``, targets the host, and whose target host
+    face's normal is the near face on the axis it governs.
 
     The ``ToCover`` candidate is deliberately excluded (#92): it re-points
     the constraint and the bar itself does not move, so accepting it would
@@ -179,21 +185,30 @@ def _host_face_candidate(mgr, handle, host_id, u_mm, v_mm, hand, facing):
     matching host face (a mid-face bar's free axis) offers none, and this
     leaves it alone rather than guessing.
     """
-    match = None
     for candidate in mgr.GetConstraintCandidatesForHandle(handle):
         if not candidate.IsToHostFaceOrCover():
             continue
         if candidate.IsToCover():
             continue
-        if candidate.GetTargetElementId() != host_id:
+        target = candidate.GetTargetElement()
+        if target is None or target.Id != host_id:
             continue
-        face = candidate.PlanarFace
-        if face is None:
+        # The live surface offers no PlanarFace property. The face comes
+        # back from GetTargetHostFaceAndTransform, and may be curved --
+        # a column's own four faces are planar, anything else is not ours.
+        face = candidate.GetTargetHostFaceAndTransform(
+            0, DB.Transform.Identity)
+        normal = getattr(face, "FaceNormal", None)
+        if normal is None:
             continue
-        normal = (face.FaceNormal.X, face.FaceNormal.Y, face.FaceNormal.Z)
-        if _is_near_face_normal(normal, u_mm, v_mm, hand, facing):
-            match = candidate
-    return match
+        if _is_near_face_normal(
+                (normal.X, normal.Y, normal.Z), u_mm, v_mm, hand, facing):
+            # FIRST match, not last. Revit returned 47-49 candidates for a
+            # single handle on the live column, in an order it does not
+            # document. A loop that kept going and took the last one would
+            # be picking by an ordering nobody specified.
+            return candidate
+    return None
 
 
 def _pin_to_host_faces(bar, host_id, seed, hand, facing, offset_internal):
