@@ -73,7 +73,13 @@ COL_PLAN = "RFT.lib/rft/core/column_plan.py"
 TT = "tests/test_column_ties.py::"
 COL_HOST = "RFT.lib/rft/revit/column_host.py"
 TH = "tests/test_column_host_source.py::"
+# ---- #117: ownership (R24/R26) --------------------------------------
+COL_OWNERSHIP = "RFT.lib/rft/revit/column_ownership.py"
+TW = "tests/test_column_ownership.py::"
 TPL = "tests/test_column_plan.py::"
+# ---- #118: the tie placer -------------------------------------
+COL_PLACE_TIES = "RFT.lib/rft/revit/column_place_ties.py"
+TPT = "tests/test_column_place_ties.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -310,6 +316,27 @@ CASES = [
      TH + "test_element_name_is_imported_from_the_beam_s_verified_helper",
      "the verified helper swapped for a local stand-in"),
 
+    # ---- #117: ownership is a PREFIX test, and one shared constant ----
+
+    (COL_OWNERSHIP, '    return value is not None and value.startswith(OWNERSHIP_PREFIX)',
+     '    return value == partition_tag(422078)',
+     TW + "test_a_cage_carrying_a_stale_host_id_is_still_ours",
+     "ownership narrowed from a PREFIX test to equality -- a copied cage's "
+     "stale host id would read as foreign"),
+
+    (COL_OWNERSHIP, '    return "%s%s" % (OWNERSHIP_PREFIX, host_id)',
+     '    return "RFT-COLUMN-%s" % host_id',
+     TW + "test_the_tag_is_exactly_the_prefix_plus_the_host_id",
+     "the write side building its tag from a literal instead of the "
+     "shared OWNERSHIP_PREFIX constant"),
+
+    (COL_OWNERSHIP, '    parameter = rebar.LookupParameter(PARTITION_PARAMETER_NAME)',
+     '    parameter = rebar.LookupParameter("Partition ")',
+     TW + "test_an_element_tagged_by_this_module_is_found_by_it_afterwards",
+     "Partition read through a literal instead of the shared "
+     "PARTITION_PARAMETER_NAME constant -- a tool that tags with one name "
+     "and searches with another silently owns nothing"),
+
     # ---- #110: the window composes nothing -----------------------
     (COL_SCRIPT, 'from rft.core.column_plan import (',
      'from rft.core.column_spacing import spacing_plan\nfrom rft.core.column_plan import (',
@@ -340,6 +367,29 @@ CASES = [
      '        tie_lines=(),',
      TPL + "test_the_plan_carries_the_tie_LINES_the_report_prints",
      "the report's tie section emptied at the source"),
+
+    # ---- #118: the tie placer, R21 and A1 --------------------------
+    (COL_PLACE_TIES, '_HOOK_ORIENTATION = RebarHookOrientation.Left',
+     '_HOOK_ORIENTATION = RebarHookOrientation.Right',
+     TPT + "test_hook_tails_are_verified_by_reading_the_geometry_back",
+     "R21 -- Left flipped to Right, must be caught by the tail assertion "
+     "reading the geometry back, not by grepping for the word Left"),
+
+    (COL_PLACE_TIES, '    for tie in plan.ties:\n        _ensure_buildable(tie)\n',
+     '',
+     TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
+     "A1 -- the pre-check over the whole plan deleted from place_ties"),
+
+    (COL_PLACE_TIES, '    if tie.kind != KIND_CLOSED_LOOP:\n        return\n',
+     '',
+     TPT + "test_a_cross_tie_is_never_gated_by_A1_its_geometry_is_not_a_loop",
+     "A1 -- a legitimate cross-tie (narrow < minimum BY DESIGN) wrongly "
+     "refused once the CLOSED_LOOP-only guard is removed"),
+
+    (COL_PLACE_TIES, '    if tie.narrow_mm < tie.min_buildable_mm:',
+     '    if False:',
+     TPT + "test_a_subthreshold_loop_is_refused_before_any_element_is_created",
+     "A1 -- the narrow-vs-minimum comparison itself disabled"),
 
     # ---- rc2 live failure: Location.Point.Z is not the elevation -------
     (COL_HOST, '                        probe_z)',

@@ -157,6 +157,29 @@ Two consequences:
 The three kept ties were **replaced** with `Left` / `Left` ties at the same
 three levels.
 
+## The exact read-back call, because omitting it cost a ticket
+
+This document originally recorded the *results* of reading a tie back but
+not the *call* that produced them. #118's implementer, reading only this
+page, correctly concluded the hooks-included variant had never been proven
+and marked it `SHAPE UNVERIFIED`. It had been proven — by Finding 4 above
+— and the omission was here.
+
+Confirmed on Revit 2024 build **24.3.40.26**, RevitAPI **24.3.40.0**, tie
+423209, both variants called in one execution:
+
+```
+GetCenterlineCurves(False, False, False, IncludeOnlyPlanarCurves, 0)  -> 11 curves, 5 arcs
+GetCenterlineCurves(False, True,  True,  IncludeOnlyPlanarCurves, 0)  ->  4 curves, 0 arcs
+```
+
+The 5-argument signature, the tolerance argument and
+`MultiplanarOption.IncludeOnlyPlanarCurves` are confirmed. **Hooks-included
+is the read R21's assertion needs**; hooks-suppressed is the read that
+produced Finding 2's withdrawn 2.38 mm, because it does not stop at the
+corner.
+
+
 ---
 
 ## What this does NOT cover

@@ -23,6 +23,42 @@ green suite is never mistaken for API validation.
 VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
 #23's live probe) and so REMOVED from the list below:
 
+- ``RebarConstraint`` and ``RebarConstraintsManager`` (issue #119, R22)
+  were enumerated by reflection on Revit 2024 build 24.3.40.26.
+  ``GetRebarConstraintsManager()``, ``GetAllHandles()``,
+  ``GetConstraintCandidatesForHandle(handle)``,
+  ``SetPreferredConstraintForHandle(handle, constraint)``,
+  ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElement()``,
+  ``GetTargetHostFaceAndTransform(index, transform)`` and
+  ``SetDistanceToTargetHostFace(offset)`` all exist.
+  **``GetTargetElementId()`` and a ``PlanarFace`` property do not**,
+  and the bar placer called both until reflection caught it -- with a
+  green suite throughout, because this file had been written to match
+  the invention. It is the clearest case yet for why a fake is
+  evidence about the ADAPTER and never about the API.
+
+- ``Rebar.GetCenterlineCurves(adjustForSelfIntersection, suppressHooks,
+  suppressBendRadius, multiplanarOption, tolerance)`` (issue #118) -- the
+  5-argument signature, the tolerance argument and
+  ``MultiplanarOption.IncludeOnlyPlanarCurves`` are all confirmed on Revit
+  2024 build 24.3.40.26. Called on tie 423209 in one execution:
+  ``(False, False, False, ...)`` returned **11 curves including 5 arcs**
+  (hooks and bend radii present) and ``(False, True, True, ...)`` returned
+  **4** (suppressed). The hooks-included read returns the tails R21 was
+  decided on, so the flag settings ``rft.revit.column_place_ties`` uses are
+  the ones that were measured.
+- ``Rebar.LookupParameter("Partition")``, ``BuiltInCategory.OST_Rebar``
+  and ``Rebar.GetTypeId()`` (issue #117) -- all three were written as
+  assumptions and have since been probed on Revit 2024 build 24.3.40.26
+  against column 422078. ``LookupParameter("Partition")`` returns a
+  writable ``String`` parameter and a ``Set`` round-trips.
+  ``OfCategory(OST_Rebar)`` collects placed rebar: 99 in the document, 4
+  hosted by 422078, matching what is actually there. ``GetTypeId()``
+  returns the ``RebarBarType``, named ``16M`` through
+  ``rft.revit.bar_types.element_name`` -- which is used instead of
+  ``.Name`` because ``ElementType.Name`` is setter-only and would raise
+  ``AttributeError`` live while passing against any fake defining it.
+
 - ``RebarHostData`` does NOT expose ``GetFaces(RebarFaceType)`` /
   ``GetCoverType(face) -> ElementId`` — that whole shape, including the
   ``RebarFaceType`` enum itself, does not exist. The real shape is
@@ -114,21 +150,44 @@ Currently ``SHAPE UNVERIFIED``:
   environment) -- the three pushbuttons' selection helpers are therefore
   UNEXECUTED, not merely shape-unverified. See each pushbutton's own
   module docstring and docs/beam/verification/s7-grades.md.
-- ``Rebar.GetRebarConstraintsManager()`` and
-  ``RebarConstraintsManager.GetAllHandles()`` /
-  ``GetConstraintCandidatesForHandle(handle)`` /
-  ``SetPreferredConstraintForHandle(handle, candidate)``, and a candidate's
-  ``IsToHostFaceOrCover()`` / ``IsToCover()`` / ``GetTargetElement()`` /
-  ``GetTargetHostFaceAndTransform(index, transform)`` /
-  ``SetDistanceToTargetHostFace(offset)`` (issue #119,
-  R22). Names are exactly what the ticket and #92's live verification note
-  give; none of this shape has been independently re-probed against a
-  live host by this repository's own code -- #92 measured the BEHAVIOUR
-  (the bar stops drifting) but the accessor names come from the ticket,
-  not from a fresh probe. ``Rebar.SetLayoutAsNumberWithSpacing(number
-  OfBarPositions, spacing, barsOnNormalSide, includeFirstBar,
-  includeLastBar)`` is likewise the ticket's own reading of published
-  Revit API documentation, not a live confirmation.
+- ``Rebar.GetCenterlineCurves(...)`` was listed here by issue #118 and has
+  since been VERIFIED LIVE -- see the entry in the verified list above. The
+  API is confirmed; what follows is about this FAKE, which is a different
+  claim and remains true.
+
+  **This fake's hook-tail geometry is NOT a model of Revit's real hook
+  math.** Real hook placement depends on the hook type's angle, length
+  multiplier and the bend radius, none of which this fake computes. What
+  it DOES reproduce, deliberately, is the qualitative fact
+  issue-109 Finding 4 and issue-78 measured live: for a fixed loop
+  winding, ``RebarHookOrientation.Left`` on both ends turns a tail INWARD
+  (toward the column's own vertical centreline) and ``Right`` turns it
+  OUTWARD. It does this by offsetting each tail from its anchor point
+  toward or away from ``host.Location.Point``'s (X, Y) -- a shortcut valid
+  only because a column's plan centre lies on that line at every
+  elevation, which is NOT how the real API computes a hook tail. A test
+  built on this fake proves the ADAPTER's assertion logic is
+  self-consistent (Left passes, Right/mixed fails); it does not and cannot
+  prove Revit's real hooks land where this fake says they do.
+- ``Rebar.SetLayoutAsNumberWithSpacing(numberOfBarPositions, spacing,
+  barsOnNormalSide, includeFirstBar, includeLastBar)`` (issue #119) -- the
+  ticket's own reading of published Revit API documentation. The method
+  NAME is not in doubt; the parameter order is, and a wrong order here
+  would place a bar set that builds and is spaced wrongly. Not live
+  confirmed.
+- ``Rebar.CreateFromCurves``'s ``normal`` argument for a STRAIGHT,
+  unhooked bar (issue #119). ``StirrupTie`` loops were confirmed live by
+  #109; a standard bar was not. R22's face pin overrides the resulting
+  position either way, which is why this is recorded rather than blocking.
+
+  The rest of #119's constraint surface is no longer on this list:
+  ``GetRebarConstraintsManager``, ``GetAllHandles``,
+  ``GetConstraintCandidatesForHandle``,
+  ``SetPreferredConstraintForHandle``, ``IsToHostFaceOrCover``,
+  ``IsToCover``, ``GetTargetElement``, ``GetTargetHostFaceAndTransform``
+  and ``SetDistanceToTargetHostFace`` were all confirmed by reflection over
+  the live types -- see the verified list above, and the two members that
+  reflection showed do NOT exist.
 """
 
 import math
@@ -330,6 +389,7 @@ class FakeBuiltInCategory(object):
     OST_Floors = object()
     OST_StructuralFoundation = object()
     OST_Levels = object()
+    OST_Rebar = object()
 
 
 class FakeFilteredElementCollector(object):
@@ -381,6 +441,22 @@ class FakeRebarStyle(object):
 
 class FakeRebarHookOrientation(object):
     Left = object()
+    # #118 (R21): the column tie placer must offer Revit `Left`/`Left`
+    # ONLY -- `Right` bent both 135deg hook tails out of the core, live
+    # (issue #109 Finding 4, issue #78). Added here so a mutation
+    # (`Left` -> `Right`) is something the fake can actually distinguish,
+    # rather than a value the fake would have rejected outright.
+    Right = object()
+
+
+class FakeMultiplanarOption(object):
+    """SHAPE UNVERIFIED -- `Autodesk.Revit.DB.Structure.MultiplanarOption`,
+    an argument to `Rebar.GetCenterlineCurves` quoted in
+    `docs/column/verification/issue-109-kept-write-tracer-bullet.md` from a
+    live call. Only doc-quoted, never independently confirmed to exist
+    with this member or spelling."""
+
+    IncludeOnlyPlanarCurves = object()
 
 
 class FakeRebarHookAngleParameter(object):
@@ -491,6 +567,14 @@ class FakeRebarShapeDrivenAccessor(object):
         )
 
 
+#: How far a synthetic hook tail moves from its anchor point, toward or
+#: away from the column's own vertical centreline -- see
+#: `FakeRebarInstance.GetCenterlineCurves`'s docstring and the module
+#: header's "This fake's hook-tail geometry is NOT a model of Revit's real
+#: hook math" note. An arbitrary but generous offset: large enough that a
+#: tie corner near the column's cover moves clearly outside the host's
+#: bounding box when pushed outward, on every column this suite builds.
+_FAKE_HOOK_TAIL_OFFSET_INTERNAL = 200.0 / 304.8
 class FakeConstraintTarget(object):
     """What ``RebarConstraint.GetTargetElement()`` returns -- an Element.
     Only ``.Id`` is read, so only ``.Id`` is offered: a fake that invented
@@ -502,13 +586,17 @@ class FakeConstraintTarget(object):
 
 
 class FakeRebarConstraintCandidate(object):
-    """SHAPE UNVERIFIED (issue #119, R22) -- stand-in for whatever
+    """Stand-in for what
     ``RebarConstraintsManager.GetConstraintCandidatesForHandle`` returns.
-    Names match the ticket and #92's verification note exactly:
     ``IsToHostFaceOrCover()``, ``IsToCover()``, ``GetTargetElement()``,
     ``GetTargetHostFaceAndTransform(index, transform)`` and
-    ``SetDistanceToTargetHostFace(offset)`` -- all VERIFIED to exist by
+    ``SetDistanceToTargetHostFace(offset)`` are all VERIFIED to exist by
     reflection over the live ``RebarConstraint``.
+
+    **What is NOT verified is the behaviour.** This fake returns the
+    candidates a test hands it, in that order. The live column returned
+    47-49 per handle in an order Revit does not document, and nothing here
+    models how it decides what to offer.
 
     An earlier version of this fake exposed ``GetTargetElementId()`` and a
     ``PlanarFace`` property. **Neither exists on the real class**, and
@@ -550,9 +638,11 @@ class FakeRebarConstraintCandidate(object):
 
 
 class FakeRebarHandle(object):
-    """SHAPE UNVERIFIED (issue #119, R22) -- an opaque handle, as
-    ``RebarConstraintsManager.GetAllHandles()`` is assumed to return. Only
-    carries a diagnostic label; the module under test never inspects it."""
+    """An opaque handle, as ``RebarConstraintsManager.GetAllHandles()``
+    returns (verified to exist by reflection). Only carries a diagnostic
+    label, which is honest rather than lazy: the module under test never
+    inspects a handle, so a fake that invented fields would be asserting
+    something about the real class that nobody checked."""
 
     def __init__(self, label):
         self.label = label
@@ -562,11 +652,16 @@ class FakeRebarHandle(object):
 
 
 class FakeRebarConstraintsManager(object):
-    """SHAPE UNVERIFIED (issue #119, R22) -- stand-in for
-    ``Rebar.GetRebarConstraintsManager()``'s return value. A test builds
-    one with the handles/candidates a scenario needs and hands it to
-    ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` so the NEXT
+    """Stand-in for ``Rebar.GetRebarConstraintsManager()``'s return
+    value; the methods used here are verified to exist by reflection. A
+    test builds one with the handles/candidates a scenario needs and hands
+    it to ``FakeRebar.PENDING_CONSTRAINTS_MANAGERS`` so the NEXT
     ``CreateFromCurves`` call returns it.
+
+    Note ``IsRebarConstrainedPlacementEnabled`` is deliberately absent. It
+    is a STATIC on the real class, it read ``False`` on the live host, and
+    the bar snapped anyway (#92) -- so it governs nothing this adapter
+    does, and a fake offering it would invite someone to reach for it.
     """
 
     def __init__(self, handles=None, candidates=None):
@@ -618,6 +713,44 @@ class FakeRebarInstance(object):
     def GetShapeDrivenAccessor(self):
         return self._accessor
 
+    def GetCenterlineCurves(self, adjust_for_self_intersection, suppress_hooks,
+                            suppress_bend_radius, multiplanar_option, tolerance):
+        """SHAPE UNVERIFIED -- see tests/fake_revit_api.py's module header
+        for the full caveat. Reproduces only the qualitative fact issue-109
+        Finding 4 / issue-78 measured live: with hooks included
+        (`suppress_hooks=False`), `RebarHookOrientation.Left` moves a tail
+        toward the host's own `Location.Point` (X, Y) -- inward, toward the
+        column's vertical centreline -- and `Right` moves it away.
+
+        Positional args below mirror exactly what
+        `rft.revit.column_place_ties._place_one_tie` passes to
+        `Rebar.CreateFromCurves`: `args[5]` is `host`, `args[6]` is `norm`,
+        `args[7]` is `curves`, `args[8]`/`args[9]` are the start/end
+        `RebarHookOrientation`. A caller passing a differently-shaped call
+        gets a wrong answer from this fake, not a loud failure -- this is
+        exactly the kind of coupling `SHAPE UNVERIFIED` exists to flag.
+        """
+        curves = list(self.args[7])
+        if suppress_hooks or not curves:
+            return curves
+
+        host = self.args[5]
+        centre = host.Location.Point
+        orient_start, orient_end = self.args[8], self.args[9]
+
+        def tail(anchor, orientation):
+            direction = FakeXYZ(centre.X - anchor.X, centre.Y - anchor.Y, 0.0)
+            if direction.X == 0.0 and direction.Y == 0.0:
+                direction = FakeXYZ(1.0, 0.0, 0.0)
+            direction = direction.Normalize()
+            sign = 1.0 if orientation is FakeRebarHookOrientation.Left else -1.0
+            return anchor + direction.Multiply(sign * _FAKE_HOOK_TAIL_OFFSET_INTERNAL)
+
+        _, start_anchor, _ = curves[0]
+        _, _, end_anchor = curves[-1]
+        start_hook = FakeLine.CreateBound(tail(start_anchor, orient_start), start_anchor)
+        end_hook = FakeLine.CreateBound(end_anchor, tail(end_anchor, orient_end))
+        return [start_hook] + curves + [end_hook]
     def GetRebarConstraintsManager(self):
         return self._constraints_manager
 
@@ -641,6 +774,67 @@ class FakeRebar(object):
     @staticmethod
     def CreateFromCurves(*args, **kwargs):
         return FakeRebarInstance(*args, **kwargs)
+
+
+class FakeRebarPartitionParameter(object):
+    """SHAPE UNVERIFIED -- stand-in for the ``Parameter`` object
+    ``Rebar.LookupParameter("Partition")`` is assumed to return (issue
+    #117/R26). The parameter's NAME, storage type and empty default ARE
+    confirmed live; this accessor is not. Writable, unlike every other
+    parameter fake in this module -- R26 is specifically about a value
+    THIS TOOL writes, not one it only reads.
+    """
+
+    def __init__(self, value=""):
+        self._value = value
+
+    def AsString(self):
+        return self._value
+
+    def Set(self, value):
+        self._value = value
+
+
+class FakeRebarElement(object):
+    """SHAPE UNVERIFIED except where noted -- stand-in for a placed
+    ``Rebar`` element already sitting in a host, as ``column_ownership``
+    reads (and tags) one (issue #117).
+
+    ``GetHostId()`` and ``Quantity`` are VERIFIED LIVE (issue #109,
+    ``issue-109-kept-write-tracer-bullet.md``): a closed tie built against
+    a column reported ``GetHostId() == 422078`` (the host's own id) and
+    ``Quantity == 1``. ``GetTypeId()`` and reaching ``Partition`` through
+    ``LookupParameter`` are NOT independently confirmed -- see this
+    module's header.
+    """
+
+    def __init__(self, host_id, id_value, bar_type_id=None, quantity=1,
+                partition=""):
+        self.Id = FakeElementId(id_value)
+        self._host_id = host_id
+        self.Quantity = quantity
+        self._bar_type_id = bar_type_id
+        self._partition = FakeRebarPartitionParameter(partition)
+        self._category = FakeBuiltInCategory.OST_Rebar
+
+    def GetHostId(self):
+        return self._host_id
+
+    def GetTypeId(self):
+        return self._bar_type_id
+
+    def LookupParameter(self, name):
+        if name == PARTITION_PARAMETER_NAME_FOR_FAKE:
+            return self._partition
+        return None
+
+
+#: Kept as a module-level constant, deliberately NOT imported from
+#: ``rft.revit.column_ownership`` -- this fake must recognise the parameter
+#: name the way the real Revit API would (by the literal string "Partition"
+#: the ticket confirmed live), not by sharing the adapter's own constant.
+#: Sharing it would let a typo in BOTH places cancel out and still pass.
+PARTITION_PARAMETER_NAME_FOR_FAKE = "Partition"
 
 
 class FakeRebarBarType(object):
@@ -1123,6 +1317,7 @@ def install():
     structure.RebarHostData = FakeRebarHostData
     structure.RebarStyle = FakeRebarStyle
     structure.RebarHookOrientation = FakeRebarHookOrientation
+    structure.MultiplanarOption = FakeMultiplanarOption
     structure.Rebar = FakeRebar
     structure.RebarBarType = FakeRebarBarType
     structure.RebarHookType = FakeRebarHookType
