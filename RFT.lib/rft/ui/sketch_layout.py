@@ -36,6 +36,69 @@ from collections import namedtuple
 # ``x``/``y`` are the TOP-LEFT corner in canvas pixels.
 LabelBox = namedtuple("LabelBox", "x y width height")
 
+
+class SketchTransform(object):
+    """The millimetre <-> pixel mapping a sketch is drawn through (#137).
+
+    ``_render`` used to build this as a throwaway closure, ``to_px``, and
+    discard it once the shapes were drawn. Picking a bar by its screen
+    coordinate needs the INVERSE of that same mapping, so the transform has
+    to survive the draw as a value the window can keep and reuse -- which
+    is the only reason it exists as an object here rather than staying a
+    local function in ``script.py``.
+
+    Pure geometry, no element knowledge: it fits a millimetre bounding box
+    into a pixel canvas and converts either way. ``rft.ui.column_sketch``
+    and the beam's own renderer could both use it, which is why it lives in
+    this already-shared, already-element-agnostic module rather than in a
+    column-specific one.
+
+    ``v`` IS FLIPPED. Millimetres run up (the section's local frame);
+    pixels run down (WPF's ``Canvas``). Getting the sign wrong here is
+    silent: every shape still draws, just mirrored top-to-bottom, which is
+    exactly the kind of defect a round-trip test catches and a visual
+    glance at one drawing does not.
+    """
+
+    __slots__ = ("scale", "mid_u", "mid_v", "width_px", "height_px")
+
+    def __init__(self, scale, mid_u, mid_v, width_px, height_px):
+        self.scale = scale
+        self.mid_u = mid_u
+        self.mid_v = mid_v
+        self.width_px = width_px
+        self.height_px = height_px
+
+    def to_px(self, u_mm, v_mm):
+        """A millimetre point's pixel coordinate, canvas centre outward."""
+        return (self.width_px / 2.0 + (u_mm - self.mid_u) * self.scale,
+                self.height_px / 2.0 - (v_mm - self.mid_v) * self.scale)
+
+    def to_mm(self, x_px, y_px):
+        """The exact inverse of ``to_px`` -- what a click at this pixel
+        means in the section's own millimetre frame.
+        """
+        return (self.mid_u + (x_px - self.width_px / 2.0) / self.scale,
+                self.mid_v - (y_px - self.height_px / 2.0) / self.scale)
+
+    @classmethod
+    def fit(cls, us_mm, vs_mm, width_px, height_px, margin_px=18.0):
+        """The transform that fits a millimetre bounding box, given by its
+        own ``u``/``v`` coordinates, into a pixel canvas with a margin.
+
+        Mirrors ``_render``'s own scale-fit exactly (the same span/margin/
+        midpoint arithmetic), so building the transform here changes
+        nothing about what already draws -- it only makes the mapping a
+        value instead of a closure.
+        """
+        span_u = max(max(us_mm) - min(us_mm), 1.0)
+        span_v = max(max(vs_mm) - min(vs_mm), 1.0)
+        scale = min((width_px - 2 * margin_px) / span_u,
+                    (height_px - 2 * margin_px) / span_v)
+        mid_u = (max(us_mm) + min(us_mm)) / 2.0
+        mid_v = (max(vs_mm) + min(vs_mm)) / 2.0
+        return cls(scale, mid_u, mid_v, width_px, height_px)
+
 # Average glyph width as a fraction of the font's point size, for the
 # 11 px sans-serif the sketch captions use. Deliberately generous: over-
 # estimating a label's width pulls it further inside the canvas, which is

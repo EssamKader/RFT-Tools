@@ -531,6 +531,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0" Grid.Column="0"
@@ -547,7 +548,31 @@
                         <Canvas x:Name="strip_canvas" ClipToBounds="True"/>
                     </Border>
 
-                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                    <!-- #137: sketch the tie by clicking its bars, instead
+                         of typing their numbers. Click bars in
+                         section_canvas above (wired in script.py, not
+                         here, since a string-loaded window has no code
+                         behind); this row shows what has been clicked so
+                         far and commits it. The Ties text box stays the
+                         authoritative source: this row only ever WRITES a
+                         line into it, the same line typing would have
+                         produced. -->
+                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2"
+                                Orientation="Horizontal"
+                                Margin="0,8,0,0">
+                        <TextBlock x:Name="tie_selection_caption_tb"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource SelectionPurple}"
+                                   FontWeight="Bold"
+                                   Margin="0,0,12,0" Text=""/>
+                        <Button x:Name="add_tie_btn" Content="Add tie"
+                                Padding="10,4,10,4" Margin="0,0,8,0"/>
+                        <Button x:Name="clear_selection_btn"
+                                Content="Clear selection"
+                                Padding="10,4,10,4"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Grid.ColumnSpan="2"
                                x:Name="sketch_captions_tb"
                                Margin="0,8,0,0" TextWrapping="Wrap"
                                Foreground="{StaticResource InkMuted}"

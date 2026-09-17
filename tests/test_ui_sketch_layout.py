@@ -13,6 +13,7 @@ import pytest
 from rft.ui.sketch_layout import (
     LINE_GAP_PX,
     LabelBox,
+    SketchTransform,
     clamp_into_canvas,
     estimate_text_size_px,
     place_labels,
@@ -156,3 +157,52 @@ def test_placement_is_deterministic():
 
 def test_an_empty_list_places_nothing():
     assert place_labels([], W, H) == []
+
+
+# --------------------------------------------------------------------- #
+# #137 -- the transform that survives the draw
+
+
+def test_to_px_round_trips_through_to_mm():
+    """The whole reason this exists as a value: picking needs the exact
+    inverse of the mapping the draw just used.
+    """
+    transform = SketchTransform.fit([-225.0, 225.0], [-300.0, 300.0], W, H)
+    for u_mm, v_mm in ((0.0, 0.0), (100.0, -150.0), (-225.0, 300.0)):
+        x_px, y_px = transform.to_px(u_mm, v_mm)
+        assert transform.to_mm(x_px, y_px) == pytest.approx((u_mm, v_mm))
+
+
+def test_to_mm_round_trips_through_to_px():
+    transform = SketchTransform.fit([-225.0, 225.0], [-300.0, 300.0], W, H)
+    for x_px, y_px in ((0.0, 0.0), (300.0, 40.0), (W, H)):
+        u_mm, v_mm = transform.to_mm(x_px, y_px)
+        assert transform.to_px(u_mm, v_mm) == pytest.approx((x_px, y_px))
+
+
+def test_v_is_flipped_millimetres_run_up_pixels_run_down():
+    """The defect a round trip alone would not catch: a sign error on one
+    axis still round-trips through itself, it just draws upside down.
+    """
+    transform = SketchTransform.fit([-225.0, 225.0], [-300.0, 300.0], W, H)
+    _x0, y0 = transform.to_px(0.0, 0.0)
+    _x1, y1 = transform.to_px(0.0, 100.0)
+    assert y1 < y0, (
+        "a HIGHER millimetre v must land at a LOWER pixel y (further up "
+        "the canvas), or the sketch draws mirrored top-to-bottom")
+
+
+def test_fit_matches_the_renderers_own_scale_arithmetic():
+    """Mirrors _render's span/margin/midpoint fit exactly, so building the
+    transform as a value changes nothing about what already draws.
+    """
+    us_mm = [-225.0, 0.0, 225.0]
+    vs_mm = [-300.0, 0.0, 300.0]
+    margin = 18.0
+    span_u = max(us_mm) - min(us_mm)
+    span_v = max(vs_mm) - min(vs_mm)
+    expected_scale = min((W - 2 * margin) / span_u, (H - 2 * margin) / span_v)
+    transform = SketchTransform.fit(us_mm, vs_mm, W, H)
+    assert transform.scale == pytest.approx(expected_scale)
+    assert transform.mid_u == pytest.approx(0.0)
+    assert transform.mid_v == pytest.approx(0.0)

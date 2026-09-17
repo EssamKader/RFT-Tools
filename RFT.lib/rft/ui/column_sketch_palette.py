@@ -39,6 +39,10 @@ STYLE_BRUSH_KEYS = {
     # they WILL move, and giving them the same weight as a bar that stays
     # put would overstate what the sketch knows.
     "bar_corner": "InkMuted",
+    # A bar the engineer has clicked so far, mid-tie (#137). Its own
+    # colour -- neither a section 6.1 verdict nor an applied tie -- so a
+    # pending selection is never mistaken for something already judged.
+    "bar_selected": "SelectionPurple",
     # Section 6.1 is ABOUT these. Red, because an unrestrained bar in
     # the "every bar" tier is a refusal, not a note -- and in the
     # alternate tier the caption says so rather than the colour.

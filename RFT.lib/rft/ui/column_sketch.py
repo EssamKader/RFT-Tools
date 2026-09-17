@@ -67,6 +67,7 @@ STYLE_KEYS = frozenset([
     "bar_unrestrained", # a bar no tie corner holds -- 6.1's actual subject
     "bar_main",         # a longitudinal bar
     "bar_corner",       # a corner bar, which R15 says will move
+    "bar_selected",     # a bar the engineer has clicked, mid-tie (#137)
     "dimension",        # a neutral dimension or label
     "dimension_pass",   # a section 6.1 clear distance inside a tier
     "dimension_fail",   # a clear distance no tier covers
@@ -147,6 +148,23 @@ def cross_section_shapes(b_mm, h_mm, cover_mm, tie_dia_mm, bar_dia_mm,
         u=0.0, v=0.0,
         text="cover %.0f (from element)" % cover_mm, style="caption"))
     return shapes
+
+
+def selected_bar_shapes(layout, selection, radius_mm):
+    """The highlight ring for every bar the engineer has clicked so far
+    (issue #137) -- drawn AFTER the ordinary bars, so a selection is never
+    hidden underneath one.
+
+    ``selection`` is the pending list ``rft.ui.column_sketch.
+    toggle_bar_selection`` builds; nothing here decides membership, it only
+    draws it. ``radius_mm`` is the caller's choice, same reasoning as
+    ``bar_at_point``'s ``pick_radius_mm``: this module does not guess a
+    size from the section it is given.
+    """
+    by_index = dict((bar.index, bar) for bar in layout.bars)
+    return [SketchCircle(u=by_index[index].u_mm, v=by_index[index].v_mm,
+                         r=radius_mm, style="bar_selected")
+            for index in selection if index in by_index]
 
 
 def _tie_shapes(tie, loop_style):
@@ -246,6 +264,59 @@ def zone_strip_shapes(clear_height_mm, l0_mm, ladder, strip_width_mm=120.0):
             text="middle @ %.0f" % ladder.middle_spacing_mm,
             style="dimension"))
     return shapes
+
+
+def bar_at_point(bars, u_mm, v_mm, pick_radius_mm):
+    """The index of the bar nearest ``(u_mm, v_mm)``, or ``None`` if the
+    nearest one is further away than ``pick_radius_mm`` (issue #137).
+
+    ``pick_radius_mm`` is the caller's to choose -- the drawn bar radius
+    grown enough to be clickable at a small canvas -- so this function
+    does not guess a size of its own from the section it is given.
+
+    Compared by SQUARED distance throughout, which keeps a tie decided by
+    the same comparison that decided everything else: the nearer centre
+    wins, and no square root is needed to know which one that is.
+    """
+    best_index = None
+    best_distance_sq = None
+    limit_sq = pick_radius_mm * pick_radius_mm
+    for bar in bars:
+        distance_sq = (bar.u_mm - u_mm) ** 2 + (bar.v_mm - v_mm) ** 2
+        if distance_sq > limit_sq:
+            continue
+        if best_distance_sq is None or distance_sq < best_distance_sq:
+            best_distance_sq = distance_sq
+            best_index = bar.index
+    return best_index
+
+
+def toggle_bar_selection(selection, bar_index):
+    """One bar added to or removed from a pending tie selection (#137).
+
+    Returns a NEW list; the one passed in is never mutated, which is what
+    lets the window compare an old selection to a new one without having
+    to have copied it first.
+
+    Click ORDER is kept, not sorted -- R19 makes a two-bar selection a
+    cross-tie from the first bar to the second, so which one was clicked
+    first is part of what the selection means, not an incidental detail a
+    sort would be free to discard.
+    """
+    if bar_index in selection:
+        return [index for index in selection if index != bar_index]
+    return list(selection) + [bar_index]
+
+
+def format_tie_selection(selection):
+    """The exact text one ``Add tie`` press writes into the Ties box: the
+    selected bar numbers, space-joined, in click order (#137).
+
+    The existing parser (``rft.core.column_ties``) gives this line meaning
+    -- this function's only job is producing text indistinguishable from
+    what the engineer would have typed by hand.
+    """
+    return " ".join(str(index) for index in selection)
 
 
 def all_style_keys_used(shapes):
