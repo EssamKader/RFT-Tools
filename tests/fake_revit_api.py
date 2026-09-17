@@ -33,6 +33,17 @@ VERIFIED LIVE (issue #30, Revit 2024, ``RevitAPI 24.3.40.0`` — see issue
   **4** (suppressed). The hooks-included read returns the tails R21 was
   decided on, so the flag settings ``rft.revit.column_place_ties`` uses are
   the ones that were measured.
+- ``Rebar.LookupParameter("Partition")``, ``BuiltInCategory.OST_Rebar``
+  and ``Rebar.GetTypeId()`` (issue #117) -- all three were written as
+  assumptions and have since been probed on Revit 2024 build 24.3.40.26
+  against column 422078. ``LookupParameter("Partition")`` returns a
+  writable ``String`` parameter and a ``Set`` round-trips.
+  ``OfCategory(OST_Rebar)`` collects placed rebar: 99 in the document, 4
+  hosted by 422078, matching what is actually there. ``GetTypeId()``
+  returns the ``RebarBarType``, named ``16M`` through
+  ``rft.revit.bar_types.element_name`` -- which is used instead of
+  ``.Name`` because ``ElementType.Name`` is setter-only and would raise
+  ``AttributeError`` live while passing against any fake defining it.
 
 - ``RebarHostData`` does NOT expose ``GetFaces(RebarFaceType)`` /
   ``GetCoverType(face) -> ElementId`` — that whole shape, including the
@@ -345,6 +356,7 @@ class FakeBuiltInCategory(object):
     OST_Floors = object()
     OST_StructuralFoundation = object()
     OST_Levels = object()
+    OST_Rebar = object()
 
 
 class FakeFilteredElementCollector(object):
@@ -589,6 +601,67 @@ class FakeRebar(object):
     @staticmethod
     def CreateFromCurves(*args, **kwargs):
         return FakeRebarInstance(*args, **kwargs)
+
+
+class FakeRebarPartitionParameter(object):
+    """SHAPE UNVERIFIED -- stand-in for the ``Parameter`` object
+    ``Rebar.LookupParameter("Partition")`` is assumed to return (issue
+    #117/R26). The parameter's NAME, storage type and empty default ARE
+    confirmed live; this accessor is not. Writable, unlike every other
+    parameter fake in this module -- R26 is specifically about a value
+    THIS TOOL writes, not one it only reads.
+    """
+
+    def __init__(self, value=""):
+        self._value = value
+
+    def AsString(self):
+        return self._value
+
+    def Set(self, value):
+        self._value = value
+
+
+class FakeRebarElement(object):
+    """SHAPE UNVERIFIED except where noted -- stand-in for a placed
+    ``Rebar`` element already sitting in a host, as ``column_ownership``
+    reads (and tags) one (issue #117).
+
+    ``GetHostId()`` and ``Quantity`` are VERIFIED LIVE (issue #109,
+    ``issue-109-kept-write-tracer-bullet.md``): a closed tie built against
+    a column reported ``GetHostId() == 422078`` (the host's own id) and
+    ``Quantity == 1``. ``GetTypeId()`` and reaching ``Partition`` through
+    ``LookupParameter`` are NOT independently confirmed -- see this
+    module's header.
+    """
+
+    def __init__(self, host_id, id_value, bar_type_id=None, quantity=1,
+                partition=""):
+        self.Id = FakeElementId(id_value)
+        self._host_id = host_id
+        self.Quantity = quantity
+        self._bar_type_id = bar_type_id
+        self._partition = FakeRebarPartitionParameter(partition)
+        self._category = FakeBuiltInCategory.OST_Rebar
+
+    def GetHostId(self):
+        return self._host_id
+
+    def GetTypeId(self):
+        return self._bar_type_id
+
+    def LookupParameter(self, name):
+        if name == PARTITION_PARAMETER_NAME_FOR_FAKE:
+            return self._partition
+        return None
+
+
+#: Kept as a module-level constant, deliberately NOT imported from
+#: ``rft.revit.column_ownership`` -- this fake must recognise the parameter
+#: name the way the real Revit API would (by the literal string "Partition"
+#: the ticket confirmed live), not by sharing the adapter's own constant.
+#: Sharing it would let a typo in BOTH places cancel out and still pass.
+PARTITION_PARAMETER_NAME_FOR_FAKE = "Partition"
 
 
 class FakeRebarBarType(object):
