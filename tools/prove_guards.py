@@ -98,6 +98,11 @@ TCR = "tests/test_column_roof.py::"
 COL_BATCH_ADAPTER = "RFT.lib/rft/revit/column_batch.py"
 TCB = "tests/test_column_batch.py::"
 TCBW = "tests/test_column_batch_window.py::"
+# ---- #167: the top-floor slab adapter (R37-R39, R41, R42) -------------
+COL_ROOF_RUN = "RFT.lib/rft/core/column_roof_run.py"
+TCRR = "tests/test_column_roof_run.py::"
+COL_ROOF_SLAB = "RFT.lib/rft/revit/column_roof_slab.py"
+TCRS = "tests/test_column_roof_slab.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -1604,6 +1609,58 @@ CASES = [
      TCR + "test_a_leg_shorter_than_the_tangent_is_refused",
      "R40 -- a leg shorter than the bend's own tangent allowed through, so "
      "a narrow free edge asks Revit to build a corner that cannot exist"),
+
+    # ---- #167: the top-floor slab adapter ----------------------------
+
+    (COL_ROOF_RUN,
+     '        if nearest is None or crossing < nearest:',
+     '        if True:',
+     TCRR + "test_every_loop_is_considered_not_only_the_first",
+     "R42 -- the LAST crossing found wins instead of the NEAREST one, so "
+     "an opening listed after the outer boundary is silently ignored"),
+
+    (COL_ROOF_SLAB,
+     '        if not isinstance(element, DB.Floor):',
+     '        if False:',
+     TCRS + "test_something_that_is_not_a_Floor_does_not_count",
+     "R37 -- any joined element (a wall, a beam) accepted as the top-floor "
+     "slab, so its thickness/cover would be read off the wrong element"),
+
+    (COL_ROOF_SLAB,
+     '        if box.Min.Z <= column_top_z <= box.Max.Z:',
+     '        if True:',
+     TCRS + "test_a_joined_floor_BELOW_the_column_does_not_count",
+     "R37/R39 -- the floor a column stands ON accepted as the slab above "
+     "it, so a + b would be measured against the wrong Floor entirely"),
+
+    (COL_ROOF_SLAB,
+     '        len(candidates) == 1,',
+     '        len(candidates) >= 1,',
+     TCRS + "test_two_candidate_floors_is_a_REFUSAL_not_a_pick",
+     "an ambiguous top-floor slab silently resolved to whichever Floor "
+     "was joined first, rather than refusing"),
+
+    (COL_ROOF_SLAB,
+     '    if read_mm != 0.0:',
+     '    if True:',
+     TCRS + "test_a_zero_cover_opens_the_typed_field",
+     "R38 -- a cover reading exactly zero (nobody set one) reported as a "
+     "REAL read, so the typed field the engineer needs never opens"),
+
+    (COL_ROOF_SLAB,
+     '    return crossing_mm - cover_mm',
+     '    return crossing_mm',
+     TCRS + "test_a_non_zero_slab_cover_is_SUBTRACTED_from_the_measured_run",
+     "R42 -- the slab's own cover no longer subtracted from the measured "
+     "run, so a real cover's coincidental match with #170's zero-cover "
+     "host is silently inherited on every other slab"),
+
+    (COL_ROOF_SLAB,
+     '        if name in flagged:',
+     '        if False:',
+     TCRS + "test_a_flagged_free_edge_uses_the_free_edge_cap_not_the_measured_run",
+     "R41 -- an engineer-flagged free edge ignored in favour of the "
+     "measured boundary run, so a genuinely absent slab is still trusted"),
 
 ]
 
