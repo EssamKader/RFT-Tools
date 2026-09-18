@@ -59,7 +59,8 @@ HOST_ID_VALUE = 422078
 _Extent = namedtuple("_Extent", "base_z_mm top_z_mm")
 _Splice = namedtuple("_Splice", "length_mm")
 _Plan = namedtuple(
-    "_Plan", "ties ladder layout extent splice counts host findings")
+    "_Plan",
+    "ties ladder layout extent splice counts host findings roof_termination")
 
 
 def mm(value):
@@ -105,6 +106,7 @@ def _plan(ties=None, levels=(50.0, 150.0), findings=()):
         counts=counts,
         host={"hand": (1.0, 0.0, 0.0), "facing": (0.0, 1.0, 0.0)},
         findings=findings,
+        roof_termination=None,
     )
 
 

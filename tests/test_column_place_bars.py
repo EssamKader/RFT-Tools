@@ -32,6 +32,8 @@ from fake_revit_api import (
 
 from rft.core.column_inputs import PerimeterBars
 from rft.core.column_layout import perimeter_bar_positions
+from rft.core.column_plan import RoofTerminationPlan
+from rft.core.column_roof import RoofBendDirection, RoofTermination
 import rft.revit.column_place_bars as place_bars_module
 from rft.revit.column_place_bars import place_bars
 
@@ -48,13 +50,13 @@ COUNT_B, COUNT_H = 3, 4
 
 _Extent = namedtuple("_Extent", "base_z_mm top_z_mm")
 _Splice = namedtuple("_Splice", "length_mm")
-_Plan = namedtuple("_Plan", "host extent splice layout counts")
+_Plan = namedtuple("_Plan", "host extent splice layout counts roof_termination")
 
 HOST_ID_VALUE = 422078
 
 
 def _plan(count_b=COUNT_B, count_h=COUNT_H, base_z_mm=3000.0, top_z_mm=6000.0,
-         splice_mm=600.0):
+         splice_mm=600.0, roof_termination=None):
     layout = perimeter_bar_positions(B, H, COVER, TIE, BAR, count_b, count_h)
     counts = PerimeterBars(count_b_face=count_b, count_h_face=count_h,
                           total_count=len(layout.bars),
@@ -64,7 +66,29 @@ def _plan(count_b=COUNT_B, count_h=COUNT_H, base_z_mm=3000.0, top_z_mm=6000.0,
                 extent=_Extent(base_z_mm=base_z_mm, top_z_mm=top_z_mm),
                 splice=_Splice(length_mm=splice_mm),
                 layout=layout,
-                counts=counts)
+                counts=counts,
+                roof_termination=roof_termination)
+
+
+def _roof_termination_plan(direction="+Hand", a_mm=175.0, b_mm=805.0):
+    """A stand-in `RoofTerminationPlan` (#172), matching
+    `tests/test_column_plan.py`'s own -- only the fields this module reads
+    (`termination.a_mm`/`b_mm`/`direction`) are given values that matter
+    here; the rest exist only because the real namedtuple requires them."""
+    termination = RoofTermination(
+        direction=direction, a_mm=a_mm, b_mm=b_mm, ld_mm=a_mm + b_mm,
+        achieved_mm=a_mm + b_mm, shortfall_mm=0.0, free_edge=False,
+        bend_loss_mm=0.0, run_limited=False)
+    directions = (
+        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
+    )
+    return RoofTerminationPlan(
+        termination=termination, directions=directions,
+        floor_label="Floor 424637", thickness_mm=300.0, cover_mm=25.0,
+        cover_provenance="read")
 
 
 def _host():
@@ -452,3 +476,99 @@ def test_no_transaction_verb_appears_in_this_module():
     for verb in ("Transaction(", ".Commit(", ".RollBack(", ".Start()"):
         assert verb not in source, \
             "R25: the caller owns the transaction, not this module"
+
+
+# --------------------------------------------------------------------- #
+# #173 -- a plan carrying a top-floor termination builds TWO curves
+
+
+def test_an_ORDINARY_column_is_still_ONE_curve_byte_for_byte():
+    """No `roof_termination`: every bar must be exactly what it was before
+    #173 -- one straight `Line`, base to top plus the splice protrusion.
+    This is the regression #173's ticket demands be ASSERTED, not assumed.
+    """
+    _reset_pending_managers()
+    host = _host()
+    plan = _plan(base_z_mm=3000.0, top_z_mm=6000.0, splice_mm=600.0)
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+    for bar in bars:
+        curves = bar.args[7]
+        assert len(curves) == 1
+        p0, p1 = curves[0].GetEndPoint(0), curves[0].GetEndPoint(1)
+        assert p0.Z == pytest.approx(mm(3000.0))
+        assert p1.Z == pytest.approx(mm(6600.0))
+
+
+def test_a_roof_terminated_bar_is_built_from_TWO_curves():
+    _reset_pending_managers()
+    host = _host()
+    plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
+                roof_termination=_roof_termination_plan(
+                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+    for bar in bars:
+        assert len(bar.args[7]) == 2
+
+
+def test_the_vertical_leg_runs_from_base_to_the_bend_at_top_plus_a():
+    """Section 1: the bend sits at the host's own top `z` plus `a_mm` --
+    never the splice protrusion, which does not apply at the roof."""
+    _reset_pending_managers()
+    host = _host()
+    plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
+                splice_mm=600.0,
+                roof_termination=_roof_termination_plan(
+                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+    vertical = bars[0].args[7][0]
+    p0, p_bend = vertical.GetEndPoint(0), vertical.GetEndPoint(1)
+    assert p0.Z == pytest.approx(mm(3000.0))
+    assert p_bend.Z == pytest.approx(mm(6175.0))
+    # The bend does not move the bar in plan -- only the horizontal leg
+    # (the second curve) does that.
+    assert p_bend.X == pytest.approx(p0.X)
+    assert p_bend.Y == pytest.approx(p0.Y)
+
+
+def test_the_horizontal_leg_runs_b_mm_along_the_stated_direction():
+    _reset_pending_managers()
+    host = _host()
+    plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
+                roof_termination=_roof_termination_plan(
+                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+    horizontal = bars[0].args[7][1]
+    p_bend, p_end = horizontal.GetEndPoint(0), horizontal.GetEndPoint(1)
+    hand = plan.host["hand"]
+    assert p_end.X == pytest.approx(p_bend.X + mm(805.0) * hand[0])
+    assert p_end.Y == pytest.approx(p_bend.Y + mm(805.0) * hand[1])
+    # `+Hand` bends in-plane; the bend does not lift or drop the bar.
+    assert p_end.Z == pytest.approx(p_bend.Z)
+
+
+def test_a_MINUS_facing_bend_moves_the_opposite_way_from_facing():
+    _reset_pending_managers()
+    host = _host()
+    plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
+                roof_termination=_roof_termination_plan(
+                    direction="-Facing", a_mm=175.0, b_mm=400.0))
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+    horizontal = bars[0].args[7][1]
+    p_bend, p_end = horizontal.GetEndPoint(0), horizontal.GetEndPoint(1)
+    facing = plan.host["facing"]
+    assert p_end.X == pytest.approx(p_bend.X - mm(400.0) * facing[0])
+    assert p_end.Y == pytest.approx(p_bend.Y - mm(400.0) * facing[1])
+
+
+def test_an_unknown_bend_direction_is_refused_not_guessed():
+    _reset_pending_managers()
+    host = _host()
+    bad = _roof_termination_plan(direction="+Up", a_mm=175.0, b_mm=400.0)
+    plan = _plan(count_b=2, count_h=2, roof_termination=bad)
+    with pytest.raises(ValueError):
+        place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
