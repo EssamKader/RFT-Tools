@@ -38,7 +38,12 @@ label states a fact instead of an aspiration. The bar diameter itself is no long
 comes from the selected type via ``rft.revit.bar_types.bar_type_diameter_mm``.
 """
 
-from .guards import GuardMessage, SEVERITY_BLOCKING
+# #99: NOT `from .guards`. That module owns the beam's section 9
+# policy and imports `anchorage` to build it, so importing the
+# generic contract through it put `rft.core.anchorage` into the
+# import graph of every column module that touches grades -- which
+# the column spec section 10 forbids outright.
+from .guard_message import GuardMessage, SEVERITY_BLOCKING
 
 GRADE_MILD = "mild St 24/35 (fy 240 MPa, plain round)"
 GRADE_HIGH_TENSILE = "high tensile St 36/52 (fy 360 MPa, deformed)"

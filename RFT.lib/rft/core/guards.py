@@ -19,39 +19,13 @@ from collections import namedtuple
 
 from .anchorage import free_end_configuration_warning
 from .stirrups import TYPE3_PARKED_MESSAGE
-
-# Whether a guard STOPS the run or merely deserves the engineer's
-# attention (issue #45, U1).
-#
-# Until now severity was implicit -- it lived in whether the CALL SITE
-# happened to follow the message with ``script.exit()``. That worked for
-# as long as one could read the call sites, and stopped working the moment
-# the three pushbuttons were replaced by one window: the exits went away
-# and nothing carried the distinction, so a refusal and a warning became
-# indistinguishable to any code that received one.
-#
-# These are declared, per construction site, with NO DEFAULT VALUE. A
-# default is exactly wrong here: it would silently label whatever the
-# migration missed, and the whole point is that the label is a statement
-# someone made rather than one that fell out of a field ordering. There
-# are thirteen sites; each says which it is. Omitting it is a TypeError.
-SEVERITY_BLOCKING = "blocking"
-SEVERITY_WARNING = "warning"
-
-GuardMessage = namedtuple(
-    "GuardMessage", ["condition", "spec_section", "message", "severity"])
-
-
-def is_blocking(guard_message):
-    """True when this guard STOPS the run.
-
-    A function rather than a comparison spelled out at every call site, so
-    that the set of blocking severities can grow (an "unverified" tier has
-    already been discussed for A45's unreadable hook angle) without
-    hunting down every ``== SEVERITY_BLOCKING`` in the codebase.
-    """
-    return guard_message.severity == SEVERITY_BLOCKING
-
+# #99: the generic contract now lives in a module that imports NOTHING,
+# so a tool can take it without taking this module's beam policy -- and
+# with it `anchorage`, which the column spec forbids outright. Re-exported
+# here, unchanged, so every existing beam import keeps working.
+from .guard_message import (            # noqa: F401  (re-export)
+    GuardMessage, SEVERITY_BLOCKING, SEVERITY_WARNING, is_blocking,
+)
 
 CONTINUOUS_RUN_SPEC_SECTION = "rev 2 section 9 item 2 (A39)"
 FREE_END_SPEC_SECTION = "rev 2 section 2.5 (A14)"

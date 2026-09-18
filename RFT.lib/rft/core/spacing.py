@@ -24,7 +24,10 @@ residual question R1, non-blocking) and is untouched here.
 import math
 from collections import namedtuple
 
-from .guards import GuardMessage, SEVERITY_BLOCKING
+# #99: the dependency-free contract, not `guards` -- see
+# `docs/column/reuse-audit.md` section 3, which names THIS chain
+# (spacing -> guards -> anchorage) as the reason for the split.
+from .guard_message import GuardMessage, SEVERITY_BLOCKING
 
 SPACING_SPEC_SECTION = "rev 2 section 6.2-6.4 (A21, A27, A28, A29, A43, A44)"
 
