@@ -11,7 +11,9 @@ was released on a reported test of `v0.3.0-rc4` that had in fact been run
 against `v0.3.0-rc3`, because the deployed worktree was never moved.
 **`v0.2.1` remains the last release confirmed on a live host.**
 
-**`v0.3.1-rc3` is the CANDIDATE to test.** It carries everything the
+**`column/v0.1.0` is the COLUMN tool's first release**, confirmed on a live host on 2026-09-18. The column and beam tools version separately; what follows concerns the beam.
+
+**`v0.3.1-rc3` is the beam's CANDIDATE to test.** It carries everything the
 earlier `v0.3.1` candidates did and adds #65:
 
 - **#64** (from rc1) -- the library moved to `RFT.lib`, so a second
@@ -25,6 +27,94 @@ earlier `v0.3.1` candidates did and adds #65:
 Neither rc1 nor rc2 was confirmed on a host, so test this one instead of
 either. **Check the window title reads `v0.3.1-rc3` first**; if it does
 not, nothing else you observe is about this candidate.
+
+## [column/v0.1.0] - 2026-09-18
+
+**The first release of the Column RFT detailing tool, and the first
+confirmed on a live host.** Revit 2024 build 24.3.40.26, document
+`ColumnRFT.Trail`, reported working by the project owner.
+
+Tag: `column/v0.1.0`. The column tool versions independently of the beam
+tool; `v0.3.1-rc3` remains the beam's own line and is untouched by this.
+
+### Read this before loading anything
+
+The build tested immediately before this release reported **`v0.1.0-rc4`**
+in its window title while running more than twenty commits past that tag,
+because `ColumnRFT.extension/VERSION` had never been bumped. That is the
+identical failure this changelog already records for `v0.3.0` -- a release
+cut on a test of a build that was not the build it claimed to be.
+
+Two rules follow, and they are the reason this section is first:
+
+1. **Check the window title before you trust anything you see.** It must
+   read `v0.1.0`. If it does not, nothing you observe is about this
+   release.
+2. **Move the deployed worktree, then RESTART Revit.** A pyRevit reload is
+   not enough: the persistent engine caches `rft.core`, so a reload leaves
+   the old library running behind the new window. The deployed copy was
+   found 23 commits behind during this cycle; it is a real failure mode,
+   not a theoretical one.
+
+### What the tool does
+
+Details one rectangular concrete column, or every column of a type in one
+transaction:
+
+- **Longitudinal bars** -- perimeter layout with the four corners counted
+  once, splice length applied as stated and never derived.
+- **Ties** -- section 7's two hook types, section 6.2's closed loops,
+  cross-ties and triangular ties, section 8's spacing in auto or manual
+  mode with the code limit shown beside what will actually be built.
+- **Top-floor termination** -- a column with no storey above bends its
+  bars into the slab instead of lapping into one that is not there.
+- **Batch placement** -- group by type, exclude what is out of scope,
+  place in a single transaction, with the replacement table in the report
+  rather than in a dialog that vanishes.
+- **A report** that states where every number came from, and **a sketch**
+  that draws what will be built.
+
+### What the top-floor feature rests on
+
+Every rule below was measured on a live host before it was written, and
+each has its transcript in `docs/column/verification/`:
+
+- **R37/R38** -- the slab is read from the model: thickness from the floor
+  type, cover from the floor's own cover, and the report says which of the
+  two it was. A typed cover is offered ONLY when the floor's cover reads
+  zero.
+- **R40** -- Revit fillets the corner, so the achieved development length
+  is the BUILT centreline, never the nominal legs.
+- **R41/R42** -- the available run is MEASURED from the column's own face
+  to the slab boundary, per direction, along the column's own axes and
+  never world X/Y. A flagged free edge and a measured short run are
+  reported as different facts.
+- **R44** -- a run bends out of its own face, never sideways along it,
+  and #183 then built that configuration on a host: every bar in an
+  arrayed bent set carried its bend, at exact spacing, while the
+  configuration R44 forbids still raised.
+- **R45** -- a bent bar has five handles, not four, and only one per axis
+  may be pinned.
+- **R46** -- the bend radius is the CENTRELINE radius,
+  `(StandardBendDiameter + BarNominalDiameter) / 2`, measured across four
+  bar types. Half the standard bend diameter -- the obvious reading -- is
+  13.7% low on 13M, in the direction of claiming more development than was
+  built.
+
+### Known open, and deliberately not fixed in this release
+
+- **#92** -- longitudinal bars snap to tie bends, and section 6.3's hook
+  alternation makes the result asymmetric. R22's host-face pinning was
+  written for this and its effect has not been re-measured since.
+- **#102** -- section 7's wall-to-roof figure has no identified source
+  document.
+- **#67** -- the column wayfinder, which closes when the two above do.
+
+Nothing here is a silent wrong number: each is a stated gap with a ticket.
+
+### Verification counts at the tag
+
+1608 tests, 222 mutation-proven guards.
 
 ## [v0.3.1-rc3] — 2026-09-10
 
