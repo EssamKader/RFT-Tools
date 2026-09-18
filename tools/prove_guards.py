@@ -1785,7 +1785,7 @@ CASES = [
 
     (COL_PLACE_BARS,
      '        if axis in pinned_axes:',
-     '        if False:',
+     '        if _R45_CANARY_NEVER_DEFINED:',
      TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
      "R45 -- the bent bar's fifth handle pinned after all, setting "
      "the horizontal leg's far end to cover distance from the near "
