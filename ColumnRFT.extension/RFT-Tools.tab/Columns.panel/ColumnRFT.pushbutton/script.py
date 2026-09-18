@@ -93,7 +93,8 @@ from rft.revit.bar_types import (
 )
 from rft.revit.column_host import ColumnHostError, read_column
 from rft.revit.column_roof_slab import (
-    BEND_DIRECTION_NAMES, ColumnRoofSlabError, read_top_floor_slab,
+    BEND_DIRECTION_NAMES, ColumnRoofSlabError, pick_free_edge_faces,
+    read_top_floor_slab,
 )
 from rft.revit import column_batch, column_placer
 from rft.revit.units import internal_to_mm
@@ -297,6 +298,7 @@ class RoofWindow(forms.WPFWindow):
         # loaded from a STRING, which has no code behind, so WPF cannot
         # resolve a handler name and throws at parse time.
         self.read_slab_btn.Click += self.on_read_slab_click
+        self.pick_free_edges_btn.Click += self.on_pick_free_edges_click
         self.use_btn.Click += self.on_use_click
         self.cancel_btn.Click += self.on_cancel_click
         for name, _direction in FREE_EDGE_CHECKBOXES:
@@ -361,6 +363,51 @@ class RoofWindow(forms.WPFWindow):
             "face stops using the MEASURED run beyond it and uses the "
             "room inside the column instead, so its number changes."
             .format(", ".join(flagged) if flagged else "none"))
+
+    def on_pick_free_edges_click(self, sender, args):
+        """Section 3, by pointing at the faces instead of naming axes.
+
+        The window asks its question in the tool's own frame -- "+Hand" --
+        which is not visible in any view, so answering it by checkbox
+        means translating first, and a translation done in someone's head
+        is a translation that can be wrong silently. Picking removes the
+        step: the engineer points at the concrete, the tool names it.
+
+        The ticks stay, and stay authoritative: picking SETS them, so
+        there is one source of truth and a face can still be flagged by
+        hand when it cannot be clicked (hidden, or behind a joined slab).
+        """
+        if self.owner.column is None:
+            self.roof_status_tb.Text = "Pick a column in the main window first."
+            return
+        self.roof_status_tb.Text = (
+            "Pick the faces where the slab stops, then Finish -- waiting "
+            "for Revit...")
+        revit.events.execute_in_revit_context(self._pick_free_edges_in_context)
+
+    def _pick_free_edges_in_context(self):
+        """PickObjects cannot start inside an open transaction (#103), and
+        this dispatcher swallows exceptions -- so everything is caught."""
+        try:
+            picked = pick_free_edge_faces(revit.uidoc, self.owner.column)
+        except Exception as failure:
+            self.roof_status_tb.Text = (
+                "The faces could not be picked: {}: {}".format(
+                    type(failure).__name__, failure))
+            return
+        if picked is None:
+            # Escape. NOT the same as picking nothing: the engineer did
+            # not answer, so the previous answer stands.
+            self.roof_status_tb.Text = (
+                "Cancelled -- the free edges are unchanged.")
+            return
+        for box_name, direction in FREE_EDGE_CHECKBOXES:
+            getattr(self, box_name).IsChecked = direction in picked
+        # Setting the boxes raises Checked/Unchecked, which already
+        # invalidates the read and says so.
+        self.roof_status_tb.Text = (
+            "Free edges set by picking: {}. Read the slab again."
+            .format(", ".join(picked) if picked else "none"))
 
     def on_read_slab_click(self, sender, args):
         if self.owner.column is None:
