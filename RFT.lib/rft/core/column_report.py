@@ -262,6 +262,44 @@ def outstanding_section():
     ])
 
 
+def batch_group_section(groups):
+    """Issue #153 / R33: name every group and its clear height, and which
+    columns fell in it.
+
+    R33's ruling is that a split TYPE is placed, not refused -- "the report
+    carries the burden instead" (spec-amendments.md). This is the sentence
+    that carries it: a reviewer must see that one selection produced more
+    than one cage by READING this, not by noticing a tie count in a 3D view.
+    """
+    lines = []
+    if not groups:
+        lines.append(
+            "No group was formed -- every candidate column was excluded "
+            "(see 'Excluded columns' below).")
+    for index, group in enumerate(groups, start=1):
+        support = ("a top support was found" if group.key.top_support_found
+                   else "no top support was found (level elevation used)")
+        lines.append(
+            "Group %d -- clear height %s, %s -- column(s): %s"
+            % (index, _mm(group.key.clear_height_mm), support,
+               ", ".join(str(element_id)
+                        for element_id in group.element_ids)))
+    return ReportSection("Batch groups", lines)
+
+
+def batch_exclusion_section(exclusions):
+    """Issue #153 / spec Section 5: every column excluded before the
+    transaction opened, named, with the reason -- whether `read_column`
+    refused it or `refuse_if_not_ready`'s later gate did.
+    """
+    if not exclusions:
+        lines = ["No columns were excluded from this batch."]
+    else:
+        lines = ["Column %s -- %s" % (exclusion.element_id, exclusion.reason)
+                 for exclusion in exclusions]
+    return ReportSection("Excluded columns", lines)
+
+
 def build_report(data, bars, splice, splice_line, bar_type_name,
                  bar_diameter_mm, plan, ladder, findings=(), tie_lines=()):
     """The whole page, in order.

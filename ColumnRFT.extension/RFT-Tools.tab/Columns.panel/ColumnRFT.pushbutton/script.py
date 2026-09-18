@@ -78,13 +78,15 @@ from rft.core.column_layout import tier_summary
 from rft.core.column_plan import (
     MODE_AUTO, MODE_MANUAL, bar_plan, complete_plan, is_blocked,
 )
-from rft.core.column_report import build_report, render
+from rft.core.column_report import (
+    batch_exclusion_section, batch_group_section, build_report, render,
+)
 from rft.revit.bar_types import (
     bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
     hook_angle_deg, hook_type_options, list_stirrup_hook_types,
 )
 from rft.revit.column_host import ColumnHostError, read_column
-from rft.revit import column_placer
+from rft.revit import column_batch, column_placer
 from rft.revit.units import internal_to_mm
 from rft.ui.column_sketch import (
     bar_at_point, cross_section_captions, cross_section_shapes,
@@ -238,6 +240,7 @@ class ColumnWindow(forms.WPFWindow):
         self.mode_b_rb.Checked += self.on_spacing_mode_changed
         self.build_report_btn.Click += self.on_build_report_click
         self.apply_place_btn.Click += self.on_apply_click
+        self.apply_batch_btn.Click += self.on_apply_batch_click
         # The sketch redraws when the canvas is first sized, which is
         # after the window is laid out -- a canvas has no ActualWidth
         # before that, and scaling to zero draws nothing.
@@ -329,6 +332,7 @@ class ColumnWindow(forms.WPFWindow):
         self._section_transform = None
         self.review_status_tb.Text = "Apply the bar and tie inputs first."
         self.place_status_tb.Text = "Apply the bar and tie inputs first."
+        self.batch_status_tb.Text = "Apply the bar and tie inputs first."
         self._clear_canvases()
 
     # ---------------------------------------------------------- dispatch
@@ -826,6 +830,112 @@ class ColumnWindow(forms.WPFWindow):
                 len(result.foreign),
                 ", ".join(str(f.element_id) for f in result.foreign))
         self.place_status_tb.Text = message
+
+    # ------------------------------------------------------------ batch
+    def on_apply_batch_click(self, sender, args):
+        """WPF click handler for issue #153's batch path
+        (specs/column-batch-placement.md). No Revit work itself, same as
+        Pick (#57) and single-column Apply (#120)."""
+        if self.column is None or self.plan is None:
+            self.batch_status_tb.Text = (
+                "Pick a column and Apply both the Longitudinal and Ties "
+                "tabs first.")
+            return
+
+        main_bar_type = self._selected_bar_type_object(self.main_bar_type_cb)
+        tie_bar_type = self._selected_bar_type_object(self.tie_bar_type_cb)
+        outer_hook_type = self._selected_hook_type_object(self.outer_hook_cb)
+        inner_hook_type = self._selected_hook_type_object(self.inner_hook_cb)
+        missing = [label for label, value in (
+            ("a main bar type", main_bar_type),
+            ("a tie bar type", tie_bar_type),
+            ("an outer hook type", outer_hook_type),
+            ("an inner hook type", inner_hook_type)) if value is None]
+        if missing:
+            self.batch_status_tb.Text = (
+                "Select %s before Apply." % " and ".join(missing))
+            return
+
+        try:
+            inputs = self._batch_inputs()
+        except ValueError as ex:
+            self.batch_status_tb.Text = str(ex)
+            return
+
+        self._dispatch_to_revit_context(
+            lambda: self._apply_batch_in_context(
+                inputs, main_bar_type, tie_bar_type, outer_hook_type,
+                inner_hook_type),
+            "Apply batch")
+
+    def _batch_inputs(self):
+        """Spec Section 1's shared inputs, read the SAME way
+        `on_apply_ties_click` reads them for the picked column -- so the
+        picked column's own plan and the batch's shared inputs can never
+        state two different things about what the engineer typed.
+        """
+        mode = MODE_MANUAL if self.mode_b_rb.IsChecked else MODE_AUTO
+        manual_confinement = manual_middle = None
+        if mode == MODE_MANUAL:
+            manual_confinement = parse_positive_float(
+                self.manual_confinement_tb.Text, "Confinement spacing")
+            manual_middle = parse_positive_float(
+                self.manual_middle_tb.Text, "Middle-zone spacing")
+        return column_batch.BatchInputs(
+            counts=self.longitudinal,
+            splice=self.splice,
+            bar_diameter_mm=self.bars.bar_diameter_mm,
+            tie_diameter_mm=self.bars.tie_diameter_mm,
+            bar_type_name=self.bars.bar_type_name,
+            tie_type_name=self.bars.tie_type_name,
+            mode=mode,
+            tie_bend_diameter_mm=self._selected_tie_bend_diameter_mm(),
+            tie_subsets_text=self.tie_subsets_tb.Text,
+            manual_confinement_mm=manual_confinement,
+            manual_middle_zone_mm=manual_middle)
+
+    def _apply_batch_in_context(self, inputs, bar_type, tie_bar_type,
+                                outer_hook_type, inner_hook_type):
+        """Spec Sections 2-5: collect, read/group, plan and refuse every
+        column of the picked type, then place every survivor inside ONE
+        transaction (R25 extended). The report is built and shown WHETHER
+        OR NOT the transaction succeeds -- R33 exists precisely so the
+        engineer can see the groups and the exclusions, and a failure must
+        not hide that.
+        """
+        doc = revit.doc
+        host_element = self.column
+
+        batch_plan = column_batch.plan_candidates(doc, host_element, inputs)
+        report = render([
+            batch_group_section(batch_plan.groups),
+            batch_exclusion_section(batch_plan.exclusions),
+        ])
+        self.report_tb.Text = report
+
+        try:
+            result = column_batch.apply_batch(
+                doc, batch_plan, bar_type, tie_bar_type, outer_hook_type,
+                inner_hook_type)
+        except column_placer.ColumnPlacementError as ex:
+            self.batch_status_tb.Text = str(ex)
+            forms.alert(str(ex), title="Batch refused")
+            return
+        except Exception as ex:
+            # R25 extended: the shared transaction has already rolled
+            # back, so the model is unchanged -- only the diagnosis
+            # differs.
+            message = "Batch apply FAILED and was rolled back -- {}: {}".format(
+                type(ex).__name__, ex)
+            self.batch_status_tb.Text = message
+            forms.alert(message, title="Batch apply failed -- rolled back")
+            return
+
+        self.batch_status_tb.Text = (
+            "Placed {} column(s) in {} group(s). {} excluded -- see the "
+            "report.".format(
+                len(result.per_column), len(batch_plan.groups),
+                len(batch_plan.exclusions)))
 
     # --------------------------------------------------------- sketch
     def on_canvas_size_changed(self, sender, args):
