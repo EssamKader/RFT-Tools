@@ -1071,6 +1071,11 @@ class FakeBuiltInParameter(object):
     FAMILY_TOP_LEVEL_PARAM = object()
     FAMILY_BASE_LEVEL_OFFSET_PARAM = object()
     FAMILY_TOP_LEVEL_OFFSET_PARAM = object()
+    # #167: the top-floor slab's thickness. #161 measured this VALUE
+    # (300.0 mm), not that a Floor answers it through the same
+    # get_Parameter/AsDouble path a FamilyInstance does -- see
+    # rft.revit.column_roof_slab's SHAPE UNVERIFIED note.
+    FLOOR_ATTR_THICKNESS_PARAM = object()
 
 
 class FakeOptions(object):
@@ -1460,7 +1465,9 @@ class FakeColumn(object):
     def __init__(self, document=None, symbol=None, solid=None,
                  base_z_internal=0.0, top_z_internal=3000.0 / 304.8,
                  mirrored=False, hand_flipped=False, facing_flipped=False,
-                 parameters=None, element_id=421967, bounding_box=True):
+                 parameters=None, element_id=421967, bounding_box=True,
+                 hand=None, facing=None, location_xy=(0.0, 0.0),
+                 joined_ids=None):
         self.Document = document
         self.Symbol = symbol if symbol is not None else FakeFamilySymbol(
             "450 x 600mm",
@@ -1469,16 +1476,20 @@ class FakeColumn(object):
         self.Mirrored = mirrored
         self.HandFlipped = hand_flipped
         self.FacingFlipped = facing_flipped
-        self.HandOrientation = FakeXYZ(1.0, 0.0, 0.0)
-        self.FacingOrientation = FakeXYZ(0.0, 1.0, 0.0)
+        self.HandOrientation = hand if hand is not None else FakeXYZ(1.0, 0.0, 0.0)
+        self.FacingOrientation = facing if facing is not None else FakeXYZ(0.0, 1.0, 0.0)
         # Z = 0 on purpose. See FakeColumnLocation.
-        self.Location = FakeColumnLocation(FakeXYZ(0.0, 0.0, 0.0))
+        self.Location = FakeColumnLocation(
+            FakeXYZ(location_xy[0], location_xy[1], 0.0))
         self._solid = solid
         self._box = FakeBoundingBox(
             FakeXYZ(-0.75, -0.75, base_z_internal),
             FakeXYZ(0.75, 0.75, top_z_internal)) if bounding_box else None
         self._parameters = dict(parameters or {})
         self._category = FakeBuiltInCategory.OST_StructuralColumns
+        #: #167 -- what ``FakeJoinGeometryUtils.GetJoinedElements`` hands
+        #: back for this column. Not a real member; the fake's own hook.
+        self._joined_ids = list(joined_ids or [])
 
     def get_BoundingBox(self, _view):
         return self._box
@@ -1488,6 +1499,102 @@ class FakeColumn(object):
 
     def get_Parameter(self, built_in):
         return self._parameters.get(built_in)
+
+
+class FakeCurveLoop(object):
+    """Stand-in for ``CurveLoop``. **SHAPE UNVERIFIED** (#167) -- iterating
+    it is assumed to yield ``Curve``s the way the real ``IEnumerable<Curve>``
+    does; never reflected or enumerated live in this repo. See
+    ``rft.revit.column_roof_slab``'s header."""
+
+    def __init__(self, curves):
+        self._curves = list(curves)
+
+    def __iter__(self):
+        return iter(self._curves)
+
+
+class FakeTopFace(FakePlanarFace):
+    """The floor's upward ``PlanarFace``.
+
+    MEASURED, not assumed: R42's probe walked the floor's own geometry,
+    picked the ``PlanarFace`` whose ``FaceNormal.Z`` is ~1, and printed
+    ``Origin.Z`` as 3000.0 mm with an area of 20.30 m2 -- so
+    ``FaceNormal``, ``Origin`` and ``GetEdgesAsCurveLoops`` all answered on
+    a real Floor. (``HostObjectUtils.GetTopFaces`` was never run and is not
+    modelled here.)
+    """
+
+    def __init__(self, curve_loops, normal=None, origin_z_internal=0.0):
+        # A PlanarFace subclass, because the adapter picks the top face with
+        # `isinstance(face, DB.PlanarFace)` -- the same test R42's probe made
+        # against the live geometry.
+        FakePlanarFace.__init__(
+            self, normal if normal is not None else FakeXYZ(0.0, 0.0, 1.0))
+        self._curve_loops = list(curve_loops)
+        self.Origin = FakeXYZ(0.0, 0.0, origin_z_internal)
+
+    def GetEdgesAsCurveLoops(self):
+        return self._curve_loops
+
+
+class FakeFloor(object):
+    """A structural `Floor`, as #167's adapter reads one -- #161's Floor
+    424637, 300 mm thick, spanning 2700..3000 mm under column 424596.
+
+    **SHAPE UNVERIFIED** past the VALUES #161/#170 measured: that a `Floor`
+    answers `get_Parameter`/`get_BoundingBox`/`GetGeometryObjectFromReference`
+    the same way a `FamilyInstance` does was never independently reflected.
+    See ``rft.revit.column_roof_slab``'s header.
+    """
+
+    def __init__(self, document=None, min_z_internal=0.0, max_z_internal=0.0,
+                 parameters=None, element_id=424637, top_face=None,
+                 extra_faces=()):
+        self.Document = document
+        self.Id = FakeElementId(element_id)
+        self._box = FakeBoundingBox(
+            FakeXYZ(-10.0, -10.0, min_z_internal),
+            FakeXYZ(10.0, 10.0, max_z_internal))
+        self._parameters = dict(parameters or {})
+        self._top_face = top_face
+        faces = list(extra_faces) + ([top_face] if top_face else [])
+        self._solid = FakeSolid(faces, volume=1.0)
+
+    def get_BoundingBox(self, _view):
+        return self._box
+
+    def get_Parameter(self, built_in):
+        return self._parameters.get(built_in)
+
+    def get_Geometry(self, _options):
+        """The route R42's probe actually used: walk the element's own
+        geometry and pick the upward PlanarFace. ``largest_solid`` already
+        does the walk for columns and is generic."""
+        return [self._solid]
+
+
+class FakeJoinGeometryUtils(object):
+    """`JoinGeometryUtils.GetJoinedElements`. **SHAPE UNVERIFIED signature**
+    -- #161 measured the OUTPUT (Floor 424637), not the exact call that
+    produced it. Driven per-test through a column's own ``_joined_ids``,
+    the fake's own hook -- see ``FakeColumn``.
+    """
+
+    @staticmethod
+    def GetJoinedElements(_document, element):
+        return list(getattr(element, "_joined_ids", []))
+
+
+class FakeHostObjectUtils(object):
+    """`HostObjectUtils.GetTopFaces`. **SHAPE UNVERIFIED** (#167) -- named
+    in neither #161 nor #170's transcript; assumed as the documented,
+    idiomatic route to a host object's top face. See
+    ``rft.revit.column_roof_slab``'s header."""
+
+    @staticmethod
+    def GetTopFaces(floor):
+        return list(getattr(floor, "_references", []))
 
 
 class FakeDocument(object):
@@ -1575,6 +1682,12 @@ def install():
     db.FamilySymbol = FakeFamilySymbol
     db.Family = FakeFamily
     structure.RebarCoverType = FakeRebarCoverType
+
+    # #167: the top-floor slab adapter
+    db.Floor = FakeFloor
+    db.JoinGeometryUtils = FakeJoinGeometryUtils
+    db.HostObjectUtils = FakeHostObjectUtils
+    db.CurveLoop = FakeCurveLoop
 
     generic = types.ModuleType("System.Collections.Generic")
     collections_pkg = types.ModuleType("System.Collections")
