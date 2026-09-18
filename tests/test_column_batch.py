@@ -506,10 +506,15 @@ def test_apply_batch_refuses_before_opening_when_a_candidate_plan_is_blocked(
         if plan is bad.plan:
             raise ColumnPlacementError("blocked (test)")
 
-    monkeypatch.setattr(column_batch_module, "refuse_if_not_ready",
-                        fake_refuse)
     batch = BatchPlan(groups=[], exclusions=[], candidates=[good, bad])
     doc = FakeDocument({})
+    # Read what exists FIRST, so the only thing left that can refuse this
+    # run is the re-check itself -- R23's "was this ever counted?" guard
+    # would otherwise raise the same ColumnPlacementError and this test
+    # would pass with the re-check deleted.
+    read_existing(doc, batch)
+    monkeypatch.setattr(column_batch_module, "refuse_if_not_ready",
+                        fake_refuse)
 
     with pytest.raises(ColumnPlacementError):
         apply_batch(doc, batch, object(), object(), object(), object())
