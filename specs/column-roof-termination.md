@@ -1,11 +1,14 @@
 # Column RFT — Roof-Level Termination Addendum
 
-> **Status: rules LOCKED, citations OPEN — DO NOT IMPLEMENT.**
-> §7 has no numbered source for §1 or §2. The repo-wide rule in
-> [`CONTEXT.md`](../CONTEXT.md) — *"every rule in code cites its numbered spec
-> section; a gap is a decision ticket, never a silent guess"* — blocks
-> implementation until those citations exist. This file is committed **now** so
-> the rules stop living in a chat log, not because they are ready to build.
+> **Status: rules LOCKED, citation NAMED — edition pending (#102).**
+> §1 and §2 now cite the **ECP Detailing Code for Concrete Structures**,
+> Figure 3-14, named by the owner. What is still unconfirmed is the
+> **edition/year**, and whether that book is the same publication as the
+> *Egyptian Detailing Guide (2001)* cited for Figure 13-3 in the main spec.
+> The rules therefore have the named numbered source
+> [`CONTEXT.md`](../CONTEXT.md)'s rule 1 demands, and the edition does not
+> change `a + b = L_D`. **§5's tracer bullet (#103) is now the live
+> blocker on implementation, not the citation.**
 
 **A roof column is not a new element — it is a *condition* an ordinary column
 can be in.** It has the same section, the same cage, the same confinement, and
@@ -149,22 +152,46 @@ termination.
 > (confirming how reliably columns of the same nominal type can be identified
 > and grouped) before design starts.
 
-## 7. Citations — OPEN, blocking implementation
+## 7. Citations — NAMED, edition pending (#102)
 
-- **§1's base bend geometry (`a + b = L_D`)** — sourced from the original manual
-  sketch. **No numbered code clause identified yet.**
-- **§2's per-face rule** — derived in conversation from the sketch plus a
-  wall-to-roof connection figure the user provided, titled (Arabic)
-  *"شكل رقم (٣-١٤) — نموذج تفاصيل اتصال حائط منتهى بالسقف"* (roughly: *"Figure
-  3-14 — model of wall-to-roof connection details"*). **The source document for
-  this figure is not yet identified.** Its numbering ("3-14") does not match the
-  "13-3" / "13-4" numbering already cited elsewhere in the main spec, so it may
-  be a different chapter or a different document entirely. Confirm the document
-  name before citing it, and add the citation here once known.
+**Source: ECP Detailing Code for Concrete Structures, Figure 3-14** — Arabic
+title *"شكل رقم (٣-١٤) — نموذج تفاصيل اتصال حائط منتهى بالسقف"*, roughly
+*"Figure 3-14 — model of wall-to-roof connection details"*. Named by the owner
+(#102).
 
-**Per the project's standing rule, do not implement this addendum's rules until
-at least §1 and §2 have a real numbered source** — the same discipline already
-applied to every rule in the main spec.
+- **§1's base bend geometry (`a + b = L_D`)** — that figure, plus the owner's
+  original manual sketch which agrees with it.
+- **§2's per-face rule** — derived from the same figure: whether slab continues
+  beyond the column is what selects full `L_D` against the reduced
+  `a_E + b_E`.
+
+### The numbering objection that blocked this, and why it is answered
+
+This section was OPEN because **"3-14" does not match the "13-3" / "13-4"**
+numbering cited in the main spec, and a wrong provenance is worse than no
+provenance — a bad citation stops anyone looking again. The answer is that they
+are different chapters of a *detailing* code: 13-3 is a **column** figure,
+3-14 is a **wall-to-roof connection** figure. Not a mismatch.
+
+### What remains open, deliberately recorded rather than assumed
+
+**The edition/year**, and whether the *Detailing Code for Concrete Structures*
+is the same publication as the *Egyptian Detailing Guide (2001)* cited for
+Figure 13-3. They very likely are. **That is not written here as fact**, and no
+year is stated anywhere in this file, because a citation is precisely the kind
+of line nobody re-checks once it looks complete.
+
+This does not block implementation: `a + b = L_D` is the same geometry in any
+edition. **#103's tracer bullet is the live blocker** — §5 requires
+`PickObjects` proven against a real host before §3's input is built, and as of
+writing only the face-correlation half has been run (see
+`docs/column/verification/issue-103-face-references.md`).
+
+The main spec's own §12 note applies here too: no more granular clause number
+than the figure is claimed.
+
+If the figure is added to the repo it belongs in `technical-material/column/`;
+**this** document is what cites it.
 
 If the wall-detail figure referenced above is added to the repo, that image
 belongs in `technical-material/column/`; **this** document is what cites it.
