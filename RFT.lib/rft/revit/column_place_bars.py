@@ -70,30 +70,33 @@ once"). ``_face_run_slices`` re-slices that existing list by the counts
 ``column_layout`` or recompute a position -- CONTEXT.md's "read ColumnPlan
 once" rule.
 
+## SHAPE MEASURED (#183)
+
+**The one configuration R44 leaves open is now built and read back on a
+live host** -- `docs/column/verification/issue-183-bent-across.md`, Revit
+2024 build 24.3.40.26. ``normal`` plays two roles (#131: the set arrays
+ALONG it; #173 part 1: the bend needs it PERPENDICULAR to the bend plane)
+and until #183 each had only ever been proven by its own separate
+experiment. Measured, with ``normal = Hand`` and the bend toward
+``+Facing``:
+
+- **every bar in the set carries the bend** -- 3 curves each (Line 653.7,
+  Arc 72.8, Line 353.7), asked per bar via
+  ``GetCenterlineCurves(..., barPositionIndex=i)``, because a flattened
+  repeat is invisible from the set as a whole and a straight bar that
+  looks placed is the worst outcome available here;
+- **the array is exact** -- 0.0 / 150.0 / 300.0 mm along the step axis,
+  so the second curve does not disturb ``SetLayoutAsNumberWithSpacing``;
+- the control bending ALONG the step axis still **raised**, so the rig is
+  sound and R44 is confirmed from a second direction;
+- the same holds with the axes exchanged, so it is a property of the
+  geometry and not of Hand.
+
+**Both demands are satisfied by the one argument this module already
+passes.** No placer change was needed, exactly as R44 argued.
+
 ## SHAPE UNVERIFIED
 
-- **(#173, R44) An ARRAYED bent set has never been built in the ONLY
-  configuration R44 leaves open.** ``normal`` plays two roles and each is
-  proven -- separately. #131 proved the set arrays ALONG ``normal``, and
-  shipped overlapping steel when that argument was wrong for a STRAIGHT
-  set, which is why this module still passes the run's own step
-  ``direction`` as ``normal``. #173 part 1 proved a bend renders only when
-  ``normal`` is PERPENDICULAR to the bend plane: parallel and vertical
-  both raised "An internal error has occurred". #173 part 3 then arrayed a
-  set stepping along Hand and bending along Hand -- the SAME-axis case --
-  and it **raised**. That failure is what R44 records, and #180 acts on
-  it: every run now bends ACROSS its own step axis. **That is the
-  combination no live host has ever built.** One bar has done it (#161:
-  ``normal = Facing``, bend in the Z/Hand plane) and an arrayed set has
-  done it in no configuration at all, so "array axis" and "bend-plane
-  normal" are still two separately-passing tests of one argument.
-  **Prerequisite live probe -- no longer one case among several, but the
-  only path this module can now take**: build a bent, multi-bar SET whose
-  step axis differs from its bend direction, then read back
-  ``GetCenterlineCurves`` (did the bend render on EVERY bar, or only the
-  seed?) and each bar's own position (did
-  ``SetLayoutAsNumberWithSpacing`` still land them at the requested
-  pitch?).
 - **(#173) ``_pin_to_host_faces`` is unproven for a bent bar's extra
   handle(s).** It was written, and mutation-proven, against a straight
   bar's handles, all of which sit at the SAME ``(u_mm, v_mm)`` for the

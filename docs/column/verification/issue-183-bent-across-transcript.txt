@@ -1,0 +1,52 @@
+#183 -- an ARRAYED bent set bending ACROSS its own step axis
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+
+column: id 424596  450 x 600mm
+bar type: 13M
+hand:   (1.0000, 0.0000, 0.0000)
+facing: (0.0000, 1.0000, 0.0000)
+
+==================================================================
+PART A -- the ONLY configuration R44 allows
+
+Step axis Hand (so `normal` = Hand, what #131 requires), bend
+toward +Facing (perpendicular, what #173 part 1 requires). Both
+demands satisfied by one argument -- in theory. Never built.
+
+  normal = Hand, bend = +Facing   (ACROSS the step axis)
+      arrayed 3 bars at 150 mm along the normal
+      bars in the set: 3  (asked for 3)
+      bar 0: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 0.0 mm
+      bar 1: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 150.0 mm   gap from previous: 150.0 mm
+      bar 2: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 300.0 mm   gap from previous: 150.0 mm
+
+      >>> EVERY bar carries the bend.
+      transaction ROLLED BACK -- nothing was kept.
+
+==================================================================
+PART B -- the control R44 forbids
+
+The same set bending along +Hand, which #173 part 3 measured
+raising. If A works and B raises, the rig is sound. If BOTH
+raise, the finding is about this probe, not about Revit.
+
+  normal = Hand, bend = +Hand     (ALONG the step axis)
+      RAISED Exception: An internal error has occurred.
+      transaction ROLLED BACK -- nothing was kept.
+
+==================================================================
+PART C -- the other axis, so the answer is not about Hand
+
+  normal = Facing, bend = +Hand   (ACROSS the step axis)
+      arrayed 3 bars at 150 mm along the normal
+      bars in the set: 3  (asked for 3)
+      bar 0: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 0.0 mm
+      bar 1: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 150.0 mm   gap from previous: 150.0 mm
+      bar 2: 3 curves [Line 653.7, Arc 72.8, Line 353.7]   along step axis: 300.0 mm   gap from previous: 150.0 mm
+
+      >>> EVERY bar carries the bend.
+      transaction ROLLED BACK -- nothing was kept.
+
+
+Nothing survives this probe. Send the text above back.

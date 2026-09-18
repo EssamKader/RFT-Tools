@@ -1412,6 +1412,23 @@ that axis and perpendicular to it. Impossible, and it is why part 3 failed.
 bars' step axis** — out of its own face, or back into the column. R41 is
 unchanged in substance: it still takes whichever of the two has the most room.
 
+### CONFIRMED ON THE HOST (#183, 2026-09-18)
+
+The paragraph below was an **argument**, not a measurement: it reasoned
+that the array axis and the bend-plane normal become the same vector, so
+one argument satisfies both. #183 built it.
+
+With `normal = Hand` and the bend toward `+Facing`, a three-bar set
+arrayed at 150 mm gave **three curves on every bar** (Line 653.7, Arc
+72.8, Line 353.7 — identical to #173 part 1's single bar) at **0.0 /
+150.0 / 300.0 mm** along the step axis. The control bending along `+Hand`
+still raised *"An internal error has occurred."*, so the rig was capable
+and the refusal is Revit's. Exchanging the axes gave the same result, so
+it is a property of the geometry rather than of Hand.
+
+Write-up and transcript:
+`docs/column/verification/issue-183-bent-across.md`.
+
 ### Why this costs nothing
 
 With the bend `b` perpendicular to the step axis `d`, the bend plane is
