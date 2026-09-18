@@ -1096,3 +1096,55 @@ built.
 for. A roof column with no roof above it is a modelling problem, and falling
 back to typed values would turn it into a detailing number nobody re-checks.
 Recorded here as a default rather than as part of the ruling.
+
+
+---
+
+## R38 — a slab with NO cover set: the engineer types it, and only then
+
+**Decided by the owner**, on #161's measurement: the roof slab over column
+424596 answers every cover parameter — `CLEAR_COVER_TOP`,
+`CLEAR_COVER_BOTTOM`, `CLEAR_COVER_OTHER` — with **0.0 mm**.
+
+### Why zero is the dangerous answer
+
+Not because it fails. **Because it succeeds.** The parameter is present and
+readable, so a check asking “did I get a number?” is satisfied, and §1 then
+computes
+
+    a = thickness - cover = 300 - 0 = 300 mm
+
+which lays the bar's horizontal leg **on the top surface of the slab** —
+outside the concrete, nothing over it. A cage that looks placed and is
+exposed. Zero is not a cover; on a `Generic 300mm` floor it means nobody set
+one.
+
+### The rule
+
+- **The model wins whenever it has something to say.** A slab with a real
+  cover is READ, exactly as R37 and A2 require, and the engineer cannot
+  override it.
+- **Only when the slab's cover reads zero** does a typed field open. This is
+  the narrow exception, not a general input.
+- **An empty field is a refusal, never a default.** The tool has no cover of
+  its own to fall back on, and inventing one would be the very substitution
+  A2 exists to prevent.
+- **The report must say which it was**, naming the slab: read from Floor
+  424637, or typed because Floor 424637 has none set. A reviewer has to be
+  able to tell a measured cover from a stated one **by reading the report**,
+  which is the same standard §4 sets for a flagged free edge.
+
+### The alternative that was rejected, and why it is worth recording
+
+Falling back to the **column's own** cover was considered. It needs no
+modelling work and places something plausible — which is precisely the
+objection: it is a typed-equivalent number wearing a read one's clothes, and
+it is silently wrong wherever the slab genuinely differs from the column. A
+typed field at least appears in the report as a typed field.
+
+### Where this leaves A2
+
+A2 — *cover is READ, never typed* — assumed the model has something to read.
+R38 does not weaken it: it names the one case where that assumption fails,
+and keeps the exception visible in the report rather than letting a zero
+pass as a measurement.

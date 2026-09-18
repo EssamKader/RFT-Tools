@@ -43,6 +43,9 @@ slab instead. This addendum defines that termination.
 > bending.
 > **R37**: the slab's **thickness and cover are READ** from the element the
 > upward support search locates; if it finds no slab, the tool refuses.
+> **R38**: a slab whose cover reads **zero** has none set — measured on a live
+> host (#161) — and only then may the engineer type one. An empty field is a
+> refusal, and the report names which of the two it was.
 
 The longitudinal bar's development length `L_D` is split into two legs:
 
