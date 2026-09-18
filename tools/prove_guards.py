@@ -1785,12 +1785,14 @@ CASES = [
 
     (COL_PLACE_BARS,
      '        if axis in pinned_axes:',
-     '        if _R45_CANARY_NEVER_DEFINED:',
+     '        if axis not in pinned_axes:',
      TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
-     "R45 -- the bent bar's fifth handle pinned after all, setting "
-     "the horizontal leg's far end to cover distance from the near "
-     "face using the VERTICAL leg's own coordinate, which collapses "
-     "the leg and destroys b"),
+     "R45 -- the skip INVERTED, so the first handle on an axis is passed "
+     "over and the REPEAT is pinned: the bent bar's far end takes the pin "
+     "meant for its vertical leg, collapsing the horizontal leg and "
+     "destroying b. An `if False:` mutation was tried first and PASSED in "
+     "CI while failing locally on identical content -- an inversion "
+     "cannot be read two ways"),
 
     (COL_PLACE_BARS,
      '        pinned_axes.add(axis)',
