@@ -1,0 +1,25 @@
+R42 -- how far does the slab extend, per bend direction?
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+
+column: id 424596  450 x 600mm
+hand:   (1.0000, 0.0000, 0.0000)
+facing: (0.0000, 1.0000, 0.0000)
+search view: {3D}
+
+floor: id 424637  found by JoinGeometryUtils
+top face at z 3000.0 mm, area 20.30 m2
+boundary loops: 1
+
+run from the column FACE to the slab boundary:
+
+  +Hand    boundary:    127.5 mm            ray: 127.5 mm
+  -Hand    boundary:   2922.5 mm            ray: 2922.5 mm
+  +Facing  boundary:   5059.7 mm            ray: 5059.7 mm
+  -Facing  boundary:    140.3 mm            ray: 140.3 mm
+
+The two columns are independent mechanisms. Where they
+agree, R42 can be built on either; where they disagree,
+that disagreement is the finding.
+
+Nothing was modified. Send the text above back.
