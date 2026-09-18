@@ -109,8 +109,14 @@ def test_the_bend_leg_never_falls_below_the_minimum():
 
 def test_an_LD_below_the_minimum_bend_leg_is_refused():
     """The beam tool shipped this once (#14 finding 3): the cap goes
-    negative and the straight segment reverses direction."""
-    with pytest.raises(ValueError):
+    negative and the straight segment reverses direction.
+
+    The MESSAGE is asserted, not just the exception. Without the L_D check
+    a negative `a` falls through to R40's own tangent refusal, which raises
+    the same ValueError for a different reason -- so a bare `raises` would
+    pass with this guard deleted.
+    """
+    with pytest.raises(ValueError, match="below the 200"):
         terminate_bar(150.0, SLAB_THICKNESS_MM, SLAB_COVER_MM, [_slab()],
                       BEND_RADIUS_MM)
 

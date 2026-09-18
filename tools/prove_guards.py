@@ -1498,7 +1498,7 @@ CASES = [
     # ---- #160: the roof termination math (sections 1-2, R35)
 
     (COL_ROOF,
-     '    a = min(a_formula_mm, ld_mm - MIN_BEND_LEG_MM)',
+     '    a = min(a_formula_mm, nominal - MIN_BEND_LEG_MM)',
      '    a = a_formula_mm',
      TCR + "test_the_bend_leg_never_falls_below_the_minimum",
      "section 2.3's cap on a removed, so a thick slab and a short L_D "
