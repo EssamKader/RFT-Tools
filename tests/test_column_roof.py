@@ -192,9 +192,12 @@ def test_this_module_does_NOT_import_anchorage():
     lib_root = os.path.dirname(os.path.dirname(os.path.abspath(rft.__file__)))
     environment = dict(os.environ)
     environment["PYTHONPATH"] = lib_root
+    # The module KEY is 'rft.core.anchorage', not 'anchorage' -- checking
+    # the bare name is a guard that can never fire, which is how this one
+    # was first written and what its own mutation case caught.
     program = (
         "import sys; import rft.core.column_roof; "
-        "print('anchorage' in sys.modules)")
+        "print(any('anchorage' in name for name in sys.modules))")
     output = subprocess.check_output([sys.executable, "-c", program],
                                      env=environment)
     assert output.decode().strip() == "False", (
