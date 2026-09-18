@@ -160,6 +160,35 @@ constants and `is_blocking` into their own dependency-free module
 The beam tool re-exports for compatibility; the column tool imports the new
 module and never touches `guards`.
 
+### RESOLVED (#99, 2026-09-18)
+
+`rft.core.guard_message` now holds `GuardMessage`, the two severity
+constants and `is_blocking`, and **imports nothing**. `guards.py`
+re-exports all four unchanged, so no beam call site moved; `grades.py`
+and `spacing.py` take them from the new module.
+
+**This section under-counted the damage.** It named `spacing.py` as the
+second module on the chain, and did not check `grades.py` — which had the
+identical defect and was already shipping in column code, giving
+
+```
+rft.core.column_inputs -> grades -> guards -> anchorage
+```
+
+That is #99, and it went unnoticed because the guard written to catch it
+read one file's import statements with the AST. A first-hop check cannot
+see a three-hop chain. The replacement,
+`tests/test_column_non_reuse.py`, checks the **resolved** graph in a
+fresh interpreter, for every `rft.core.column_*` module found by walking
+the package rather than from a list.
+
+Measured after the fix: `anchorage` is in **no** column module's import
+graph. Nothing had ever been miscalculated by the coupling — no anchorage
+function was evaluated — which is the point: the rule exists to remove it
+before something comes to rely on it.
+
+---
+
 ---
 
 ## 4. `core/grades.py` — mechanism yes, the hook guard emphatically no

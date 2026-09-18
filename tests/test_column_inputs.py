@@ -224,5 +224,15 @@ def test_nothing_here_consults_anchorage():
     """Section 10: this tool does NOT call rft.core.anchorage. Ls is
     applied blindly, so an import of the beam's anchorage logic would be
     the tool quietly starting to compute what the spec says it must not.
+
+    **This checks the FIRST HOP only, and that is now deliberate.** The
+    version of this test that checked only the first hop was the whole of
+    #99: `column_inputs.py` has never mentioned anchorage, and imported it
+    anyway through `grades -> guards`. The resolved-graph check that can
+    actually see that lives in `tests/test_column_non_reuse.py` and covers
+    every column module. This one stays because a DIRECT import is worth
+    failing on by name, with this file's own reason attached.
     """
     assert "anchorage" not in _imported_modules("rft.core.column_inputs")
+    assert "rft.core.anchorage" not in _imported_modules(
+        "rft.core.column_inputs")
