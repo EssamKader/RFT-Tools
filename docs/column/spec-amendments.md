@@ -1439,3 +1439,55 @@ carries one termination for the whole column and must become one per run.
 is, and whether pinning it is right, is not answered by this probe: the
 candidate query raised inside the probe's own reporting. **That is the last
 unknown between here and placed steel.**
+
+
+---
+
+## R45 — the bent bar's FIFTH handle is never pinned
+
+**Measured, then ruled**, on #173's second probe run (transcript:
+`docs/column/verification/issue-173-bent-array-transcript.txt`).
+
+### What the handles actually offer
+
+| handle | straight bar | bent bar |
+|---|---|---|
+| 0 | ±Hand — governs `u` | ±Hand — identical |
+| 1 | ±Facing — governs `v` | ±Facing — identical |
+| 2 | ±Z | ±Z |
+| 3 | ±Z | ±Z |
+| **4** | — | **±Facing** — the horizontal leg's FAR END |
+
+Both bars were born exactly where they were asked for, `(u, v) =
+(150.0, 200.0)`, so nothing about the bend disturbs creation. **The first
+four handles of a bent bar are indistinguishable from a straight bar's**,
+which is why R22's pinning transfers unchanged.
+
+### The defect this prevents
+
+`_pin_to_host_faces` pins EVERY handle whose candidate face is the near face
+on the axis it governs, using the SEED's own `(u, v)`. Handle 4 offers the
+same axis the horizontal leg runs along — so it would be pinned to cover
+distance from the near face, **using a coordinate that belongs to the
+vertical leg hundreds of millimetres away**.
+
+The horizontal leg would be dragged back onto the bar's own line and `b`
+would be destroyed — in a cage that still looked placed. That is the same
+failure mode as #92's 12 mm drift, one axis further along.
+
+### The rule
+
+**At most one handle per horizontal axis, the first offered.** A straight
+bar is unaffected: its `u` and `v` handles are different axes and both are
+still pinned, while its two vertical handles offer no horizontal face and
+were already left alone. A bent bar's fifth handle repeats an axis, and is
+skipped.
+
+### Why “the first” rather than “the nearest”
+
+Revit returns handles in an order it does not document, and the API offers no
+position for a handle — only its candidates. “First” is therefore what can
+actually be implemented, and it is correct because the vertical leg's handles
+come first on every bar measured. **Recorded as a stated default**: if a
+future Revit orders them differently, this is the line that breaks, and it
+will break loudly because the bent bar's leg will move.

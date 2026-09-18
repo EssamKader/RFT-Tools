@@ -35,7 +35,7 @@ from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_plan import RoofTerminationPlan
 from rft.core.column_roof import RoofBendDirection, RoofTermination
 import rft.revit.column_place_bars as place_bars_module
-from rft.revit.column_place_bars import place_bars
+from rft.revit.column_place_bars import _pin_to_host_faces, place_bars
 
 FT = 304.8
 
@@ -243,6 +243,80 @@ def test_the_face_offset_is_signed_NEGATIVE():
 
     assert candidate.distance_to_target_host_face == pytest.approx(-mm(OFFSET_MM))
     assert manager.preferred[handle] is candidate
+
+
+# --------------------------------------------------------------------- #
+# R45 -- the bent bar's FIFTH handle is never pinned
+
+
+_Seed = namedtuple("_Seed", "u_mm v_mm")
+
+
+class _BarWith(object):
+    """The one thing `_pin_to_host_faces` asks of a bar."""
+
+    def __init__(self, manager):
+        self._manager = manager
+
+    def GetRebarConstraintsManager(self):
+        return self._manager
+
+
+def test_a_SECOND_handle_on_the_same_axis_is_left_alone():
+    """R45, measured in #173's probe: a straight bar has 4 handles, a bent
+    bar has 5, and the extra one is the horizontal leg's FAR END offering
+    the same axis the leg runs along.
+
+    Pinning it would set that far end to cover distance from the near
+    face using the SEED's coordinate -- which belongs to the vertical leg
+    hundreds of millimetres away -- collapsing the leg back onto the bar's
+    own line and destroying `b`, in a cage that still looked placed.
+
+    This calls `_pin_to_host_faces` DIRECTLY. Routing it through
+    `place_bars` made the proof depend on which run consumed the armed
+    manager and where its seed sat: the guard caught its mutation on one
+    machine and missed it in CI, on the same commit. The rule lives in
+    this function, so the guard tests this function.
+    """
+    host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
+    vertical_leg = FakeRebarHandle("vertical leg")
+    far_end = FakeRebarHandle("horizontal leg far end")
+    leg = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="leg")
+    end = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="end")
+    manager = FakeRebarConstraintsManager(
+        handles=[vertical_leg, far_end],
+        candidates={vertical_leg: [leg], far_end: [end]})
+
+    _pin_to_host_faces(
+        _BarWith(manager), host_id, _Seed(u_mm=150.0, v_mm=-200.0),
+        (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), mm(OFFSET_MM))
+
+    assert manager.preferred[vertical_leg] is leg
+    assert far_end not in manager.preferred
+    # Never touched at all, not merely unpreferred.
+    assert end.distance_to_target_host_face is None
+
+
+def test_both_horizontal_axes_are_still_pinned():
+    """R45 skips a REPEAT of an axis, never a different one -- or R22's
+    correction is halved."""
+    host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
+    u_handle = FakeRebarHandle("u")
+    v_handle = FakeRebarHandle("v")
+    u_candidate = _host_face_candidate((1.0, 0.0, 0.0), host_id, label="u")
+    v_candidate = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="v")
+    manager = FakeRebarConstraintsManager(
+        handles=[u_handle, v_handle],
+        candidates={u_handle: [u_candidate], v_handle: [v_candidate]})
+
+    _pin_to_host_faces(
+        _BarWith(manager), host_id, _Seed(u_mm=150.0, v_mm=-200.0),
+        (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), mm(OFFSET_MM))
+
+    assert manager.preferred[u_handle] is u_candidate
+    assert manager.preferred[v_handle] is v_candidate
+    assert u_candidate.distance_to_target_host_face == pytest.approx(
+        -mm(OFFSET_MM))
 
 
 # --------------------------------------------------------------------- #

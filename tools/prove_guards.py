@@ -140,8 +140,13 @@ CASES = [
      TPB + "test_removing_the_preferred_constraint_call_would_leave_it_unset",
      "R22 -- the right constraint chosen and never applied"),
 
-    (COL_PLACE_BARS, '            return candidate\n    return None',
-     '            match = candidate\n    return match',
+    (COL_PLACE_BARS,
+     '            return candidate, _axis_of_normal(\n'
+     '                (normal.X, normal.Y, normal.Z), hand, facing)\n'
+     '    return None, None',
+     '            match = (candidate, _axis_of_normal(\n'
+     '                (normal.X, normal.Y, normal.Z), hand, facing))\n'
+     '    return match',
      TPB + "test_the_FIRST_matching_candidate_is_taken_not_the_last",
      "R22 -- first-match reverted to last-match-wins, picking by an "
      "ordering Revit does not document (47-49 candidates per handle "
@@ -1776,6 +1781,26 @@ CASES = [
      "toward the face with the LEAST room -- the defect R41 exists to "
      "prevent, reintroduced in the placer"),
 
+    # ---- R45: the bent bar's fifth handle
+
+    (COL_PLACE_BARS,
+     '        if axis in pinned_axes:',
+     '        if axis not in pinned_axes:',
+     TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
+     "R45 -- the skip INVERTED, so the first handle on an axis is passed "
+     "over and the REPEAT is pinned: the bent bar's far end takes the pin "
+     "meant for its vertical leg, collapsing the horizontal leg and "
+     "destroying b. An `if False:` mutation was tried first and PASSED in "
+     "CI while failing locally on identical content -- an inversion "
+     "cannot be read two ways"),
+
+    (COL_PLACE_BARS,
+     '        pinned_axes.add(axis)',
+     '        pinned_axes.add(None)',
+     TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
+     "R45's bookkeeping recording nothing, so the skip never fires "
+     "and every repeated axis is pinned again"),
+
 ]
 
 
@@ -1834,11 +1859,13 @@ def main():
             #
             # ``run`` drains the pipes, and the timeout turns any future
             # hang into a reported failure instead of a stopped tool.
-            rc = subprocess.run(
+            finished = subprocess.run(
                 ["python", "-m", "pytest", node, "-q"],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 timeout=300,
-            ).returncode
+            )
+            rc = finished.returncode
+            child_output = finished.stdout.decode("utf-8", "replace")
         finally:
             _git("checkout", "--", path)
             restored = io.open(path, encoding="utf-8").read()
@@ -1848,7 +1875,22 @@ def main():
                 sys.exit(3)
         if rc == 0:
             missed.append(label)
-        print("%-56s %s" % (label, "caught" if rc else "*** MISSED ***"))
+            # A bare MISSED says a guard did not fire and nothing about
+            # WHY. That cost a whole afternoon once: a case passed in CI
+            # and failed locally on identical content, and the child's
+            # own output -- which this tool was throwing away -- was the
+            # only thing that could have told the difference. It is
+            # printed for a miss, and only for a miss.
+            print("%-56s *** MISSED ***" % label)
+            print("    the mutated file still passed its test. The child "
+                  "said:")
+            for line in child_output.strip().splitlines()[-12:]:
+                print("      %s" % line)
+            print("    mutation applied was:")
+            for line in replace.splitlines()[:4]:
+                print("      %s" % line)
+        else:
+            print("%-56s caught" % label)
 
     print("")
     print("guards proven: %d of %d" % (len(CASES) - len(missed), len(CASES)))

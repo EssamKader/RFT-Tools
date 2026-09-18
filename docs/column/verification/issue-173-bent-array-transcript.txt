@@ -23,24 +23,48 @@ free to stay the array axis R131 requires. That is the answer
   normal = Z       (vertical)                RAISED Exception: An internal error has occurred.
 
 ==================================================================
-PART 2 -- handles: a BENT bar against a STRAIGHT one
+PART 2 -- does a BENT bar PIN like a straight one?
 
-R22 pins every handle to the host's own faces. That code was
-written for a straight bar whose handles share one (u, v).
+R22 is the tool's whole correctness argument for bar position:
+never trust the coordinate handed to CreateFromCurves, pin every
+handle to the host's own face afterwards. #92 measured a straight
+4-bar set landing 12 mm off before that pinning went in.
+
+The FIRST version of this probe asked for candidates with a method
+name I invented, and every row came back '?'. This one calls what
+the SHIPPED placer calls: GetConstraintCandidatesForHandle.
 
   --- STRAIGHT ---
+      asked for (u, v) = (150.0, 200.0)
+      born at   (u, v) = (150.0, 200.0)
       handles: 4
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
+        handle 0: 8 candidates, 2 to THIS host, 4 ToCover
+           face normals: (-1, 0, 0), (1, 0, 0)
+        handle 1: 8 candidates, 2 to THIS host, 4 ToCover
+           face normals: (0, -1, 0), (0, 1, 0)
+        handle 2: 7 candidates, 2 to THIS host, 3 ToCover
+           face normals: (0, 0, -1), (0, 0, 1)
+        handle 3: 7 candidates, 2 to THIS host, 3 ToCover
+           face normals: (0, 0, -1), (0, 0, 1)
   --- BENT ---
+      asked for (u, v) = (150.0, 200.0)
+      born at   (u, v) = (150.0, 200.0)
       handles: 5
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
-        ?                            candidates ? (ToCover ?)
+        handle 0: 8 candidates, 2 to THIS host, 4 ToCover
+           face normals: (-1, 0, 0), (1, 0, 0)
+        handle 1: 8 candidates, 2 to THIS host, 4 ToCover
+           face normals: (0, -1, 0), (0, 1, 0)
+        handle 2: 7 candidates, 2 to THIS host, 3 ToCover
+           face normals: (0, 0, -1), (0, 0, 1)
+        handle 3: 7 candidates, 2 to THIS host, 3 ToCover
+           face normals: (0, 0, -1), (0, 0, 1)
+        handle 4: 8 candidates, 2 to THIS host, 4 ToCover
+           face normals: (0, -1, 0), (0, 1, 0)
+
+  What matters: whether the BENT bar offers the same host-face
+  candidates on its first four handles as the straight one, and
+  what the FIFTH handle -- the horizontal leg's far end -- offers.
+  A fifth handle pinned to the wrong face would drag the bar.
 
 ==================================================================
 PART 3 -- an ARRAYED bent set, bend ALONG the step axis
