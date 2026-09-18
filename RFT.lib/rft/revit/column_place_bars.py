@@ -2,6 +2,19 @@
 """Issue #119 -- R22: a longitudinal bar is pinned to a host FACE, and is
 never handed a coordinate and trusted to stay there.
 
+Issue #173 extends this to the top-floor case: a bar whose plan carries a
+``rft.core.column_plan.RoofTerminationPlan`` is built from TWO curves --
+the vertical leg up to the bend, then the horizontal leg bent into the
+slab -- instead of one. Everything about WHERE the bend happens and how
+long each leg is comes from ``rft.core.column_roof.RoofTermination``,
+already decided by the plan (section 4's own object, per
+``docs/token-efficient-expansion.md`` section 7): this module reads
+``termination.a_mm``/``b_mm``/``direction`` and places them, and decides
+nothing about the split itself. R40's fillet allowance is already folded
+into those two lengths -- "the plan's legs are already the NOMINAL ones
+with the allowance in them" -- so this module does not add or subtract it
+again.
+
 Creates the longitudinal bars of a ``rft.core.column_plan.ColumnPlan`` in a
 host column. Builds elements only -- **opens, commits and rolls back no
 transaction** (R25); the caller owns it.
@@ -47,6 +60,41 @@ once" rule.
 
 ## SHAPE UNVERIFIED
 
+- **(#173) A bent bar's SET normal is unmeasured against an ARRAYED run.**
+  #161 measured ``normal = Facing`` accepted for ONE bar bending in the
+  Z/Hand plane -- not arrayed, not a set. This module still passes the
+  run's own step ``direction`` as ``normal`` (R131's proven rule --
+  #131 shipped overlapping steel from getting that argument wrong for a
+  STRAIGHT set, and that fix is not given up here). For a run whose step
+  direction and whose bend direction are the SAME axis (e.g. a bottom-face
+  run, stepping along Hand, bending toward ``+Hand``), that is the exact
+  combination #161 tried on a single bar, just now arrayed. For a run
+  bending ACROSS its own step axis (e.g. a left/right-face run, stepping
+  along Facing, bending toward ``+Hand``) nothing has ever confirmed that
+  ``SetLayoutAsNumberWithSpacing`` still arrays correctly AND each bar's
+  bend still lands in its own plane at the same time -- the two roles
+  ``normal`` plays (array axis, bend-plane normal) have only ever been
+  tested separately. **Proposed live probe**: build a bent, multi-bar
+  SET on a face whose step axis differs from its bend direction and read
+  back both ``GetCenterlineCurves`` (to see whether the bend rendered) and
+  the array spacing (to see whether the bars still landed at the requested
+  pitch) on each bar the set produced.
+- **(#173) ``_pin_to_host_faces`` is unproven for a bent bar's extra
+  handle(s).** It was written, and mutation-proven, against a straight
+  bar's handles, all of which sit at the SAME ``(u_mm, v_mm)`` for the
+  bar's whole length -- #92's own finding. A bent bar's horizontal leg
+  introduces at least one more handle (the bend itself, if not the
+  horizontal leg's own end), and this function has no way to know that
+  handle should NOT be tested against the seed's vertical-leg ``(u_mm,
+  v_mm)``: it would either find no matching host face (left alone, safe)
+  or -- unverified -- match one it should not, on a bar whose horizontal
+  leg genuinely sits at a different in-plane position once bent. No fake
+  can prove which happens, because the fake's ``GetAllHandles()`` only
+  ever returns what a test arms it with. **Proposed live probe**: place a
+  single bent bar on the live host used for #161/#92, call
+  ``GetRebarConstraintsManager().GetAllHandles()`` on it, and compare the
+  handle count and each handle's constraint candidates against the
+  straight-bar baseline #92 already measured.
 - ``Rebar.CreateFromCurves``'s ``normal`` argument for a straight,
   unhooked ``RebarStyle.Standard`` bar. #109's tracer bullet confirmed the
   call's signature for a ``StirrupTie`` loop, where ``normal`` is the axis
@@ -148,6 +196,38 @@ def _point_internal(origin, hand, facing, u_mm, v_mm, z_internal):
                  z_internal + mm_to_internal(z_mm_component))
 
 
+def _bend_direction_vector(name, hand, facing):
+    """The unit XYZ (as a plain tuple) a top-floor bend's horizontal leg
+    runs along, from ``rft.core.column_roof_slab.BEND_DIRECTION_NAMES``'
+    own four names -- the same names ``rft.core.column_roof.terminate_bar``
+    chose among (#173). Never re-derived from geometry: ``hand``/``facing``
+    are the host's own orientation, exactly as every other seed point in
+    this module reads them.
+    """
+    if name == "+Hand":
+        return hand
+    if name == "-Hand":
+        return (-hand[0], -hand[1], -hand[2])
+    if name == "+Facing":
+        return facing
+    if name == "-Facing":
+        return (-facing[0], -facing[1], -facing[2])
+    raise ValueError(
+        "Unknown bend direction %r; expected one of +Hand, -Hand, "
+        "+Facing, -Facing." % (name,))
+
+
+def _offset_point_internal(point, direction, distance_mm):
+    """``point`` (internal units) moved ``distance_mm`` along ``direction``
+    (a plain unit ``(x, y, z)`` tuple) -- the top-floor bend's horizontal
+    leg (#173), built the same way :func:`_point_internal` builds the
+    vertical seed: convert at the boundary, never store a value in feet.
+    """
+    return DB.XYZ(point.X + mm_to_internal(direction[0] * distance_mm),
+                 point.Y + mm_to_internal(direction[1] * distance_mm),
+                 point.Z + mm_to_internal(direction[2] * distance_mm))
+
+
 def _is_near_face_normal(normal, u_mm, v_mm, hand, facing):
     """Whether ``normal`` is the OUTWARD normal of the face nearest this
     bar on the axis ``normal`` runs along.
@@ -228,17 +308,42 @@ def _pin_to_host_faces(bar, host_id, seed, hand, facing, offset_internal):
 
 
 def _place_run(doc, host_element, bar_type, run, hand, facing, origin,
-              z_base_internal, z_top_internal, offset_internal):
+              z_base_internal, top_z_mm, splice_length_mm, offset_internal,
+              termination):
     """One perimeter face run, as a single ``Rebar`` -- a set when the run
     holds more than one bar (R22 supersedes #92's single-bar-set proposal).
+
+    ``termination`` is ``plan.roof_termination.termination`` (a
+    ``rft.core.column_roof.RoofTermination``) or ``None``. ``None`` is the
+    ordinary column -- one straight ``Line`` from the floor level through
+    the splice protrusion, unchanged since #119. A stated termination
+    (#173) builds TWO curves instead: the vertical leg up to the bend,
+    read from the host's own top ``z`` plus ``termination.a_mm``, then the
+    horizontal leg of ``termination.b_mm`` along ``termination.direction``.
+    Both legs are the NOMINAL corner-to-corner lengths the plan already
+    carries with R40's fillet allowance folded in -- this function does not
+    add or subtract it again.
     """
     seed = run[0]
     p0 = _point_internal(origin, hand, facing, seed.u_mm, seed.v_mm,
                          z_base_internal)
-    p1 = _point_internal(origin, hand, facing, seed.u_mm, seed.v_mm,
-                         z_top_internal)
     curves = List[DB.Curve]()
-    curves.Add(DB.Line.CreateBound(p0, p1))
+
+    if termination is None:
+        z_top_internal = mm_to_internal(top_z_mm + splice_length_mm)
+        p1 = _point_internal(origin, hand, facing, seed.u_mm, seed.v_mm,
+                             z_top_internal)
+        curves.Add(DB.Line.CreateBound(p0, p1))
+    else:
+        z_bend_internal = mm_to_internal(top_z_mm + termination.a_mm)
+        p_bend = _point_internal(origin, hand, facing, seed.u_mm, seed.v_mm,
+                                 z_bend_internal)
+        curves.Add(DB.Line.CreateBound(p0, p_bend))
+        bend_vector = _bend_direction_vector(termination.direction,
+                                             hand, facing)
+        p_bend_end = _offset_point_internal(
+            p_bend, bend_vector, termination.b_mm)
+        curves.Add(DB.Line.CreateBound(p_bend, p_bend_end))
 
     if len(run) > 1:
         direction = _horizontal_unit(
@@ -293,6 +398,12 @@ def place_bars(doc, host_element, bar_type, plan):
     Per spec section 9: the bar runs from the CURRENT floor level
     (``plan.extent.base_z_mm``) through the column's clear height and
     through the top support, protruding ``plan.splice.length_mm`` above it.
+
+    Per the roof-termination addendum section 1 (#173): a
+    ``plan.roof_termination`` states no such splice exists to protrude
+    into -- the bar bends into the roof slab instead, and
+    :func:`_place_run` reads that decision off
+    ``plan.roof_termination.termination``.
     """
     host = plan.host
     hand = host["hand"]
@@ -300,9 +411,9 @@ def place_bars(doc, host_element, bar_type, plan):
     origin = host_element.Location.Point
 
     z_base_internal = mm_to_internal(plan.extent.base_z_mm)
-    z_top_internal = mm_to_internal(
-        plan.extent.top_z_mm + plan.splice.length_mm)
     offset_internal = mm_to_internal(plan.layout.bar_offset_mm)
+    roof = plan.roof_termination
+    termination = None if roof is None else roof.termination
 
     created = []
     for start, end in _face_run_slices(plan.counts):
@@ -311,5 +422,6 @@ def place_bars(doc, host_element, bar_type, plan):
             continue
         created.append(_place_run(
             doc, host_element, bar_type, run, hand, facing, origin,
-            z_base_internal, z_top_internal, offset_internal))
+            z_base_internal, plan.extent.top_z_mm, plan.splice.length_mm,
+            offset_internal, termination))
     return created
