@@ -68,12 +68,40 @@ BarPlan = namedtuple(
 #: The complete column: everything that will be BUILT, beside the limits it
 #: was judged against. The report, the sketch and the placer read this and
 #: call nothing underneath it.
+#:
+#: ``roof_termination`` is OPTIONAL and defaults to ``None`` (issue #172,
+#: R36): an ordinary column has no storey-above condition to state, and an
+#: unticked box means section 9's ordinary splice, unchanged. Only a column
+#: the engineer has stated is at the top floor carries a
+#: :class:`RoofTerminationPlan` here.
 ColumnPlan = namedtuple(
     "ColumnPlan",
     "host section extent cover_mm counts splice "
     "bar_diameter_mm tie_diameter_mm tie_bend_diameter_mm "
     "bar_type_name tie_type_name "
-    "layout spacing ladder ties findings tie_lines")
+    "layout spacing ladder ties findings tie_lines roof_termination")
+
+
+#: What `specs/column-roof-termination.md` section 4 needs to report a
+#: top-floor bar's bend, carried whole rather than recomputed (issue #172).
+#:
+#: ``termination`` is the one `rft.core.column_roof.RoofTermination`
+#: `terminate_bar` decided -- the bend actually taken. ``directions`` are
+#: ALL four `rft.core.column_roof.RoofBendDirection` values it chose among,
+#: not only the winner: R41's own words are that a short run because the
+#: engineer FLAGGED a free edge and a short run the tool MEASURED to a slab
+#: edge are different facts, and a reviewer can only tell them apart -- and
+#: catch a missed pick -- by seeing every direction's own flagged/defaulted
+#: state and available run, not only the one that was chosen.
+#:
+#: ``floor_label``, ``thickness_mm``, ``cover_mm`` and ``cover_provenance``
+#: are `rft.revit.column_roof_slab.read_top_floor_slab`'s own read of the
+#: slab (R37, R38), carried as plain values so the report never re-reads
+#: the model to say where a number came from.
+RoofTerminationPlan = namedtuple(
+    "RoofTerminationPlan",
+    "termination directions floor_label thickness_mm cover_mm "
+    "cover_provenance")
 
 
 def bar_plan(host, counts, splice, bar_diameter_mm, tie_diameter_mm,
@@ -107,7 +135,8 @@ def bar_plan(host, counts, splice, bar_diameter_mm, tie_diameter_mm,
 
 
 def complete_plan(bars, mode, tie_bend_diameter_mm, tie_subsets_text,
-                  manual_confinement_mm=None, manual_middle_zone_mm=None):
+                  manual_confinement_mm=None, manual_middle_zone_mm=None,
+                  roof_termination=None):
     """Stage two: spacing, the tie ladder, the stated topology, and §6.1's
     verdict on it.
 
@@ -119,6 +148,13 @@ def complete_plan(bars, mode, tie_bend_diameter_mm, tie_subsets_text,
     in the tie box does not discard a valid spacing just entered. Raises
     ``ValueError`` from whichever module objects, with that module's own
     message — this one has nothing to add.
+
+    ``roof_termination`` (issue #172, R36) is an OPTIONAL
+    :class:`RoofTerminationPlan`, carried through unexamined -- this module
+    decides nothing about it, exactly as it decides nothing about ``ties``.
+    Its default of ``None`` IS the ordinary-column case: an unticked
+    top-floor box means section 9's ordinary splice, and the plan must
+    carry no opinion about a condition nobody stated.
     """
     ladder_inputs = spacing_plan(
         mode,
@@ -166,6 +202,7 @@ def complete_plan(bars, mode, tie_bend_diameter_mm, tie_subsets_text,
         # that guard is right: every value on the page arrives already
         # decided. This is one more of them.
         tie_lines=tie_report_lines(ties),
+        roof_termination=roof_termination,
     )
 
 

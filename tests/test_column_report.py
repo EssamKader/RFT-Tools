@@ -16,10 +16,12 @@ from rft.core.column_inputs import (
     LS_MODE_DIAMETERS, perimeter_bars, splice_length, splice_length_report_line,
 )
 from rft.core.column_layout import perimeter_bar_positions
+from rft.core.column_plan import RoofTerminationPlan
 from rft.core.column_report import (
-    FLAG_PREFIX, build_report, outstanding_section, render, spacing_section,
-    tie_section,
+    FLAG_PREFIX, build_report, outstanding_section, render, roof_termination_section,
+    spacing_section, tie_section,
 )
+from rft.core.column_roof import RoofBendDirection, RoofTermination
 from rft.core.column_ties import (
     TieSubset, resolve_ties, tie_report_lines, validate,
 )
@@ -50,8 +52,8 @@ VALID_SUBSETS = [TieSubset((0, 1, 2, 3)), TieSubset((0, 1, 2, 3, 4)),
                  TieSubset((1, 2, 3, 4, 5))]
 
 
-def report_text(mode=MODE_AUTO, manual=(None, None), data=None,
-                findings=(), tie_lines=()):
+def report_sections(mode=MODE_AUTO, manual=(None, None), data=None,
+                    findings=(), tie_lines=(), roof_termination=None):
     plan = spacing_plan(mode, HC, 450.0, 600.0, 15.9, 9.5,
                         manual_confinement_mm=manual[0],
                         manual_middle_zone_mm=manual[1])
@@ -59,10 +61,17 @@ def report_text(mode=MODE_AUTO, manual=(None, None), data=None,
                         plan.middle_zone_spacing_mm, FIRST_TIE_OFFSET_MM)
     bars = perimeter_bars(3, 4)
     splice = splice_length(40, LS_MODE_DIAMETERS, 15.9)
-    return render(build_report(
+    return build_report(
         data if data is not None else host_data(), bars, splice,
         splice_length_report_line(splice, 15.9), "16M", 15.9, plan, ladder,
-        findings=findings, tie_lines=tie_lines))
+        findings=findings, tie_lines=tie_lines,
+        roof_termination=roof_termination)
+
+
+def report_text(mode=MODE_AUTO, manual=(None, None), data=None,
+                findings=(), tie_lines=(), roof_termination=None):
+    return render(report_sections(mode, manual, data, findings, tie_lines,
+                                  roof_termination))
 
 
 def test_cover_is_labelled_as_READ_never_as_an_input():
@@ -308,4 +317,151 @@ def test_the_report_says_a_triangle_does_NOT_alternate():
     # The alternation claim itself must SURVIVE -- R32 qualifies it, it
     # does not delete it. A closed loop still alternates.
     assert "alternates between consecutive levels" in text
+
+
+# --------------------------------------------------------------------- #
+# #172 -- specs/column-roof-termination.md section 4
+
+
+#: The FLAGGED case: -Facing has no slab, the engineer flagged it, and the
+#: bend takes it because it is where the bar was told to go. Numbers from
+#: tests/test_column_roof.py's own free-edge case, so the two files agree.
+_FLAGGED_TERMINATION = RoofTermination(
+    direction="-Facing", a_mm=175.0, b_mm=220.0, ld_mm=960.0,
+    achieved_mm=375.13, shortfall_mm=584.87, free_edge=True,
+    bend_loss_mm=19.87, run_limited=True)
+
+#: The MEASURED case: R41's interior-near-the-edge column. Slab genuinely
+#: continues, but the run measured to the slab edge is short.
+_MEASURED_TERMINATION = RoofTermination(
+    direction="+Hand", a_mm=175.0, b_mm=475.0, ld_mm=960.0,
+    achieved_mm=630.13, shortfall_mm=329.87, free_edge=False,
+    bend_loss_mm=19.87, run_limited=True)
+
+_DIRECTIONS = (
+    RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+    RoofBendDirection(name="-Facing", has_slab=False, available_run_mm=220.0),
+    RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=475.0),
+    RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0),
+)
+
+
+def flagged_roof(cover_provenance="read"):
+    return RoofTerminationPlan(
+        termination=_FLAGGED_TERMINATION, directions=_DIRECTIONS,
+        floor_label="Floor 424637", thickness_mm=200.0, cover_mm=25.0,
+        cover_provenance=cover_provenance)
+
+
+def measured_roof():
+    return RoofTerminationPlan(
+        termination=_MEASURED_TERMINATION, directions=_DIRECTIONS,
+        floor_label="Floor 424637", thickness_mm=200.0, cover_mm=25.0,
+        cover_provenance="read")
+
+
+def test_every_direction_is_named_FLAGGED_or_DEFAULTED():
+    """R41's own words: a flagged free edge and a measured slab edge are
+    different facts, and a reviewer must be able to tell every direction
+    apart, not only the one the bend took -- that is how a missed pick is
+    caught."""
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert "-Facing -- FLAGGED free edge (the engineer's own statement" in lines
+    assert "+Hand -- DEFAULTED: slab assumed to continue" in lines
+    assert "+Facing -- DEFAULTED: slab assumed to continue" in lines
+    assert "-Hand -- DEFAULTED: slab assumed to continue" in lines
+
+
+def test_the_available_run_names_its_own_source_per_direction():
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert ("-Facing -- FLAGGED" in lines and
+           "220 mm, the column's OWN WIDTH at this face" in lines)
+    assert "+Facing -- DEFAULTED" in lines
+    assert "475 mm, MEASURED to the slab edge (R41/R42)" in lines
+
+
+def test_the_bend_taken_is_marked_on_its_own_direction_line():
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert "-Facing -- FLAGGED free edge" in lines
+    taken_line = [line for line in lines.split("\n")
+                 if "BEND TAKEN" in line]
+    assert len(taken_line) == 1
+    assert taken_line[0].strip().startswith("-Facing")
+
+
+def test_achieved_is_the_BUILT_bar_never_the_nominal_legs():
+    """R40: `achieved_mm` is what the bar actually develops. The nominal
+    legs (a + b = 395 mm here) overshoot that by the fillet loss, and the
+    report must show the smaller, built number."""
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert "375 mm of 960 mm L_D required" in lines
+    assert "395 mm of 960 mm" not in lines
+
+
+def test_a_shortfall_names_WHY_it_is_short_flagged_vs_measured():
+    flagged_lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert "the FLAGGED free edge" in flagged_lines
+    assert "the MEASURED slab edge" not in flagged_lines
+
+    measured_lines = "\n".join(roof_termination_section(measured_roof()).lines)
+    assert "the MEASURED slab edge" in measured_lines
+    assert "the FLAGGED free edge" not in measured_lines
+
+
+def test_a_full_LD_reports_no_shortfall():
+    full = RoofTerminationPlan(
+        termination=RoofTermination(
+            direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+            achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+            bend_loss_mm=19.87, run_limited=False),
+        directions=_DIRECTIONS, floor_label="Floor 424637",
+        thickness_mm=200.0, cover_mm=25.0, cover_provenance="read")
+    lines = "\n".join(roof_termination_section(full).lines)
+    assert "No shortfall -- the full L_D was achieved." in lines
+    assert FLAG_PREFIX not in lines
+
+
+def test_cover_provenance_names_the_slab_READ_vs_TYPED():
+    """R38: a reviewer must be able to tell a measured cover from a stated
+    one by reading the report -- the same standard section 4 sets for a
+    flagged free edge."""
+    read_lines = "\n".join(roof_termination_section(flagged_roof("read")).lines)
+    assert "READ from Floor 424637 (R38)" in read_lines
+    assert "TYPED" not in read_lines
+
+    typed_lines = "\n".join(
+        roof_termination_section(flagged_roof("typed")).lines)
+    assert "TYPED -- Floor 424637's own cover reads zero" in typed_lines
+    assert "READ from Floor 424637" not in typed_lines
+
+
+def test_the_section_is_absent_from_an_ordinary_columns_report():
+    """#172, R36: an ordinary column has no roof condition, and its report
+    must carry no opinion about one."""
+    text = report_text()
+    assert "TOP-FLOOR TERMINATION" not in text.upper()
+
+
+def test_the_roof_section_is_the_ONLY_thing_a_carried_termination_adds():
+    """The composition guarantee, proven rather than assumed: every OTHER
+    section is identical, in the same order, whether or not a roof
+    termination is carried."""
+    without = report_sections()
+    with_roof = report_sections(roof_termination=flagged_roof())
+
+    without_headings = [section.heading for section in without]
+    with_headings = [section.heading for section in with_roof]
+    assert "Top-floor termination" not in without_headings
+    assert "Top-floor termination" in with_headings
+    # Every OTHER heading, in order, is unchanged.
+    assert [h for h in with_headings if h != "Top-floor termination"] == \
+        without_headings
+
+    by_heading = dict((section.heading, section.lines) for section in without)
+    for section in with_roof:
+        if section.heading == "Top-floor termination":
+            continue
+        assert section.lines == by_heading[section.heading], (
+            "section %r changed when a roof termination was added"
+            % section.heading)
 
