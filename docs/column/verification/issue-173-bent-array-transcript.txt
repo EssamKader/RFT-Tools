@@ -1,0 +1,55 @@
+#173 -- can `normal` serve both the ARRAY and the BEND?
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+
+column: id 424596  450 x 600mm
+bar type: 13M
+bend direction for parts 1-3: +Hand
+
+==================================================================
+PART 1 -- the SAME +Hand bend, three different `normal`s
+
+If all three build the same three curves, the normal does NOT
+constrain the bend plane: the curves define it, and the normal is
+free to stay the array axis R131 requires. That is the answer
+#173 needs.
+
+  normal = Hand    (PARALLEL to the bend)    RAISED Exception: An internal error has occurred.
+  normal = Facing  (perpendicular, as #161)
+      centreline curves: 3
+        0: Line   length 653.7 mm
+        1: Arc    length 72.8 mm
+        2: Line   length 353.7 mm
+  normal = Z       (vertical)                RAISED Exception: An internal error has occurred.
+
+==================================================================
+PART 2 -- handles: a BENT bar against a STRAIGHT one
+
+R22 pins every handle to the host's own faces. That code was
+written for a straight bar whose handles share one (u, v).
+
+  --- STRAIGHT ---
+      handles: 4
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+  --- BENT ---
+      handles: 5
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+        ?                            candidates ? (ToCover ?)
+
+==================================================================
+PART 3 -- an ARRAYED bent set, bend ALONG the step axis
+
+The case that has no answer today: bars stepping along +Hand and
+bending along +Hand too. `normal` is the step axis (R131).
+
+  RAISED Exception: An internal error has occurred.
+
+  transaction ROLLED BACK -- nothing was kept.
+
+Nothing survives this probe. Send the text above back.

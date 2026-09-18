@@ -1370,3 +1370,72 @@ each holding a copy is how they drift.
 **Apply stays refused while the top-floor inputs are incomplete**, and says
 which one is missing — the same discipline every other refusal in this tool
 follows.
+
+
+---
+
+## R44 — a bar bends OUT OF ITS OWN FACE, never sideways along it
+
+**Decided by the owner**, on a measurement that removed the alternative.
+
+### What #173's probe measured
+
+The same `+Hand` bend was built three times with different `normal`s
+(transcript: `docs/column/verification/issue-173-bent-array-transcript.txt`):
+
+| `normal` | result |
+|---|---|
+| `Hand` — PARALLEL to the bend | **internal error** |
+| `Facing` — perpendicular | **built**: Line 653.7, Arc 72.8, Line 353.7 |
+| `Z` — vertical | **internal error** |
+
+**So `normal` is not free.** The two curves do NOT define the bend plane on
+their own; the normal must be perpendicular to it, and Revit refuses anything
+else. An arrayed bent set failed for the same reason (part 3).
+
+### The collision this creates
+
+`normal` is now load-bearing twice, from two different tickets:
+
+- **#131**: `SetLayoutAsNumberWithSpacing` arrays the set **along** the
+  normal. Handing it the perpendicular arrayed every run across its own face
+  and put two bars 11.7 mm apart at two corners.
+- **#173**: the normal must be **perpendicular to the bend plane**, or the
+  call fails outright.
+
+A run whose bend ran ALONG its own step axis would need the normal to be both
+that axis and perpendicular to it. Impossible, and it is why part 3 failed.
+
+### The rule
+
+**Each face run may bend only along the two directions perpendicular to its
+bars' step axis** — out of its own face, or back into the column. R41 is
+unchanged in substance: it still takes whichever of the two has the most room.
+
+### Why this costs nothing
+
+With the bend `b` perpendicular to the step axis `d`, the bend plane is
+`{Z, b}` and its normal is the horizontal perpendicular to `b` — which **is**
+`d`. The array axis and the bend-plane normal become the same vector, and the
+placer already passes the step direction. **Both constraints are satisfied by
+one argument, and no placer change is needed.**
+
+It is also how bars are detailed by hand: a bar on a face bends out of that
+face, not sideways along it.
+
+### The consequence the plan must carry
+
+**A termination is now PER RUN, not per column.** Four face runs have four
+step axes, so up to four different bends — the bars on the `+Facing` face bend
+±Facing, those on the `+Hand` face bend ±Hand. #172's `RoofTerminationPlan`
+carries one termination for the whole column and must become one per run.
+§4's report follows: a line per run, not a line per column.
+
+### Still open, and measured enough to name
+
+**A bent bar has FIVE handles; a straight one has four.** `_pin_to_host_faces`
+— R22's whole correctness argument, and the thing #92 measured going wrong by
+12 mm — was written for four handles that share one `(u, v)`. What the fifth
+is, and whether pinning it is right, is not answered by this probe: the
+candidate query raised inside the probe's own reporting. **That is the last
+unknown between here and placed steel.**
