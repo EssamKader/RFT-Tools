@@ -150,6 +150,12 @@ geometry directly. Either could still be considered later as a **display label**
 alongside a picked result, if reading the report ever proves confusing without
 one.
 
+> **R43 — where these inputs live.** Ticking the top-floor checkbox (R36)
+> opens a **second window** carrying §3's picking, R35's `L_D` multiplier and
+> R38's conditional cover field. The main tool is unchanged for an ordinary
+> column. The second window owns the inputs and hands back one object; the
+> main window owns the plan.
+
 ## 4. Report requirement
 
 Mirrors Mode A/B's warn-but-place discipline. The Review report must list, per

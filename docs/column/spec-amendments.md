@@ -1315,3 +1315,58 @@ says which query answers.
 Until that lands, `rft.core.column_roof` takes the run as a **parameter**: the
 math above is complete and testable, and the adapter supplies the number once
 the probe says how to get it.
+
+
+---
+
+## R43 — the top-floor inputs live in their OWN window
+
+**Decided by the owner:**
+
+> ui will be part of column tool if i triggered or check roof column it deploy
+> new window for it
+
+### The shape
+
+- The **Column tool is unchanged** for an ordinary column. It is one tool, not
+  two, and a top-floor column is a *condition* (see the addendum's opening
+  line), so nothing new appears on the existing tabs beyond the checkbox R36
+  already requires.
+- **Ticking that checkbox opens a second window** carrying every top-floor
+  input: §5's `L_D` multiplier (R35), R38's cover field when — and only when —
+  the slab reads zero, and §3's pick-the-exception.
+- Unticking it closes that window and the plan reverts to §9's ordinary
+  splice. **No top-floor input survives an unticked box**, or the tool would
+  carry state the report does not show.
+
+### Why a window rather than a fifth tab
+
+The owner's call. The trade is worth recording because it is not free either
+way:
+
+- **a window** keeps the main tool exactly as it is for the great majority of
+  columns, which are not top-storey, and keeps a rarely-used set of inputs out
+  of the common path;
+- **a tab** would have avoided a second modeless window entirely, and with it
+  the state-sync and focus questions below.
+
+### The constraint that makes this non-trivial
+
+**A pick must run through `execute_in_revit_context`**, and a pyRevit modeless
+window needs all three of: modeless, `execute_in_revit_context`, and a
+persistent engine — miss one and it fails **silently**. §3's face picking is
+the tool's first interactive selection, and it will be driven from the second
+window. #103 measured the other half of this: `PickObjects` runs with
+`IsModifiable = False` from the pushbutton path and cannot start from inside
+an open transaction.
+
+### The rule that keeps the two windows honest
+
+**The second window owns the inputs; the main window owns the plan.** The
+second window hands back one object and holds no plan state of its own, so
+there is exactly one place a top-floor input can be read from. Two windows
+each holding a copy is how they drift.
+
+**Apply stays refused while the top-floor inputs are incomplete**, and says
+which one is missing — the same discipline every other refusal in this tool
+follows.
