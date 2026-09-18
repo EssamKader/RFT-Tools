@@ -1514,13 +1514,25 @@ class FakeCurveLoop(object):
         return iter(self._curves)
 
 
-class FakeTopFace(object):
-    """Stand-in for the ``PlanarFace`` `HostObjectUtils.GetTopFaces`
-    resolves to. **SHAPE UNVERIFIED** (#167) -- see
-    ``rft.revit.column_roof_slab``'s header."""
+class FakeTopFace(FakePlanarFace):
+    """The floor's upward ``PlanarFace``.
 
-    def __init__(self, curve_loops):
+    MEASURED, not assumed: R42's probe walked the floor's own geometry,
+    picked the ``PlanarFace`` whose ``FaceNormal.Z`` is ~1, and printed
+    ``Origin.Z`` as 3000.0 mm with an area of 20.30 m2 -- so
+    ``FaceNormal``, ``Origin`` and ``GetEdgesAsCurveLoops`` all answered on
+    a real Floor. (``HostObjectUtils.GetTopFaces`` was never run and is not
+    modelled here.)
+    """
+
+    def __init__(self, curve_loops, normal=None, origin_z_internal=0.0):
+        # A PlanarFace subclass, because the adapter picks the top face with
+        # `isinstance(face, DB.PlanarFace)` -- the same test R42's probe made
+        # against the live geometry.
+        FakePlanarFace.__init__(
+            self, normal if normal is not None else FakeXYZ(0.0, 0.0, 1.0))
         self._curve_loops = list(curve_loops)
+        self.Origin = FakeXYZ(0.0, 0.0, origin_z_internal)
 
     def GetEdgesAsCurveLoops(self):
         return self._curve_loops
@@ -1537,7 +1549,8 @@ class FakeFloor(object):
     """
 
     def __init__(self, document=None, min_z_internal=0.0, max_z_internal=0.0,
-                 parameters=None, element_id=424637, top_face=None):
+                 parameters=None, element_id=424637, top_face=None,
+                 extra_faces=()):
         self.Document = document
         self.Id = FakeElementId(element_id)
         self._box = FakeBoundingBox(
@@ -1545,8 +1558,8 @@ class FakeFloor(object):
             FakeXYZ(10.0, 10.0, max_z_internal))
         self._parameters = dict(parameters or {})
         self._top_face = top_face
-        self._references = ([FakeReference("top-face")]
-                            if top_face is not None else [])
+        faces = list(extra_faces) + ([top_face] if top_face else [])
+        self._solid = FakeSolid(faces, volume=1.0)
 
     def get_BoundingBox(self, _view):
         return self._box
@@ -1554,8 +1567,11 @@ class FakeFloor(object):
     def get_Parameter(self, built_in):
         return self._parameters.get(built_in)
 
-    def GetGeometryObjectFromReference(self, _reference):
-        return self._top_face
+    def get_Geometry(self, _options):
+        """The route R42's probe actually used: walk the element's own
+        geometry and pick the upward PlanarFace. ``largest_solid`` already
+        does the walk for columns and is generic."""
+        return [self._solid]
 
 
 class FakeJoinGeometryUtils(object):

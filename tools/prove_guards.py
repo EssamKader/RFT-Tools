@@ -1662,6 +1662,23 @@ CASES = [
      "R41 -- an engineer-flagged free edge ignored in favour of the "
      "measured boundary run, so a genuinely absent slab is still trusted"),
 
+    # ---- #167 review: the TOP face, by the route R42 measured
+
+    (COL_ROOF_SLAB,
+     '        if candidate.FaceNormal.Z <= UPWARD_TOL:',
+     '        if False:',
+     TCRS + "test_the_TOP_face_is_chosen_not_merely_a_planar_one",
+     "the upward test dropped, so a slab's SOFFIT can supply the "
+     "boundary the run is measured from -- a different outline at a "
+     "different elevation, and section 1 measures from the top"),
+
+    (COL_ROOF_SLAB,
+     '    _require(face is not None,',
+     '    _require(True,',
+     TCRS + "test_a_floor_with_only_a_DOWNWARD_face_is_refused",
+     "a floor with no upward face allowed through instead of "
+     "refused, so the run would be measured from nothing"),
+
 ]
 
 

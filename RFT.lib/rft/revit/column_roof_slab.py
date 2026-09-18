@@ -93,14 +93,11 @@ SHAPE UNVERIFIED (see also `tests/fake_revit_api.py`'s header):
   measured the OUTPUT (Floor 424637, `IsCuttingElementInJoin` False) but no
   transcript records the exact call signature used to get there. Assumed
   to be the standard two-argument static methods.
-- `HostObjectUtils.GetTopFaces(floor) -> IList<Reference>` -- #161/#170
-  describe reading "the floor's top `PlanarFace`" but neither transcript
-  names the API call that produced it. This is the documented, idiomatic
-  way to get a host object's top face and is used here instead of
-  re-deriving it from raw solid geometry, which would stack a second guess
-  (whether `Floor.get_Geometry()` wraps its solids the way a
-  `FamilyInstance`'s does, which `column_host.py` already flags as
-  unverified for a column) on top of this one.
+- (removed) `HostObjectUtils.GetTopFaces` -- it was the idiomatic route and
+  it was never RUN. R42's probe walked the floor's own geometry instead and
+  that walk is in the transcript, so this module uses the measured one:
+  `largest_solid` plus the highest upward `PlanarFace`. `FaceNormal`,
+  `Origin` and `GetEdgesAsCurveLoops` all answered on Floor 424637.
 - `Face.GetEdgesAsCurveLoops() -> IList<CurveLoop>` and iterating a
   `CurveLoop` as `IEnumerable<Curve>` -- named in both R42 and its
   verification note, never reflected or enumerated live in this repo.
@@ -115,7 +112,7 @@ from Autodesk.Revit import DB
 
 from ..core.column_roof import RoofBendDirection, free_edge_run_mm
 from ..core.column_roof_run import nearest_crossing_mm
-from .column_host import read_orientation, read_section_mm
+from .column_host import largest_solid, read_orientation, read_section_mm
 from .units import internal_to_mm
 
 #: R42's own four names, in a fixed order so a caller can rely on it.
@@ -215,16 +212,38 @@ def read_slab_cover_mm(floor, typed_cover_mm=None):
     return typed_cover_mm, "typed"
 
 
+#: How vertical an upward face must be. R42 measured the floor's top face
+#: normal as (0, 0, 1) exactly, so nothing real sits near this bound.
+UPWARD_TOL = 0.99
+
+
 def _floor_top_face_segments_mm(floor):
     """Every edge of the floor's top face, as flat `(p0, p1)` mm tuples.
 
-    `HostObjectUtils.GetTopFaces` and `GetEdgesAsCurveLoops` are both
-    SHAPE UNVERIFIED -- see the module header.
+    **The route R42's probe actually ran**: walk the floor's own geometry,
+    take the highest ``PlanarFace`` pointing up, read its edge loops. That
+    probe printed the face at z 3000.0 with an area of 20.30 m2 and then
+    measured all four runs off it, so every call here has produced a
+    correct answer on a live host.
+
+    `HostObjectUtils.GetTopFaces` is deliberately NOT used. It is the
+    idiomatic route and it may well work, but it was never run -- and
+    reaching for an unmeasured API when a measured one is in the
+    transcript is the guessing this project refuses. `largest_solid` is
+    `column_host`'s own walk, reused rather than copied.
     """
-    references = DB.HostObjectUtils.GetTopFaces(floor)
-    _require(references, "This Floor has no top face to measure the slab's "
-                         "run from.")
-    face = floor.GetGeometryObjectFromReference(references[0])
+    solid = largest_solid(floor)
+    face = None
+    for candidate in solid.Faces:
+        if not isinstance(candidate, DB.PlanarFace):
+            continue
+        if candidate.FaceNormal.Z <= UPWARD_TOL:
+            continue
+        if face is None or candidate.Origin.Z > face.Origin.Z:
+            face = candidate
+    _require(face is not None,
+             "This Floor has no upward planar face to measure the slab's "
+             "run from.")
     segments = []
     for loop in face.GetEdgesAsCurveLoops():
         for curve in loop:

@@ -259,6 +259,65 @@ def test_a_flagged_free_edge_uses_the_free_edge_cap_not_the_measured_run():
     assert by_name["-Hand"].has_slab is True
 
 
+def test_the_TOP_face_is_chosen_not_merely_a_planar_one():
+    """R42 walked the floor's geometry and took the face pointing UP.
+
+    A slab has a soffit too, and in plan its loops are the same shape --
+    but the soffit here is deliberately given a SMALLER outline, so a rule
+    that took whichever planar face came first would produce different
+    runs. Section 1 measures from the top face.
+    """
+    doc = FakeDocument()
+
+    def pt(x, y):
+        return FakeXYZ(mm(x), mm(y), mm(2700.0))
+
+    soffit = FakeTopFace(
+        [FakeCurveLoop([
+            FakeCurve(pt(COLUMN_X - 1000.0, COLUMN_Y - 1000.0),
+                     pt(COLUMN_X + 1000.0, COLUMN_Y - 1000.0)),
+            FakeCurve(pt(COLUMN_X + 1000.0, COLUMN_Y - 1000.0),
+                     pt(COLUMN_X + 1000.0, COLUMN_Y + 1000.0)),
+            FakeCurve(pt(COLUMN_X + 1000.0, COLUMN_Y + 1000.0),
+                     pt(COLUMN_X - 1000.0, COLUMN_Y + 1000.0)),
+            FakeCurve(pt(COLUMN_X - 1000.0, COLUMN_Y + 1000.0),
+                     pt(COLUMN_X - 1000.0, COLUMN_Y - 1000.0))])],
+        normal=FakeXYZ(0.0, 0.0, -1.0), origin_z_internal=mm(2700.0))
+    f = FakeFloor(document=doc, min_z_internal=mm(2700.0),
+                  max_z_internal=mm(3000.0),
+                  parameters={
+                      FakeBuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM:
+                          FakeDoubleParameter(mm(300.0))},
+                  element_id=FLOOR_ID,
+                  top_face=rectangular_top_face(),
+                  extra_faces=[soffit])
+    doc._elements[FLOOR_ID] = f
+
+    directions = read_bend_directions(doc, f, column(doc), cover_mm=0.0)
+
+    by_name = dict((d.name, d.available_run_mm) for d in directions)
+    # The TOP face's number, not the soffit's 775.
+    assert by_name["+Hand"] == pytest.approx(127.5, abs=0.1)
+
+
+def test_a_floor_with_only_a_DOWNWARD_face_is_refused():
+    """Refused, not guessed: no upward face means nothing to measure the
+    run from, and a silent fallback would invent one."""
+    doc = FakeDocument()
+    soffit = rectangular_top_face()
+    soffit.FaceNormal = FakeXYZ(0.0, 0.0, -1.0)
+    f = FakeFloor(document=doc, min_z_internal=mm(2700.0),
+                  max_z_internal=mm(3000.0),
+                  parameters={
+                      FakeBuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM:
+                          FakeDoubleParameter(mm(300.0))},
+                  element_id=FLOOR_ID, top_face=soffit)
+    doc._elements[FLOOR_ID] = f
+
+    with pytest.raises(ColumnRoofSlabError, match="upward planar face"):
+        read_bend_directions(doc, f, column(doc), cover_mm=0.0)
+
+
 def test_all_four_names_are_always_present_in_the_fixed_order():
     doc = FakeDocument()
     f = floor(doc)
