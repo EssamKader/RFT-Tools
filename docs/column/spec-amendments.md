@@ -1025,3 +1025,74 @@ revisited against a real project if it appears in one.
 
 **Nothing in the code changed.** §0/C2 and `specs/column-batch-placement.md`
 §7 stand as written, and no amendment to either was merged.
+
+---
+
+## R35 — `L_D` is stated, never computed
+
+**Decided by the owner**, setting up the roof addendum's implementation.
+
+The roof termination's development length is a **raw input**. The owner's own
+clarification, given while this was being written:
+
+> l_d for roof column can be calculated as in beam like 60 column bar diameter
+> or 50 or whatever
+
+So the **multiplier is the input**, and `L_D = multiplier × bar diameter` is
+arithmetic on it — exactly the beam tool's form. A plain millimetre value is
+accepted too, for the case where the engineer has the number and not the
+multiple.
+
+**What the tool never does is choose the multiplier.** That is the whole of
+§9's discipline for the splice length `L_s` — *“raw user input, NEVER
+auto-calculated by the tool”* — and 50 against 60 is a detailing decision, not
+a default to inherit.
+
+`RFT.lib/rft/core/anchorage.py`'s `development_length(diameter_mm, multiplier)`
+is that multiplication and may be reused for it. Its **defaults must not be**:
+`DEFAULT_LD_BTM_MULTIPLIER = 55` and `DEFAULT_LD_TOP_MULTIPLIER = 60` are the
+beam spec's numbers for top and bottom bars in bending, and a vertical column
+bar anchoring into a roof slab is neither. Reuse the multiply; state the
+multiplier.
+
+What IS worth reusing from that module is its **cap discipline** — `a` clamped
+so `b` can never fall below the 200 mm minimum bend leg, and a `ValueError`
+rather than a negative leg reaching the Revit API. §1's `a + b = L_D` has
+exactly the same failure mode with a small `L_D`.
+
+---
+
+## R36 — the engineer states that a column is at roof level
+
+**Decided by the owner.** A checkbox, not an inference.
+
+The model cannot distinguish *“this is the roof”* from *“the storey above is
+not modelled yet”*, and the two demand opposite detailing: a splice protruding
+into the segment above (§9) versus a bend into the slab (this addendum §1).
+Guessing wrong swaps one for the other and **looks correct in the browser**,
+which is the failure mode this project exists to refuse.
+
+So the roof condition is **stated**. An unticked box means the ordinary §9
+splice, unchanged, whatever happens to sit above the column.
+
+---
+
+## R37 — the roof slab's thickness and cover are READ
+
+**Decided by the owner.** From the slab element above, never typed.
+
+§1 measures `a` from the slab's bottom face up to (thickness − cover). Both
+numbers come from the element the upward support search already locates — that
+search currently hands back only a z, and must be extended to hand back the
+element too.
+
+This is **A2** applied where it has always applied: cover is read from the
+model, never typed, so a typed value can never disagree with what will be
+built.
+
+### The default under it, stated because it was not ruled on
+
+**If the upward search finds no slab, the tool refuses**, naming what it looked
+for. A roof column with no roof above it is a modelling problem, and falling
+back to typed values would turn it into a detailing number nobody re-checks.
+Recorded here as a default rather than as part of the ruling.
