@@ -1191,3 +1191,57 @@ what changes.
 R35, R36, R37 and R38 stand exactly as written. So does §1's `a + b = L_D`
 and §2's per-face rule — this is a naming and scoping ruling, not a
 detailing one.
+---
+
+## R40 — `L_D` is the DEVELOPED centreline length, not the nominal legs
+
+**Decided by the owner**, shown both options drawn before ruling:
+
+> ld is the development length
+
+### What #161 measured
+
+Two curves went into `CreateFromCurves` — 500 mm and 400 mm meeting at a
+sharp corner — and **three** came back: `Line 453.7`, `Arc 72.8`,
+`Line 353.7`. Revit fillets the corner, takes the bend's **tangent** off both
+legs and puts an arc between them. The bar handed 900 mm of nominal leg
+develops **880.2**.
+
+### The rule
+
+`L_D` is a length **of bar**, so it is measured **along the bar**. The tool
+therefore lengthens the horizontal leg by what the fillet eats:
+
+    Δ = 2t - arc = r(2 - π/2)  ≈ 0.4292 r      (90° bend)
+    b = L_D - a + Δ
+
+`a` is **not** free — §1 fixes it as the slab's thickness less its cover — so
+the whole correction lands on `b`.
+
+At the measured `r = 46.3 mm` that is **19.87 mm**, which reproduces the
+probe's `900 → 880.2` to the decimal. The formula is not fitted to the
+measurement; it agrees with it.
+
+### Two things that follow, and both matter
+
+1. **`r` is read from the BAR TYPE, never hardcoded.** The tool already reads
+   a bar type's bend diameter for tie corners
+   (`rft.revit.bar_types.bar_type_bend_diameter_mm`). A 25 mm bar bends on a
+   bigger radius and loses more. Baking in 19.87 would be right for 13M and
+   wrong for every other bar in the schedule.
+2. **It is A1's own math.** `t = r / tan(θ/2)`, which at 90° reduces to
+   `t = r` — the same relationship `rft.core.column_ties` already applies at
+   a tie's corners. The top-floor bar is that relationship at a different
+   corner; nothing new is invented, and the two must not drift apart.
+
+### A leg shorter than the tangent is refused
+
+A bend needs `t` of straight leg on each side to turn through. A leg below
+that is not a tight bend — it is geometry that cannot exist, and the free-edge
+cap in §2 can drive `b` there on a narrow face. Refused, naming the leg.
+
+### What the report must say
+
+Where a free edge already costs anchorage, the fillet costs a little more, and
+both belong in §4's per-bar line — `achieved` is what the BUILT bar develops,
+not what was asked for.

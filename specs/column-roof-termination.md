@@ -53,9 +53,14 @@ slab instead. This addendum defines that termination.
 > host (#161) — and only then may the engineer type one. An empty field is a
 > refusal, and the report names which of the two it was.
 
+> **R40**: `L_D` is the **developed centreline length of the built bar**.
+> Revit fillets the corner, so the legs handed to the API are longer than
+> `L_D` by `Δ = r(2 - π/2)`, with `r` read from the bar type. Measured in
+> #161: 900 mm of nominal leg builds an 880.2 mm bar.
+
 The longitudinal bar's development length `L_D` is split into two legs:
 
-    a + b = L_D
+    a + b = L_D + Δ        (R40; Δ = 0 only if the corner were unfilleted)
 
 where `a` is the vertical run from the slab's bottom face up to
 (floor thickness − cover), starting from the floor's bottom face, and

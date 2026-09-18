@@ -1555,6 +1555,45 @@ CASES = [
      "the constant imported from anchorage instead of restated, which is "
      "the dependency CONTEXT.md forbids and #99 is open about"),
 
+    # ---- R40: L_D is the DEVELOPED centreline length
+
+    (COL_ROOF,
+     '    return 2.0 * tangent - bend_radius_mm * theta',
+     '    return 0.0',
+     TCR + "test_the_fillet_loss_reproduces_the_LIVE_measurement",
+     "R40 -- the fillet allowance dropped to zero, so every top-floor bar "
+     "is handed nominal legs summing to L_D and develops about 2% less "
+     "than L_D, invisibly, on every bar"),
+
+    (COL_ROOF,
+     '    nominal = ld_mm + bend_loss_mm',
+     '    nominal = ld_mm',
+     TCR + "test_a_and_b_add_up_to_LD_where_slab_continues",
+     "R40 -- the allowance computed and then not ADDED to the legs, which "
+     "is the same 2% shortfall with the arithmetic still in the file"),
+
+    (COL_ROOF,
+     '            achieved_mm=a + b - loss, shortfall_mm=0.0, free_edge=False,',
+     '            achieved_mm=a + b, shortfall_mm=0.0, free_edge=False,',
+     TCR + "test_a_and_b_add_up_to_LD_where_slab_continues",
+     "R40 -- the report's achieved length taken from the NOMINAL legs "
+     "rather than the built bar, so the page claims an anchorage the steel "
+     "does not have"),
+
+    (COL_ROOF,
+     '    achieved = a + b_edge - loss',
+     '    achieved = a + b_edge',
+     TCR + "test_a_free_edge_caps_the_bend_to_what_fits_inside_the_column",
+     "R40 -- the fillet forgiven on a FREE EDGE, where the bar is already "
+     "short: the shortfall the report prints would understate the real one"),
+
+    (COL_ROOF,
+     '    if leg_mm < needed:',
+     '    if False:',
+     TCR + "test_a_leg_shorter_than_the_tangent_is_refused",
+     "R40 -- a leg shorter than the bend's own tangent allowed through, so "
+     "a narrow free edge asks Revit to build a corner that cannot exist"),
+
 ]
 
 
