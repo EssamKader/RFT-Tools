@@ -1,0 +1,33 @@
+#103 item 4 -- can a bad face be made UNPICKABLE?
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+document.IsModifiable = False (no transaction is opened here)
+
+==================================================================
+PASS 1 -- filter installed. Try to pick a SLAB face and the column's
+TOP face first (both should refuse to highlight), then pick a
+VERTICAL side face and press Finish.
+
+
+filter calls: AllowElement 639 (rejected 502), AllowReference 363 (rejected 205)
+faces OFFERED to the filter: 205 end (top/bottom), 158 vertical, 0 neither, 0 not planar
+^ an end face WAS offered and the filter refused it -- which is the claim item 4 needs.
+filter errors: none
+
+references returned: 1
+
+--- pick 1 ---
+  element: id 424284  300 x 600mm  category Structural Columns
+  normal: (1.000000000, 0.000000000, 0.000000000)
+  area:   25.8334
+  dot Hand = 1.000000  dot Facing = 0.000000  dot up = 0.000000
+
+==================================================================
+PASS 2 -- press ESCAPE now. Nothing else.
+
+ESCAPE: PickObjects raised OperationCanceledException.
+  message: 'Autodesk.Revit.Exceptions.OperationCanceledException: The user aborted the pick operation.\r\n   at ?A0xdcf0fb5b.PerformObjectsPick(ADocument* pADoc, ObjectType objectType, Boolean bMulSel, ISelectionFilter pSelFilter, String pUserDefindStatusPrompt, IList`1 pPreSelected)\r\n   at Autodesk.Revit.UI.Selection.Selection.PickObjects(ObjectType objectType, ISelectionFilter selectionFilter, String statusPrompt)\r\n   at Microsoft.Scripting.Interpreter.FuncCallInstruction`5.Run(InterpretedFrame frame)\r\n   at Microsoft.Scripting.Interpreter.Interpreter.Run(InterpretedFrame frame)\r\n   at Microsoft.Scripting.Interpreter.LightLambda.Run6[T0,T1,T2,T3,T4,T5,TRet](T0 arg0, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)\r\n   at System.Dynamic.UpdateDelegates.UpdateAndExecute5[T0,T1,T2,T3,T4,TRet](CallSite site, T0 arg0, T1 arg1, T2 arg2, T3 arg3, T4 arg4)\r\n   at Microsoft.Scripting.Interpreter.DynamicInstruction`6.Run(InterpretedFrame frame)\r\n   at Microsoft.Scripting.Interpreter.Interpreter.Run(InterpretedFrame frame)'
+  ^ this is the exception the tool must catch to leave everything
+    exactly as it was (section 3's cancel path).
+
+Nothing was modified. Send the text above back.

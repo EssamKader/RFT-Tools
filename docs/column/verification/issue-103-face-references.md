@@ -1,9 +1,10 @@
 # #103 — does a picked face map back to `column_layout`'s four? (PART 1)
 
-> **PICKING PROVEN.** `PickObjects` has now run interactively against this
+> **COMPLETE. Every item in §5 is now measured.** `PickObjects` has now run interactively against this
 > host from the pushbutton path, returning two face references in one
 > selection, each correlating exactly to ±Hand/±Facing. §5's prerequisite is
-> met for the normal path; only the REFUSAL cases (item 4) are still unrun. Everything below
+> met, and the refusal cases (item 4) are proven too — an end face and a slab
+> face can be made **unpickable**, and Escape has a named exception. Everything below
 > was read non-interactively, so it answers §5's item 2 (correlation);
 > item 3 (rotation) was answered later, by the #104 batch probe. Items 1
 > and 4 — the PICKING half — are still not run.
@@ -149,3 +150,65 @@ So every refusal path remains unproven:
 - **Escape** — the cancel path, which must leave the tool exactly as it was.
 
 These are cheap to add: the same button, one more run.
+
+## Item 4 — the refusals, and they are refusals at PICK TIME
+
+A second throwaway probe (`PickFilter.pushbutton`) installs an
+`ISelectionFilter` and **counts its own calls**, because "the filter was never
+consulted" and "the filter approved everything" are indistinguishable from
+outside. Raw transcript: `issue-103-filter-transcript.txt`.
+
+| | calls | rejected |
+|---|---|---|
+| `AllowElement` | 639 | **502** |
+| `AllowReference` | 363 | **205** |
+
+**Faces offered to the filter: 205 end (top/bottom), 158 vertical, 0 neither, 0
+non-planar.** That is the whole claim in one line of arithmetic:
+
+- `205 + 158 = 363` — every reference offered was accounted for;
+- **`rejected == 205 == end faces offered`** — every end face was refused and
+  **no vertical face ever was**.
+
+An earlier run of the same probe returned `AllowReference 176, rejected 0`,
+which looked like success and proved nothing: in a normal 3D view the column's
+top is under the slab and its bottom is on the floor, so no end face was ever
+hovered. The filter only *appeared* to work because `AllowElement` was doing
+all the refusing. The offered-face histogram exists because of that run.
+
+### What each layer refuses, which is a design constraint
+
+- **A slab face never reaches the face test.** It is refused at
+  `AllowElement`, on category — so `AllowReference` only ever sees faces of
+  elements that already passed.
+- **An end face is refused at `AllowReference`**, on `abs(FaceNormal.Z)`. The
+  first probe measured those normals as exactly `(0, 0, ±1)`, so the 0.001
+  tolerance is nowhere near anything real.
+
+> **The filter in the probe is too permissive for the product.** It accepts any
+> structural column's faces. §3 asks for **the picked column's own** face, so
+> the real filter must match the host's element id — otherwise, standing
+> between two columns, the engineer could flag a free edge on the wrong one.
+> Measured here, stated here, and it is the one place the product must not copy
+> the probe.
+
+### Escape
+
+`PickObjects` raises **`Autodesk.Revit.Exceptions.OperationCanceledException`**,
+thrown from `Selection.PickObjects(ObjectType, ISelectionFilter, String)` — the
+exact overload the tool will call, per the stack in the transcript. That is the
+type §3's cancel path must catch to leave everything as it was.
+
+### The third correlation, on a third column
+
+The accepted pick was 424284's wide face: normal `(1.000000000, 0.000000000,
+0.000000000)`, area **25.8334 ft² = 2.40 m²** against 0.6 × 4.0 (its clear
+height is 4000), `dot Hand = 1.000000`, `dot up = 0.000000`. Wide face to
+±Hand, a third time, on a third column, through the filtered pick.
+
+## §5 is satisfied
+
+Every prerequisite the addendum named before its logic may be implemented is
+now measured on a live host: the pick runs, a picked face maps exactly to one
+of `column_layout`'s four, it survives rotation, a bad face cannot be clicked,
+and cancelling is a named exception.
