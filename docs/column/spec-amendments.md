@@ -1204,3 +1204,73 @@ cap in §2 can drive `b` there on a narrow face. Refused, naming the leg.
 Where a free edge already costs anchorage, the fillet costs a little more, and
 both belong in §4's per-bar line — `achieved` is what the BUILT bar develops,
 not what was asked for.
+
+
+---
+
+## R41 — the available RUN governs, in every direction, for every reason
+
+**Decided by the owner**, on a case §2 does not cover:
+
+> what if column is not edge or corner with is interior but was put like 50 cm
+> from each side what if ld still cannot be modelled all as 500 mm is not yet
+> has the free room for bent bar to run
+
+### The hole this closes
+
+§2 is **binary**: slab continues → full `L_D`; free edge → cap to the column's
+own width. An interior column 500 mm from the slab edge is neither. The slab
+*does* continue, so the tool takes the full-`L_D` branch and asks for a 704.8
+mm horizontal leg into about 475 mm of real room — **the bar leaves the slab
+by some 230 mm**. That is exactly the failure the free-edge cap exists to
+prevent, occurring in the branch that has no cap.
+
+“Interior” was never the right question. A column 5 m from the edge and one
+500 mm from it are both interior; only one has room.
+
+### The rule
+
+**Every direction carries an available RUN, and the run always governs.** The
+three cases stop being branches and become one number with three sources:
+
+| case | what limits the run |
+|---|---|
+| free edge | the column's own width − 2 × cover (§2's existing cap) |
+| interior, near an edge | distance to the slab edge − the slab's edge cover |
+| deep interior | nothing — the run exceeds what `L_D` needs |
+
+- **The bend takes the direction with the most room**, not merely one that has
+  slab. That strengthens §2's corner-bar rule rather than replacing it: with
+  room everywhere, every direction still achieves full `L_D` and the choice
+  remains free.
+- **A capped leg places and reports**, exactly as a free edge already does —
+  the owner's ruling. Never steel outside concrete, and never a silent
+  shortfall.
+- **The report must distinguish WHY** a run was short: a free edge the
+  engineer flagged, or a slab edge the tool measured. They are different
+  facts, and only one of them is the engineer's own statement.
+
+This is §2's stated intent — *“replaces separate Interior / Edge / Corner
+cases”* — carried one step past where it was written.
+
+---
+
+## R42 — the run is MEASURED from the slab, not typed
+
+**Decided by the owner**, same exchange.
+
+The distance to the slab edge is read from the floor's own boundary, along the
+bend direction, less the slab's edge cover. Not a field on a tab, and not an
+extension of §3's pick-the-exception: a typed run is a number that is easy to
+forget on the one column where it matters, and A2's discipline is that the
+model is read.
+
+**This needs a probe before it is built.** How to obtain a `Floor`'s boundary
+reliably — sketch profile, top-face edge loops, or a horizontal ray — is
+unmeasured, and openings and non-rectangular slabs are exactly where a
+plausible-looking API shape goes wrong. No implementation until a transcript
+says which query answers.
+
+Until that lands, `rft.core.column_roof` takes the run as a **parameter**: the
+math above is complete and testable, and the adapter supplies the number once
+the probe says how to get it.

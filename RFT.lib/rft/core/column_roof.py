@@ -104,10 +104,20 @@ def tangent_mm(bend_radius_mm, angle_deg=90.0):
     return bend_radius_mm / math.tan(math.radians(angle_deg) / 2.0)
 
 
-#: One direction a bar could bend, and what is there. ``available_run_mm``
-#: is section 2's free-edge cap for THAT face -- see
-#: :func:`free_edge_run_mm`; it is ignored where ``has_slab`` is true,
-#: because a bend into slab is not constrained by the column's own width.
+#: One direction a bar could bend, and how much room is there.
+#:
+#: **R41: ``available_run_mm`` always governs**, whatever limits it --
+#: the column's own width at a free edge (:func:`free_edge_run_mm`), the
+#: measured distance to the slab edge for an interior column near one
+#: (R42), or a run longer than `L_D` needs deep inside. It used to be
+#: read only when ``has_slab`` was false, which is why a column 500 mm
+#: from the slab edge was handed a 704.8 mm leg and put 230 mm of bar
+#: outside the concrete.
+#:
+#: ``has_slab`` survives for the REPORT, not for the math: a short run
+#: because the engineer flagged a free edge and a short run the tool
+#: measured to a slab edge are different facts, and only one of them is
+#: the engineer's own statement.
 RoofBendDirection = namedtuple("RoofBendDirection",
                                "name has_slab available_run_mm")
 
@@ -121,7 +131,7 @@ RoofBendDirection = namedtuple("RoofBendDirection",
 RoofTermination = namedtuple(
     "RoofTermination",
     "direction a_mm b_mm ld_mm achieved_mm shortfall_mm free_edge "
-    "bend_loss_mm")
+    "bend_loss_mm run_limited")
 
 
 def development_length_mm(multiplier, bar_diameter_mm):
@@ -243,22 +253,26 @@ def terminate_bar(ld_mm, slab_thickness_mm, slab_cover_mm, directions,
                   loss)
     _require_room_to_bend(a, bend_radius_mm, "vertical")
 
-    with_slab = [one for one in directions if one.has_slab]
-    if with_slab:
-        # STATED DEFAULT, not a rule: section 2 says there is "no preferred
-        # direction" among those with slab, and something must still be
-        # deterministic or the same column details differently between
-        # runs. First-stated is chosen because it keeps the caller's own
-        # order meaningful; any of them is equally valid per the spec, and
-        # this is recorded as a default the way R31 records "the left of
-        # the two top corners".
-        _require_room_to_bend(b, bend_radius_mm, "horizontal")
-        # a + b is NOMINAL; the built bar is shorter by the fillet, and by
-        # construction that lands exactly on L_D (R40).
-        return RoofTermination(
-            direction=with_slab[0].name, a_mm=a, b_mm=b, ld_mm=ld_mm,
-            achieved_mm=a + b - loss, shortfall_mm=0.0, free_edge=False,
-            bend_loss_mm=loss)
+    # R41: one rule, not three branches. Each direction offers whatever
+    # run it has; the bend goes where the most bar can be developed. With
+    # room everywhere every direction achieves full L_D, so section 2's
+    # "no preferred direction" still holds -- the choice only becomes
+    # forced once the room runs out, which is the case that was wrong.
+    def developed_in(direction):
+        return min(b, direction.available_run_mm)
+
+    best = max(directions, key=developed_in)
+    # STATED DEFAULT, not a rule: ties go to the first stated direction.
+    # `max` already does that, and it is named here so it is visible as a
+    # default the way R31 records "the left of the two top corners".
+    b_final = developed_in(best)
+    _require_room_to_bend(b_final, bend_radius_mm, "horizontal")
+    achieved = a + b_final - loss
+    return RoofTermination(
+        direction=best.name, a_mm=a, b_mm=b_final, ld_mm=ld_mm,
+        achieved_mm=achieved, shortfall_mm=max(0.0, ld_mm - achieved),
+        free_edge=not best.has_slab, bend_loss_mm=loss,
+        run_limited=b_final < b)
 
     # STATED DEFAULT, not a rule: with every direction a free edge, the
     # longest available run is taken, because it develops the most bar.

@@ -1527,19 +1527,36 @@ CASES = [
      "of the far face -- outside the concrete, by exactly the cover"),
 
     (COL_ROOF,
-     '    with_slab = [one for one in directions if one.has_slab]',
-     '    with_slab = [one for one in directions[:1] if one.has_slab]',
-     TCR + "test_a_corner_bar_bends_where_the_SLAB_is_not_where_it_was_listed",
-     "section 2's corner rule narrowed to the FIRST stated direction, so "
-     "a corner bar listed edge-first takes the reduced a_E + b_E while "
-     "slab was available in its other direction"),
+     '        return min(b, direction.available_run_mm)',
+     '        return b',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- the available run ignored, so an interior column 500 mm "
+     "from the slab edge is handed the full leg and puts about 230 mm "
+     "of bar outside the concrete (the owner's own case)"),
 
     (COL_ROOF,
-     '    best = max(directions, key=lambda one: one.available_run_mm)',
+     '    best = max(directions, key=developed_in)',
      '    best = directions[0]',
-     TCR + "test_with_every_direction_a_free_edge_the_LONGEST_run_is_taken",
-     "the free-edge default reverted to first-listed, throwing away the "
-     "anchorage a wider face had available"),
+     TCR + "test_the_bend_goes_where_the_MOST_room_is_not_merely_where_slab_is",
+     "R41 -- the bend forced into the first stated direction rather "
+     "than the one with the most room, throwing away anchorage that "
+     "was there"),
+
+    (COL_ROOF,
+     '        run_limited=b_final < b)',
+     '        run_limited=False)',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- a capped leg no longer reported as capped, so the one "
+     "thing the engineer must notice about a short run is missing "
+     "from the report"),
+
+    (COL_ROOF,
+     '        free_edge=not best.has_slab, bend_loss_mm=loss,',
+     '        free_edge=True, bend_loss_mm=loss,',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- a measured slab edge reported as a free edge the "
+     "engineer flagged, which are different facts and only one of "
+     "them is the engineer's own statement"),
 
     (COL_ROOF,
      '    if leg <= 0.0:',
