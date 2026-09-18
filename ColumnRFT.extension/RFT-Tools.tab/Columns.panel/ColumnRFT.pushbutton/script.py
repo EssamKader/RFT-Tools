@@ -315,6 +315,12 @@ class RoofWindow(forms.WPFWindow):
         for label in LD_MODE_CHOICES:
             self.ld_mode_cb.Items.Add(label)
         self.ld_mode_cb.SelectedIndex = 0
+        # L_D is typed, so the preview follows the KEYSTROKE. One that
+        # only moved on a button press would show the previous value
+        # while the engineer read the new one -- which is how a number
+        # gets trusted that was never computed.
+        self.ld_value_tb.TextChanged += self.on_ld_changed
+        self.ld_mode_cb.SelectionChanged += self.on_ld_changed
 
     # ----------------------------------------------------------- reading
     def free_edge_names(self):
@@ -338,9 +344,23 @@ class RoofWindow(forms.WPFWindow):
         self.slab = None
         self.use_btn.IsEnabled = False
         self.preview_tb.Text = "--"
+        # Say what the tick will DO, on the face it was ticked for. The
+        # number itself is deliberately NOT computed here: the cap is
+        # `rft.revit.column_roof_slab`'s rule, and a second copy of it in
+        # the window is a copy that can disagree with the one that runs.
+        box_for = dict((d, n) for n, d in FREE_EDGE_CHECKBOXES)
+        for readout_name, direction in RUN_READOUTS:
+            if getattr(self, box_for[direction]).IsChecked:
+                getattr(self, readout_name).Text = (
+                    "FLAGGED -- will use the room INSIDE the column "
+                    "instead of the run beyond this face (section 2's "
+                    "b_E cap). Read the slab again for the number.")
+        flagged = self.free_edge_names()
         self.roof_status_tb.Text = (
-            "Free edges changed -- read the slab again, because a free "
-            "edge changes the run its face is allowed.")
+            "Free edges changed to {} -- read the slab again. A flagged "
+            "face stops using the MEASURED run beyond it and uses the "
+            "room inside the column instead, so its number changes."
+            .format(", ".join(flagged) if flagged else "none"))
 
     def on_read_slab_click(self, sender, args):
         if self.owner.column is None:
@@ -388,6 +408,8 @@ class RoofWindow(forms.WPFWindow):
         self.slab_thickness_source_tb.Text = ""
         self.slab_cover_tb.Text = "--"
         self.slab_cover_source_tb.Text = ""
+        self.ld_applied_tb.Text = "--"
+        self.ld_source_tb.Text = ""
         for name, _direction in RUN_READOUTS:
             getattr(self, name).Text = "--"
         self.preview_tb.Text = "--"
@@ -427,6 +449,7 @@ class RoofWindow(forms.WPFWindow):
 
         self.use_btn.IsEnabled = True
         self.roof_status_tb.Text = "Slab read. State L_D, then use these inputs."
+        self._show_ld()
         self._refresh_preview()
 
     # ------------------------------------------------------------- L_D
@@ -447,6 +470,35 @@ class RoofWindow(forms.WPFWindow):
                     "to multiply. Select one on the first tab.")
             return value * diameter_mm
         return value
+
+    def on_ld_changed(self, sender, args):
+        self._show_ld()
+        self._refresh_preview()
+
+    def _show_ld(self):
+        """What L_D WORKS OUT TO, beside what was typed.
+
+        `60` and `960 mm` are different statements, and the report
+        certifies the second. A window that shows only the multiplier
+        leaves the engineer to do the arithmetic that the tool is about
+        to do differently.
+        """
+        try:
+            applied_mm = self.ld_mm()
+        except ValueError as refusal:
+            self.ld_applied_tb.Text = "--"
+            self.ld_source_tb.Text = str(refusal)
+            return
+        self.ld_applied_tb.Text = "{:.0f} mm".format(applied_mm)
+        if self.ld_mode_cb.SelectedIndex == 0:
+            diameter_mm = self.owner.selected_bar_diameter_mm()
+            self.ld_source_tb.Text = (
+                "{} x the selected bar's own {:.1f} mm diameter (R35 -- "
+                "stated by you, never picked by the tool)".format(
+                    self.ld_value_tb.Text.strip(), diameter_mm))
+        else:
+            self.ld_source_tb.Text = (
+                "stated directly in millimetres (R35)")
 
     def build_plan(self):
         """The one object this window hands back (R43).
@@ -791,7 +843,8 @@ class ColumnWindow(forms.WPFWindow):
         column = revit.pick_element(
             message="Select a rectangular concrete column to detail.")
         if column is None:
-            self.column_status_tb.Text = "No column picked yet."
+            self._refuse_on_tab(self.column_status_tb,
+                                "No column picked yet.")
             return
 
         # read_column refuses BEFORE it reads: a window showing numbers for
@@ -1000,7 +1053,7 @@ class ColumnWindow(forms.WPFWindow):
                 parse_positive_float(self.ls_value_tb.Text, "Ls"),
                 self._selected_ls_mode(), bar_diameter_mm)
         except ValueError as ex:
-            self.longitudinal_status_tb.Text = str(ex)
+            self._refuse_on_tab(self.longitudinal_status_tb, str(ex))
             return
 
         # One composing call (#110). The window states the inputs and
@@ -1030,13 +1083,30 @@ class ColumnWindow(forms.WPFWindow):
         self.longitudinal_status_tb.Text = "Applied."
         self.redraw_sketch()
 
+    def _refuse_on_tab(self, status_control, message):
+        """A refusal the engineer cannot SEE is a silent failure.
+
+        Every tab's own status line lives INSIDE that tab's ScrollViewer,
+        under the Apply button -- so on a short window the refusal is
+        written below the fold while ``status_tb``, which sits outside the
+        TabControl and is always visible, still reads "ready". Apply then
+        looks like a button that does nothing, which is exactly how a
+        working refusal gets reported as a broken tool.
+
+        Reported live on the top-floor build: Apply on the Ties tab
+        "does not work".
+        """
+        status_control.Text = message
+        self.status_tb.Text = message
+
     def on_apply_ties_click(self, sender, args):
         """Section 7's two hooks and section 8's spacing."""
         if self.column_data is None:
-            self.ties_status_tb.Text = "Pick a column first."
+            self._refuse_on_tab(self.ties_status_tb, "Pick a column first.")
             return
         if self.layout is None:
-            self.ties_status_tb.Text = (
+            self._refuse_on_tab(
+                self.ties_status_tb,
                 "Apply the Longitudinal bars tab first -- a tie arrangement "
                 "is stated in bar indices, and there are no bars yet.")
             return
@@ -1045,7 +1115,8 @@ class ColumnWindow(forms.WPFWindow):
         # Building the plan anyway would lap the bars into a storey that is
         # not there -- silently, because every other number would be right.
         if self.top_floor_cb.IsChecked and self.roof_termination is None:
-            self.ties_status_tb.Text = (
+            self._refuse_on_tab(
+                self.ties_status_tb,
                 "This column is marked as top floor, but its top-floor "
                 "inputs have not been handed back yet. In the top-floor "
                 "window: read the slab, state L_D, then Use these inputs.")
@@ -1070,7 +1141,7 @@ class ColumnWindow(forms.WPFWindow):
                 manual_middle_zone_mm=manual_middle,
                 roof_termination=self.roof_termination)
         except ValueError as ex:
-            self.ties_status_tb.Text = str(ex)
+            self._refuse_on_tab(self.ties_status_tb, str(ex))
             return
 
         plan = self.plan.spacing
@@ -1118,7 +1189,8 @@ class ColumnWindow(forms.WPFWindow):
             ("the Longitudinal bars tab (press Apply)", self.longitudinal),
             ("the Ties tab (press Apply)", self.spacing)) if value is None]
         if missing:
-            self.review_status_tb.Text = (
+            self._refuse_on_tab(
+                self.review_status_tb,
                 "Cannot build the report yet -- still needed: %s."
                 % "; ".join(missing))
             return
@@ -1142,7 +1214,8 @@ class ColumnWindow(forms.WPFWindow):
         work itself -- everything from step 4 (finding this tool's own
         elements) onward must run in an API context, same as Pick (#57)."""
         if self.column is None or self.plan is None:
-            self.place_status_tb.Text = (
+            self._refuse_on_tab(
+                self.place_status_tb,
                 "Pick a column and Apply both the Longitudinal and Ties "
                 "tabs first.")
             return
@@ -1152,7 +1225,8 @@ class ColumnWindow(forms.WPFWindow):
         # termination in it, and Place is the last point at which that can
         # still be caught.
         if self.top_floor_cb.IsChecked and self.plan.roof_termination is None:
-            self.place_status_tb.Text = (
+            self._refuse_on_tab(
+                self.place_status_tb,
                 "This column is marked as top floor, but the plan carries "
                 "no top-floor termination. Hand the inputs back in the "
                 "top-floor window, then Apply the Ties tab again.")
@@ -1168,7 +1242,8 @@ class ColumnWindow(forms.WPFWindow):
             ("an outer hook type", outer_hook_type),
             ("an inner hook type", inner_hook_type)) if value is None]
         if missing:
-            self.place_status_tb.Text = (
+            self._refuse_on_tab(
+                self.place_status_tb,
                 "Select %s before Apply." % " and ".join(missing))
             return
 
@@ -1212,7 +1287,8 @@ class ColumnWindow(forms.WPFWindow):
                 title="Replace existing reinforcement?",
                 ok=False, yes=True, no=True)
             if not proceed:
-                self.place_status_tb.Text = "Cancelled -- nothing changed."
+                self._refuse_on_tab(self.place_status_tb,
+                                    "Cancelled -- nothing changed.")
                 return
 
         try:
@@ -1254,7 +1330,8 @@ class ColumnWindow(forms.WPFWindow):
         (specs/column-batch-placement.md). No Revit work itself, same as
         Pick (#57) and single-column Apply (#120)."""
         if self.column is None or self.plan is None:
-            self.batch_status_tb.Text = (
+            self._refuse_on_tab(
+                self.batch_status_tb,
                 "Pick a column and Apply both the Longitudinal and Ties "
                 "tabs first.")
             return
@@ -1269,14 +1346,15 @@ class ColumnWindow(forms.WPFWindow):
             ("an outer hook type", outer_hook_type),
             ("an inner hook type", inner_hook_type)) if value is None]
         if missing:
-            self.batch_status_tb.Text = (
+            self._refuse_on_tab(
+                self.batch_status_tb,
                 "Select %s before Apply." % " and ".join(missing))
             return
 
         try:
             inputs = self._batch_inputs()
         except ValueError as ex:
-            self.batch_status_tb.Text = str(ex)
+            self._refuse_on_tab(self.batch_status_tb, str(ex))
             return
 
         self._dispatch_to_revit_context(
@@ -1356,7 +1434,8 @@ class ColumnWindow(forms.WPFWindow):
                     len(replacing)),
                 ok=False, yes=True, no=True)
             if not proceed:
-                self.batch_status_tb.Text = (
+                self._refuse_on_tab(
+                    self.batch_status_tb,
                     "Cancelled -- nothing changed. The groups and exclusions "
                     "above still stand.")
                 return

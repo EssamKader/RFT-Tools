@@ -231,3 +231,56 @@ def test_the_read_catches_EVERYTHING_because_the_dispatcher_swallows():
         "except Exception"), (
         "the expected refusal must be caught before the catch-all, or it "
         "is reported as a crash")
+
+
+# --------------------------------------------------------------------- #
+# A refusal the engineer cannot SEE is a silent failure
+
+
+def test_every_tab_refusal_also_reaches_the_ALWAYS_VISIBLE_status_line():
+    """Reported live: "Apply in the main window for ties does not work".
+
+    It worked. It REFUSED, and wrote the reason to `ties_status_tb`, which
+    lives INSIDE the Ties tab's ScrollViewer beneath the Apply button --
+    below the fold on a short window -- while `status_tb`, which sits
+    outside the TabControl and is always visible, still read "ready". A
+    working refusal was therefore reported as a broken button.
+
+    A REFUSAL is what this checks, not every message: a refusal is a write
+    to a tab's status line followed by an early ``return``, and it is the
+    one the engineer must see. A SUCCESS line ("Applied (Mode A)...")
+    rightly stays on its own tab, where it is read in context.
+    """
+    lines = _script().split(chr(10))
+    offenders = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if "_status_tb.Text = " not in stripped:
+            continue
+        if not stripped.startswith("self."):
+            continue
+        name = stripped.split(".")[1]
+        if name == "roof_status_tb":
+            # The second window has no tabs and no scrolled status line:
+            # its footer is always visible, so it IS the visible line.
+            continue
+        # Look ahead over this statement and its continuation lines for
+        # the early return that makes it a refusal.
+        for follower in lines[index + 1:index + 8]:
+            following = follower.strip()
+            if following == "return":
+                offenders.append(name)
+                break
+            if following and not following.startswith(
+                    ("\"", "'", ")", "%", "+", "." , "if ", "else")):
+                break
+    assert not offenders, (
+        "these refusals are written ONLY to their own tab, which can be "
+        "scrolled out of view while status_tb still reads 'ready'. Route "
+        "them through _refuse_on_tab: " + repr(sorted(set(offenders))))
+
+
+def test_the_helper_writes_BOTH_lines():
+    body = _method_body("ColumnWindow", "_refuse_on_tab")
+    assert "status_control.Text = message" in body
+    assert "self.status_tb.Text = message" in body

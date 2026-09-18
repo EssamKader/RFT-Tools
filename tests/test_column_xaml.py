@@ -1091,3 +1091,33 @@ def test_the_two_windows_share_NO_control_name():
         "these x:Names are declared in BOTH windows, so a guard that "
         "searches script.py cannot tell which one it found: %s"
         % sorted(shared))
+
+
+def test_every_read_out_the_SECOND_window_declares_is_actually_written():
+    """The other direction, and the one that was missing (#176).
+
+    `test_every_control_the_script_touches_exists_in_the_xaml` catches a
+    control the script drives that the markup does not declare. Nothing
+    caught the reverse: a field the MARKUP declares that nothing ever
+    writes. `ld_applied_tb` and `ld_source_tb` shipped that way and read
+    "--" on a live host while the window was otherwise working.
+
+    A dead read-out is worse than a missing one. A missing field is
+    noticed; a field that permanently shows "--" reads as "the tool could
+    not work this out", which is a statement about the MODEL that the
+    tool never made.
+    """
+    declared = _x_names(COLUMN_ROOF_XAML_PATH)
+    script = _script()
+    written = set(re.findall(r"self\.([a-z_]+_tb)\.Text", script))
+    # Names reached through getattr from a table, which the regex cannot
+    # see. Both tables are themselves asserted by name below.
+    via_tables = set(re.findall(r'\("([a-z_]+_tb)",\s*"[-+]', script))
+    dead = sorted(n for n in declared
+                  if n.endswith("_tb") and n not in written | via_tables)
+    assert not dead, (
+        "RoofWindow.xaml declares these read-outs and nothing ever writes "
+        "to them, so they show '--' for ever: %s" % dead)
+    assert via_tables, (
+        "the getattr-driven read-out table was not found; if its shape "
+        "changed, this guard is now checking less than it claims")

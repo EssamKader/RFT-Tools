@@ -140,7 +140,7 @@
                     <TextBlock Text="Cover to state (mm)" Width="210"
                                Style="{StaticResource ReadOutLabel}"/>
                     <TextBox x:Name="typed_cover_tb" Width="110" Text=""/>
-                    <TextBlock x:Name="typed_cover_note_tb" Margin="10,0,0,0"
+                    <TextBlock Margin="10,0,0,0"
                                Style="{StaticResource ReadOutSource}"
                                Text="This floor's own cover reads zero, so there is nothing to read. State it and the report will say it was typed."/>
                 </StackPanel>
@@ -185,7 +185,11 @@
                 <TextBlock Style="{StaticResource SectionHeading}"
                            Text="Free edges (section 3)"/>
                 <TextBlock Style="{StaticResource ReadOutSource}"
-                           Text="Every face defaults to slab-continuing. Tick only the exception -- a face where the slab STOPS at the column. A flagged free edge and a measured short run are different facts, and section 4 reports which one shortened a bar."/>
+                           Text="Every face defaults to slab-continuing, and the run beyond it is MEASURED from the model. Tick a face only where the slab genuinely STOPS at the column and the model does not show it."/>
+
+                <TextBlock Style="{StaticResource ReadOutSource}"
+                           Margin="0,6,0,0"
+                           Text="What a tick changes: the bar stops using the room BEYOND that face and uses the room INSIDE the column instead -- the face width less twice the slab cover (section 2's b_E cap). That is a different measurement from a different origin, so the number can go UP as well as down. The face is also recorded as a FLAGGED free edge, so section 4 says the leg was shortened by a declared edge rather than by a boundary the tool measured. Tick, then press Read the slab again to see the new numbers."/>
 
                 <Grid Margin="0,6,0,0">
                     <Grid.ColumnDefinitions>
