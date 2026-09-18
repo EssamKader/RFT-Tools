@@ -1776,6 +1776,24 @@ CASES = [
      "toward the face with the LEAST room -- the defect R41 exists to "
      "prevent, reintroduced in the placer"),
 
+    # ---- R45: the bent bar's fifth handle
+
+    (COL_PLACE_BARS,
+     '        if axis in pinned_axes:',
+     '        if False:',
+     TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
+     "R45 -- the bent bar's fifth handle pinned after all, setting "
+     "the horizontal leg's far end to cover distance from the near "
+     "face using the VERTICAL leg's own coordinate, which collapses "
+     "the leg and destroys b"),
+
+    (COL_PLACE_BARS,
+     '        pinned_axes.add(axis)',
+     '        pinned_axes.add(None)',
+     TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
+     "R45's bookkeeping recording nothing, so the skip never fires "
+     "and every repeated axis is pinned again"),
+
 ]
 
 

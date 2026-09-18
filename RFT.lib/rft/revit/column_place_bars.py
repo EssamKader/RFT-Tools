@@ -250,6 +250,17 @@ def _is_near_face_normal(normal, u_mm, v_mm, hand, facing):
     return False
 
 
+def _axis_of_normal(normal, hand, facing):
+    """Which horizontal axis a face normal runs along -- ``"u"``, ``"v"``,
+    or ``None`` for a vertical face. R45 needs it to notice that two
+    handles govern the SAME axis."""
+    if abs(_dot(normal, hand)) >= 1.0 - _AXIS_ALIGNED_TOL:
+        return "u"
+    if abs(_dot(normal, facing)) >= 1.0 - _AXIS_ALIGNED_TOL:
+        return "v"
+    return None
+
+
 def _host_face_candidate(mgr, handle, host_id, u_mm, v_mm, hand, facing):
     """R22's candidate filter for one handle: ``IsToHostFaceOrCover()``,
     **not** ``IsToCover()``, targets the host, and whose target host
@@ -284,8 +295,9 @@ def _host_face_candidate(mgr, handle, host_id, u_mm, v_mm, hand, facing):
             # single handle on the live column, in an order it does not
             # document. A loop that kept going and took the last one would
             # be picking by an ordering nobody specified.
-            return candidate
-    return None
+            return candidate, _axis_of_normal(
+                (normal.X, normal.Y, normal.Z), hand, facing)
+    return None, None
 
 
 def _pin_to_host_faces(bar, host_id, seed, hand, facing, offset_internal):
@@ -298,13 +310,30 @@ def _pin_to_host_faces(bar, host_id, seed, hand, facing, offset_internal):
     OUTWARD normal, so moving the bar INWARD from the face is negative.
     """
     mgr = bar.GetRebarConstraintsManager()
+    # R45: at most ONE handle per horizontal axis, the first offered.
+    #
+    # A straight bar has four handles -- one governing u, one v, and two
+    # vertical ones that offer no horizontal face and are already left
+    # alone. A BENT bar has FIVE (#173's probe, measured): the extra one
+    # is the horizontal leg's far end, and it offers the SAME axis as the
+    # leg runs along.
+    #
+    # Pinning that fifth handle would set the leg's far END to cover
+    # distance from the near face -- using the SEED's own coordinate,
+    # which belongs to the vertical leg hundreds of millimetres away. The
+    # horizontal leg would be dragged back to the bar's own line and
+    # `b` would be destroyed, in a cage that still looked placed.
+    pinned_axes = set()
     for handle in mgr.GetAllHandles():
-        candidate = _host_face_candidate(
+        candidate, axis = _host_face_candidate(
             mgr, handle, host_id, seed.u_mm, seed.v_mm, hand, facing)
         if candidate is None:
             continue
+        if axis in pinned_axes:
+            continue
         candidate.SetDistanceToTargetHostFace(-offset_internal)
         mgr.SetPreferredConstraintForHandle(handle, candidate)
+        pinned_axes.add(axis)
 
 
 def _place_run(doc, host_element, bar_type, run, hand, facing, origin,

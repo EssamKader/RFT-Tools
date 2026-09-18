@@ -246,6 +246,66 @@ def test_the_face_offset_is_signed_NEGATIVE():
 
 
 # --------------------------------------------------------------------- #
+# R45 -- the bent bar's FIFTH handle is never pinned
+
+
+def test_a_SECOND_handle_on_the_same_axis_is_left_alone():
+    """R45, measured in #173's probe: a straight bar has 4 handles, a bent
+    bar has 5, and the extra one is the horizontal leg's FAR END offering
+    the same axis the leg runs along (face normals (0, -1, 0) / (0, 1, 0)
+    for a bend along Facing).
+
+    Pinning it would set that far end to cover distance from the near
+    face, using the SEED's coordinate -- which belongs to the vertical leg
+    hundreds of millimetres away. The horizontal leg would collapse back
+    onto the bar's own line and `b` would be gone, in a cage that still
+    looked placed.
+    """
+    host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
+    vertical_leg = FakeRebarHandle("RebarPlane")
+    far_end = FakeRebarHandle("RebarPlane")
+    first = _host_face_candidate((0.0, -1.0, 0.0), host_id)
+    second = _host_face_candidate((0.0, -1.0, 0.0), host_id)
+    manager = FakeRebarConstraintsManager(
+        handles=[vertical_leg, far_end],
+        candidates={vertical_leg: [first], far_end: [second]})
+    FakeRebar.PENDING_CONSTRAINTS_MANAGERS = [manager]
+
+    plan = _plan(count_b=2, count_h=2)
+    host = _host()
+    host.Id = host_id
+    place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
+
+    assert manager.preferred[vertical_leg] is first
+    assert far_end not in manager.preferred
+    # And it was never touched at all -- not merely unpreferred.
+    assert second.distance_to_target_host_face is None
+
+
+def test_both_horizontal_axes_are_still_pinned():
+    """R45 skips a REPEAT of an axis, never a different one. A straight
+    bar's u and v handles must both still be pinned, or R22's whole
+    correction is halved."""
+    host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
+    u_handle = FakeRebarHandle("RebarPlane")
+    v_handle = FakeRebarHandle("RebarPlane")
+    u_candidate = _host_face_candidate((-1.0, 0.0, 0.0), host_id)
+    v_candidate = _host_face_candidate((0.0, -1.0, 0.0), host_id)
+    manager = FakeRebarConstraintsManager(
+        handles=[u_handle, v_handle],
+        candidates={u_handle: [u_candidate], v_handle: [v_candidate]})
+    FakeRebar.PENDING_CONSTRAINTS_MANAGERS = [manager]
+
+    plan = _plan(count_b=2, count_h=2)
+    host = _host()
+    host.Id = host_id
+    place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
+
+    assert manager.preferred[u_handle] is u_candidate
+    assert manager.preferred[v_handle] is v_candidate
+
+
+# --------------------------------------------------------------------- #
 # R22 -- the ToCover candidate is never chosen, and the check is a
 # POSITION check, not merely a label
 
