@@ -93,6 +93,8 @@ TCP = "tests/test_column_placer.py::"
 TCA = "tests/test_column_apply.py::"
 # ---- #153: batch placement (R33) --------------------------------
 COL_BATCH_CORE = "RFT.lib/rft/core/column_batch.py"
+COL_ROOF = "RFT.lib/rft/core/column_roof.py"
+TCR = "tests/test_column_roof.py::"
 COL_BATCH_ADAPTER = "RFT.lib/rft/revit/column_batch.py"
 TCB = "tests/test_column_batch.py::"
 TCBW = "tests/test_column_batch_window.py::"
@@ -1493,6 +1495,66 @@ CASES = [
      "spec Section 6 -- the replacement table dropped from the batch "
      "report, leaving R23's per-column counts in a dialog that is "
      "gone the moment it is dismissed"),
+    # ---- #160: the roof termination math (sections 1-2, R35)
+
+    (COL_ROOF,
+     '    a = min(a_formula_mm, ld_mm - MIN_BEND_LEG_MM)',
+     '    a = a_formula_mm',
+     TCR + "test_the_bend_leg_never_falls_below_the_minimum",
+     "section 2.3's cap on a removed, so a thick slab and a short L_D "
+     "leave a bend leg of a few millimetres -- the beam tool's own #14 "
+     "finding 3, reintroduced in the column tool"),
+
+    (COL_ROOF,
+     '    if ld_mm < MIN_BEND_LEG_MM:',
+     '    if False:',
+     TCR + "test_an_LD_below_the_minimum_bend_leg_is_refused",
+     "a below-minimum L_D allowed through, where the cap goes NEGATIVE "
+     "and the straight run reverses direction into the Revit API"),
+
+    (COL_ROOF,
+     '    b_edge = min(b, best.available_run_mm)',
+     '    b_edge = b',
+     TCR + "test_a_free_edge_caps_the_bend_to_what_fits_inside_the_column",
+     "section 2's b_E cap dropped, so a free-edge bar bends its full "
+     "horizontal leg out into open air beyond the column"),
+
+    (COL_ROOF,
+     '    run = column_width_mm - cover_mm * 2.0',
+     '    run = column_width_mm - cover_mm',
+     TCR + "test_the_free_edge_run_is_the_face_width_less_cover_BOTH_sides",
+     "cover counted on ONE side only, so the bend ends one cover short "
+     "of the far face -- outside the concrete, by exactly the cover"),
+
+    (COL_ROOF,
+     '    with_slab = [one for one in directions if one.has_slab]',
+     '    with_slab = [one for one in directions[:1] if one.has_slab]',
+     TCR + "test_a_corner_bar_bends_where_the_SLAB_is_not_where_it_was_listed",
+     "section 2's corner rule narrowed to the FIRST stated direction, so "
+     "a corner bar listed edge-first takes the reduced a_E + b_E while "
+     "slab was available in its other direction"),
+
+    (COL_ROOF,
+     '    best = max(directions, key=lambda one: one.available_run_mm)',
+     '    best = directions[0]',
+     TCR + "test_with_every_direction_a_free_edge_the_LONGEST_run_is_taken",
+     "the free-edge default reverted to first-listed, throwing away the "
+     "anchorage a wider face had available"),
+
+    (COL_ROOF,
+     '    if leg <= 0.0:',
+     '    if False:',
+     TCR + "test_a_cover_at_or_above_the_thickness_is_refused_not_negative",
+     "a slab whose read cover meets or exceeds its thickness (R37 reads "
+     "BOTH) allowed to produce a zero or negative vertical leg"),
+
+    (COL_ROOF,
+     'MIN_BEND_LEG_MM = 200.0',
+     'from .anchorage import MIN_BEND_LEG_MM',
+     TCR + "test_this_module_does_NOT_import_anchorage",
+     "the constant imported from anchorage instead of restated, which is "
+     "the dependency CONTEXT.md forbids and #99 is open about"),
+
 ]
 
 
