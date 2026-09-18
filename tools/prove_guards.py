@@ -126,11 +126,9 @@ CASES = [
     # `if False:` mutation on this repo once passed in CI while failing
     # locally on identical content (see R45's case below).
     (COL_PLAN,
-     '    ("bottom", STEP_AXIS_HAND),
-'
+     '    ("bottom", STEP_AXIS_HAND),\n'
      '    ("right", STEP_AXIS_FACING),',
-     '    ("bottom", STEP_AXIS_FACING),
-'
+     '    ("bottom", STEP_AXIS_FACING),\n'
      '    ("right", STEP_AXIS_HAND),',
      TPL + "test_each_run_bends_PERPENDICULAR_to_the_axis_it_steps_along",
      "R44 -- the two step axes swapped, so every run bends ALONG the "
@@ -138,11 +136,9 @@ CASES = [
      "that raised an internal error in #173's part 3"),
 
     (COL_PLAN,
-     '    ("right", STEP_AXIS_FACING),
-'
+     '    ("right", STEP_AXIS_FACING),\n'
      '    ("top", STEP_AXIS_HAND),',
-     '    ("top", STEP_AXIS_HAND),
-'
+     '    ("top", STEP_AXIS_HAND),\n'
      '    ("right", STEP_AXIS_FACING),',
      TPL + "test_the_assembler_states_the_axis_mapping_in_the_PERIMETER_order",
      "R44 -- the run order no longer matches the order "
