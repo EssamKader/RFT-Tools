@@ -15,6 +15,18 @@ into those two lengths -- "the plan's legs are already the NOMINAL ones
 with the allowance in them" -- so this module does not add or subtract it
 again.
 
+Issue #180 (R44) makes the termination PER FACE RUN: ``normal`` must be
+perpendicular to the bend plane while also being the array's own step
+axis (#131), so a run may only bend perpendicular to the direction its
+own bars step along. ``plan.roof_termination`` now carries one
+``rft.core.column_roof.RunTermination`` per run --
+``bottom``/``right``/``top``/``left``, the same order
+:func:`_face_run_slices` already slices the perimeter in -- and
+:func:`place_bars` looks up each run's OWN termination rather than
+applying one to all four. The ``normal`` this module passes was already
+correct for this (R44's whole point: the run's step direction and its
+bend-plane normal are the same vector), so no change was needed there.
+
 Creates the longitudinal bars of a ``rft.core.column_plan.ColumnPlan`` in a
 host column. Builds elements only -- **opens, commits and rolls back no
 transaction** (R25); the caller owns it.
@@ -428,11 +440,13 @@ def place_bars(doc, host_element, bar_type, plan):
     (``plan.extent.base_z_mm``) through the column's clear height and
     through the top support, protruding ``plan.splice.length_mm`` above it.
 
-    Per the roof-termination addendum section 1 (#173): a
+    Per the roof-termination addendum section 1 (#173), R44: a
     ``plan.roof_termination`` states no such splice exists to protrude
-    into -- the bar bends into the roof slab instead, and
-    :func:`_place_run` reads that decision off
-    ``plan.roof_termination.termination``.
+    into -- each of the four runs bends into the roof slab instead, and
+    :func:`_place_run` reads ITS OWN run's decision off
+    ``plan.roof_termination``'s ``bottom``/``right``/``top``/``left``
+    field -- the same order :func:`_face_run_slices` slices the perimeter
+    in, never one termination applied to every run.
     """
     host = plan.host
     hand = host["hand"]
@@ -442,13 +456,16 @@ def place_bars(doc, host_element, bar_type, plan):
     z_base_internal = mm_to_internal(plan.extent.base_z_mm)
     offset_internal = mm_to_internal(plan.layout.bar_offset_mm)
     roof = plan.roof_termination
-    termination = None if roof is None else roof.termination
+    run_terminations = (None if roof is None else
+                        (roof.bottom, roof.right, roof.top, roof.left))
 
     created = []
-    for start, end in _face_run_slices(plan.counts):
+    for index, (start, end) in enumerate(_face_run_slices(plan.counts)):
         run = plan.layout.bars[start:end]
         if not run:
             continue
+        termination = (None if run_terminations is None
+                       else run_terminations[index].termination)
         created.append(_place_run(
             doc, host_element, bar_type, run, hand, facing, origin,
             z_base_internal, plan.extent.top_z_mm, plan.splice.length_mm,

@@ -12,9 +12,10 @@ cover.
 import pytest
 
 from rft.core.column_roof import (
-    MIN_BEND_LEG_MM, RoofBendDirection, development_length_mm,
+    MIN_BEND_LEG_MM, STEP_AXIS_FACING, STEP_AXIS_HAND, RoofBendDirection,
+    candidate_directions_for_step_axis, development_length_mm,
     fillet_loss_mm, free_edge_run_mm, tangent_mm, terminate_bar,
-    vertical_leg_mm,
+    terminate_run, vertical_leg_mm,
 )
 
 BAR_DIA_MM = 16.0
@@ -296,6 +297,76 @@ def test_a_leg_shorter_than_the_tangent_is_refused():
                       [RoofBendDirection(name="-Facing", has_slab=False,
                                         available_run_mm=30.0)],
                       BEND_RADIUS_MM)
+
+
+# --------------------------------------------------------------- #180, R44
+
+
+#: Four full directions, one per axis -- the column's own full set, before
+#: a run narrows it to its own two (R44).
+_ALL_FOUR = (
+    RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+    RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=220.0),
+    RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
+    RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=475.0),
+)
+
+
+def test_a_run_stepping_along_Hand_may_bend_only_along_Facing():
+    result = candidate_directions_for_step_axis(STEP_AXIS_HAND, _ALL_FOUR)
+    assert [d.name for d in result] == ["+Facing", "-Facing"]
+
+
+def test_a_run_stepping_along_Facing_may_bend_only_along_Hand():
+    result = candidate_directions_for_step_axis(STEP_AXIS_FACING, _ALL_FOUR)
+    assert [d.name for d in result] == ["+Hand", "-Hand"]
+
+
+def test_an_unknown_step_axis_is_refused_not_guessed():
+    with pytest.raises(ValueError):
+        candidate_directions_for_step_axis("Up", _ALL_FOUR)
+
+
+def test_terminate_run_never_hands_terminate_bar_its_OWN_step_axis():
+    """The collision R44 exists to prevent: `normal` cannot be both the
+    array's step axis and perpendicular to the bend plane at once, so a
+    run must never even be OFFERED a direction along its own axis to bend
+    into -- not merely steered away from choosing it."""
+    result = terminate_run(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+                           STEP_AXIS_HAND, _ALL_FOUR, BEND_RADIUS_MM)
+    assert result.termination.direction in ("+Facing", "-Facing")
+    assert all(d.name in ("+Facing", "-Facing") for d in result.directions)
+
+
+def test_terminate_run_still_picks_the_MOST_ROOM_between_its_two():
+    """R41 unchanged: of the two candidates a run actually has, the one
+    with more room wins. -Hand has only 220 mm here; +Hand has 5000."""
+    result = terminate_run(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+                           STEP_AXIS_FACING, _ALL_FOUR, BEND_RADIUS_MM)
+    assert result.termination.direction == "+Hand"
+    assert result.termination.shortfall_mm == 0.0
+
+
+def test_terminate_run_can_still_be_capped_by_its_OWN_two():
+    """Give a run two candidates that are BOTH short, so even the winner
+    falls short of full L_D -- proves the narrowing actually removes the
+    other axis' room rather than merely relabelling the same four."""
+    narrow = (
+        RoofBendDirection(name="+Facing", has_slab=False,
+                          available_run_mm=free_edge_run_mm(
+                              NARROW_FACE_MM, COLUMN_COVER_MM)),
+        RoofBendDirection(name="-Facing", has_slab=False,
+                          available_run_mm=free_edge_run_mm(
+                              NARROW_FACE_MM, COLUMN_COVER_MM)),
+        RoofBendDirection(name="+Hand", has_slab=True,
+                          available_run_mm=5000.0),
+        RoofBendDirection(name="-Hand", has_slab=True,
+                          available_run_mm=5000.0),
+    )
+    result = terminate_run(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+                           STEP_AXIS_HAND, narrow, BEND_RADIUS_MM)
+    assert result.termination.direction in ("+Facing", "-Facing")
+    assert result.termination.shortfall_mm > 0.0
 
 
 # --------------------------------------------------------------- CONTEXT.md

@@ -262,26 +262,20 @@ def outstanding_section():
     ])
 
 
-def roof_termination_section(roof):
-    """`specs/column-roof-termination.md` section 4 (issue #172).
+#: The four face runs, in the same order
+#: `rft.revit.column_place_bars._face_run_slices` slices the perimeter --
+#: bottom, right, top, left -- so a reviewer reads the runs in the order
+#: they were placed. Also `RoofTerminationPlan`'s own field names.
+_RUN_ATTRIBUTES = ("bottom", "right", "top", "left")
 
-    ``roof`` is a `rft.core.column_plan.RoofTerminationPlan` -- one object,
-    so nothing here is recomputed. A reviewer must be able to catch a
-    missed pick by READING this, not by finding a stray bar in the model,
-    so EVERY direction is named, not only the one the bend took.
+
+def _run_lines(label, run):
+    """R44: one run's own two candidates and the bend it took -- never the
+    whole column's four, because a run only ever had two to choose from.
     """
-    t = roof.termination
-    if roof.cover_provenance == "read":
-        cover_line = "READ from %s (R38)" % roof.floor_label
-    else:
-        cover_line = ("TYPED -- %s's own cover reads zero, which R38 "
-                     "treats as nobody having set one" % roof.floor_label)
-    lines = [
-        "Top-floor slab: %s -- thickness %s (R37)"
-        % (roof.floor_label, _mm(roof.thickness_mm)),
-        "Slab cover: %s -- %s" % (_mm(roof.cover_mm), cover_line),
-    ]
-    for direction in roof.directions:
+    t = run.termination
+    lines = ["%s face run:" % label.capitalize()]
+    for direction in run.directions:
         taken = " -- BEND TAKEN" if direction.name == t.direction else ""
         if direction.has_slab:
             lines.append(
@@ -295,11 +289,11 @@ def roof_termination_section(roof):
                 "this face (section 2's b_E cap)%s"
                 % (direction.name, _mm(direction.available_run_mm), taken))
     lines.append(
-        "Bend taken: %s -- vertical leg a %s, horizontal leg b %s (nominal "
-        "legs handed to the API, R40)"
+        "  Bend taken: %s -- vertical leg a %s, horizontal leg b %s "
+        "(nominal legs handed to the API, R40)"
         % (t.direction, _mm(t.a_mm), _mm(t.b_mm)))
     lines.append(
-        "Achieved development: %s of %s L_D required -- the BUILT bar's "
+        "  Achieved development: %s of %s L_D required -- the BUILT bar's "
         "centreline length after Revit's %.1f mm fillet loss (R40), never "
         "the nominal legs" % (_mm(t.achieved_mm), _mm(t.ld_mm), t.bend_loss_mm))
     if t.shortfall_mm > 0.0:
@@ -310,7 +304,34 @@ def roof_termination_section(roof):
                "the FLAGGED free edge" if t.free_edge else
                "the MEASURED slab edge"))
     else:
-        lines.append("No shortfall -- the full L_D was achieved.")
+        lines.append("  No shortfall -- the full L_D was achieved.")
+    return lines
+
+
+def roof_termination_section(roof):
+    """`specs/column-roof-termination.md` section 4 (issue #172, R44).
+
+    ``roof`` is a `rft.core.column_plan.RoofTerminationPlan` -- one object,
+    so nothing here is recomputed. R44 makes the termination PER FACE RUN:
+    the slab facts (thickness, cover, provenance) are the COLUMN's, stated
+    ONCE, and each of the four runs then gets its own line naming which way
+    IT bent and what IT developed -- a reviewer must see that the four
+    faces bent four different ways, not read one bend applied to all of
+    them.
+    """
+    if roof.cover_provenance == "read":
+        cover_line = "READ from %s (R38)" % roof.floor_label
+    else:
+        cover_line = ("TYPED -- %s's own cover reads zero, which R38 "
+                     "treats as nobody having set one" % roof.floor_label)
+    lines = [
+        "Top-floor slab: %s -- thickness %s (R37)"
+        % (roof.floor_label, _mm(roof.thickness_mm)),
+        "Slab cover: %s -- %s" % (_mm(roof.cover_mm), cover_line),
+    ]
+    for attribute in _RUN_ATTRIBUTES:
+        lines.append("")
+        lines.extend(_run_lines(attribute, getattr(roof, attribute)))
     return ReportSection("Top-floor termination", lines)
 
 

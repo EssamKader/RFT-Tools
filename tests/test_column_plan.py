@@ -26,7 +26,7 @@ from rft.core.column_inputs import perimeter_bars, splice_length
 from rft.core.column_plan import (
     RoofTerminationPlan, bar_plan, complete_plan, is_blocked,
 )
-from rft.core.column_roof import RoofBendDirection, RoofTermination
+from rft.core.column_roof import RoofBendDirection, RoofTermination, RunTermination
 from rft.core.column_spacing import MODE_AUTO, MODE_MANUAL
 from rft.core.column_ties import KIND_CROSS_TIE
 
@@ -68,21 +68,34 @@ def plan(text=CONVENTIONAL, mode=MODE_AUTO,
 
 
 def roof_termination_plan():
-    """A stand-in `RoofTerminationPlan` (#172), for the composition tests
-    below -- not a re-derivation of `column_roof`'s own math, which
-    `tests/test_column_roof.py` already covers on its own terms."""
-    termination = RoofTermination(
-        direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
-        achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
-        bend_loss_mm=19.87, run_limited=False)
-    directions = (
-        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
-        RoofBendDirection(name="-Hand", has_slab=False, available_run_mm=220.0),
-        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
-        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
-    )
+    """A stand-in `RoofTerminationPlan` (#172, R44), for the composition
+    tests below -- not a re-derivation of `column_roof`'s own math, which
+    `tests/test_column_roof.py` already covers on its own terms.
+
+    Bottom/top step along Hand and bend along Facing; right/left step
+    along Facing and bend along Hand (R44) -- so bottom and top share one
+    `RunTermination`, and right and left the other.
+    """
+    hand_run = RunTermination(
+        termination=RoofTermination(
+            direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+            achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+            bend_loss_mm=19.87, run_limited=False),
+        directions=(
+            RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+            RoofBendDirection(name="-Hand", has_slab=False, available_run_mm=220.0),
+        ))
+    facing_run = RunTermination(
+        termination=RoofTermination(
+            direction="+Facing", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+            achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+            bend_loss_mm=19.87, run_limited=False),
+        directions=(
+            RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
+            RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
+        ))
     return RoofTerminationPlan(
-        termination=termination, directions=directions,
+        bottom=facing_run, right=hand_run, top=facing_run, left=hand_run,
         floor_label="Floor 424637", thickness_mm=300.0, cover_mm=25.0,
         cover_provenance="read")
 

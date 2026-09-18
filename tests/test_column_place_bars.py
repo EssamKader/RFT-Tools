@@ -33,7 +33,7 @@ from fake_revit_api import (
 from rft.core.column_inputs import PerimeterBars
 from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_plan import RoofTerminationPlan
-from rft.core.column_roof import RoofBendDirection, RoofTermination
+from rft.core.column_roof import RoofBendDirection, RoofTermination, RunTermination
 import rft.revit.column_place_bars as place_bars_module
 from rft.revit.column_place_bars import _pin_to_host_faces, place_bars
 
@@ -70,23 +70,39 @@ def _plan(count_b=COUNT_B, count_h=COUNT_H, base_z_mm=3000.0, top_z_mm=6000.0,
                 roof_termination=roof_termination)
 
 
-def _roof_termination_plan(direction="+Hand", a_mm=175.0, b_mm=805.0):
-    """A stand-in `RoofTerminationPlan` (#172), matching
-    `tests/test_column_plan.py`'s own -- only the fields this module reads
-    (`termination.a_mm`/`b_mm`/`direction`) are given values that matter
-    here; the rest exist only because the real namedtuple requires them."""
+def _run_termination(direction, a_mm=175.0, b_mm=805.0):
+    """A stand-in `rft.core.column_roof.RunTermination` -- only the fields
+    this module reads (`termination.a_mm`/`b_mm`/`direction`) are given
+    values that matter here; the rest exist only because the real
+    namedtuples require them."""
     termination = RoofTermination(
         direction=direction, a_mm=a_mm, b_mm=b_mm, ld_mm=a_mm + b_mm,
         achieved_mm=a_mm + b_mm, shortfall_mm=0.0, free_edge=False,
         bend_loss_mm=0.0, run_limited=False)
-    directions = (
-        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
-        RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0),
-        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
-        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
-    )
+    return RunTermination(
+        termination=termination,
+        directions=(RoofBendDirection(name=direction, has_slab=True,
+                                      available_run_mm=5000.0),))
+
+
+#: R44: the bottom and top runs step along Hand and may only bend along
+#: Facing; the right and left runs step along Facing and may only bend
+#: along Hand. These are the axis-consistent fillers a test uses for the
+#: three runs it is not itself exercising.
+_DEFAULT_FACING_RUN = _run_termination("+Facing")
+_DEFAULT_HAND_RUN = _run_termination("+Hand")
+
+
+def _roof_termination_plan(bottom=None, right=None, top=None, left=None):
+    """A stand-in `RoofTerminationPlan` (#172, R44), matching
+    `tests/test_column_plan.py`'s own -- one `RunTermination` per face
+    run, defaulting to an axis-consistent filler for whichever run a test
+    is not itself exercising."""
     return RoofTerminationPlan(
-        termination=termination, directions=directions,
+        bottom=bottom or _DEFAULT_FACING_RUN,
+        right=right or _DEFAULT_HAND_RUN,
+        top=top or _DEFAULT_FACING_RUN,
+        left=left or _DEFAULT_HAND_RUN,
         floor_label="Floor 424637", thickness_mm=300.0, cover_mm=25.0,
         cover_provenance="read")
 
@@ -578,8 +594,7 @@ def test_a_roof_terminated_bar_is_built_from_TWO_curves():
     _reset_pending_managers()
     host = _host()
     plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
-                roof_termination=_roof_termination_plan(
-                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+                roof_termination=_roof_termination_plan())
     bars = place_bars(doc=None, host_element=host, bar_type=object(),
                       plan=plan)
     for bar in bars:
@@ -588,13 +603,15 @@ def test_a_roof_terminated_bar_is_built_from_TWO_curves():
 
 def test_the_vertical_leg_runs_from_base_to_the_bend_at_top_plus_a():
     """Section 1: the bend sits at the host's own top `z` plus `a_mm` --
-    never the splice protrusion, which does not apply at the roof."""
+    never the splice protrusion, which does not apply at the roof. Checked
+    on the BOTTOM run (index 0), which steps along Hand and so bends
+    along Facing (R44)."""
     _reset_pending_managers()
     host = _host()
     plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
                 splice_mm=600.0,
                 roof_termination=_roof_termination_plan(
-                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+                    bottom=_run_termination("+Facing", 175.0, 805.0)))
     bars = place_bars(doc=None, host_element=host, bar_type=object(),
                       plan=plan)
     vertical = bars[0].args[7][0]
@@ -608,14 +625,17 @@ def test_the_vertical_leg_runs_from_base_to_the_bend_at_top_plus_a():
 
 
 def test_the_horizontal_leg_runs_b_mm_along_the_stated_direction():
+    """Checked on the RIGHT run (index 1), which steps along Facing and so
+    bends along Hand (R44) -- a bottom run bending `+Hand` would be along
+    its own step axis, which R44 forbids."""
     _reset_pending_managers()
     host = _host()
     plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
                 roof_termination=_roof_termination_plan(
-                    direction="+Hand", a_mm=175.0, b_mm=805.0))
+                    right=_run_termination("+Hand", 175.0, 805.0)))
     bars = place_bars(doc=None, host_element=host, bar_type=object(),
                       plan=plan)
-    horizontal = bars[0].args[7][1]
+    horizontal = bars[1].args[7][1]
     p_bend, p_end = horizontal.GetEndPoint(0), horizontal.GetEndPoint(1)
     hand = plan.host["hand"]
     assert p_end.X == pytest.approx(p_bend.X + mm(805.0) * hand[0])
@@ -625,11 +645,13 @@ def test_the_horizontal_leg_runs_b_mm_along_the_stated_direction():
 
 
 def test_a_MINUS_facing_bend_moves_the_opposite_way_from_facing():
+    """Checked on the BOTTOM run (index 0): stepping along Hand, it may
+    bend along Facing (R44)."""
     _reset_pending_managers()
     host = _host()
     plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
                 roof_termination=_roof_termination_plan(
-                    direction="-Facing", a_mm=175.0, b_mm=400.0))
+                    bottom=_run_termination("-Facing", 175.0, 400.0)))
     bars = place_bars(doc=None, host_element=host, bar_type=object(),
                       plan=plan)
     horizontal = bars[0].args[7][1]
@@ -642,7 +664,40 @@ def test_a_MINUS_facing_bend_moves_the_opposite_way_from_facing():
 def test_an_unknown_bend_direction_is_refused_not_guessed():
     _reset_pending_managers()
     host = _host()
-    bad = _roof_termination_plan(direction="+Up", a_mm=175.0, b_mm=400.0)
+    bad = _roof_termination_plan(
+        bottom=_run_termination("+Up", 175.0, 400.0))
     plan = _plan(count_b=2, count_h=2, roof_termination=bad)
     with pytest.raises(ValueError):
         place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
+
+
+# --------------------------------------------------------------------- #
+# #180, R44 -- each run bends by its OWN termination, not the column's
+
+
+def test_each_run_bends_by_its_OWN_termination_not_one_for_all():
+    """The whole point of #180: bottom and top step along Hand and bend
+    along Facing; right and left step along Facing and bend along Hand.
+    Handing every run the SAME termination would be #180's own bug, so
+    this gives each run a DIFFERENT one and asserts each bar bent its
+    own way, not the bottom run's."""
+    _reset_pending_managers()
+    host = _host()
+    roof = _roof_termination_plan(
+        bottom=_run_termination("+Facing", 100.0, 300.0),
+        right=_run_termination("-Hand", 100.0, 400.0),
+        top=_run_termination("-Facing", 100.0, 500.0),
+        left=_run_termination("+Hand", 100.0, 600.0))
+    plan = _plan(count_b=2, count_h=2, base_z_mm=3000.0, top_z_mm=6000.0,
+                roof_termination=roof)
+    bars = place_bars(doc=None, host_element=host, bar_type=object(),
+                      plan=plan)
+
+    hand, facing = plan.host["hand"], plan.host["facing"]
+    expectations = [
+        (facing, 300.0), (hand, -400.0), (facing, -500.0), (hand, 600.0)]
+    for bar, (axis, signed_b_mm) in zip(bars, expectations):
+        horizontal = bar.args[7][1]
+        p_bend, p_end = horizontal.GetEndPoint(0), horizontal.GetEndPoint(1)
+        assert p_end.X == pytest.approx(p_bend.X + mm(signed_b_mm) * axis[0])
+        assert p_end.Y == pytest.approx(p_bend.Y + mm(signed_b_mm) * axis[1])

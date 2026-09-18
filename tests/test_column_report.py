@@ -21,7 +21,7 @@ from rft.core.column_report import (
     FLAG_PREFIX, build_report, outstanding_section, render, roof_termination_section,
     spacing_section, tie_section,
 )
-from rft.core.column_roof import RoofBendDirection, RoofTermination
+from rft.core.column_roof import RoofBendDirection, RoofTermination, RunTermination
 from rft.core.column_ties import (
     TieSubset, resolve_ties, tie_report_lines, validate,
 )
@@ -320,56 +320,108 @@ def test_the_report_says_a_triangle_does_NOT_alternate():
 
 
 # --------------------------------------------------------------------- #
-# #172 -- specs/column-roof-termination.md section 4
+# #172, R44 -- specs/column-roof-termination.md section 4, per RUN
 
 
 #: The FLAGGED case: -Facing has no slab, the engineer flagged it, and the
 #: bend takes it because it is where the bar was told to go. Numbers from
 #: tests/test_column_roof.py's own free-edge case, so the two files agree.
+#: -Facing/+Facing are perpendicular to Hand -- R44's bottom/top candidates.
 _FLAGGED_TERMINATION = RoofTermination(
     direction="-Facing", a_mm=175.0, b_mm=220.0, ld_mm=960.0,
     achieved_mm=375.13, shortfall_mm=584.87, free_edge=True,
     bend_loss_mm=19.87, run_limited=True)
+_FLAGGED_DIRECTIONS = (
+    RoofBendDirection(name="-Facing", has_slab=False, available_run_mm=220.0),
+    RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=475.0),
+)
+_FLAGGED_RUN = RunTermination(termination=_FLAGGED_TERMINATION,
+                              directions=_FLAGGED_DIRECTIONS)
 
 #: The MEASURED case: R41's interior-near-the-edge column. Slab genuinely
-#: continues, but the run measured to the slab edge is short.
+#: continues, but the run measured to the slab edge is short. +Hand/-Hand
+#: are perpendicular to Facing -- R44's right/left candidates.
 _MEASURED_TERMINATION = RoofTermination(
     direction="+Hand", a_mm=175.0, b_mm=475.0, ld_mm=960.0,
     achieved_mm=630.13, shortfall_mm=329.87, free_edge=False,
     bend_loss_mm=19.87, run_limited=True)
-
-_DIRECTIONS = (
-    RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
-    RoofBendDirection(name="-Facing", has_slab=False, available_run_mm=220.0),
-    RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=475.0),
+_MEASURED_DIRECTIONS = (
+    RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=475.0),
     RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0),
 )
+_MEASURED_RUN = RunTermination(termination=_MEASURED_TERMINATION,
+                               directions=_MEASURED_DIRECTIONS)
+
+#: A run with room everywhere -- no shortfall -- used to fill in whichever
+#: two runs a test is not itself exercising.
+_FULL_FACING_RUN = RunTermination(
+    termination=RoofTermination(
+        direction="+Facing", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+        achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+        bend_loss_mm=19.87, run_limited=False),
+    directions=(
+        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0)))
+_FULL_HAND_RUN = RunTermination(
+    termination=RoofTermination(
+        direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+        achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+        bend_loss_mm=19.87, run_limited=False),
+    directions=(
+        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0)))
+
+
+def _roof(bottom=_FULL_FACING_RUN, right=_FULL_HAND_RUN, top=_FULL_FACING_RUN,
+         left=_FULL_HAND_RUN, cover_provenance="read", thickness_mm=200.0,
+         cover_mm=25.0, floor_label="Floor 424637"):
+    return RoofTerminationPlan(
+        bottom=bottom, right=right, top=top, left=left,
+        floor_label=floor_label, thickness_mm=thickness_mm,
+        cover_mm=cover_mm, cover_provenance=cover_provenance)
 
 
 def flagged_roof(cover_provenance="read"):
-    return RoofTerminationPlan(
-        termination=_FLAGGED_TERMINATION, directions=_DIRECTIONS,
-        floor_label="Floor 424637", thickness_mm=200.0, cover_mm=25.0,
-        cover_provenance=cover_provenance)
+    """The bottom run flagged, every other run full -- so a report built
+    from this carries exactly one shortfall, and it is the FLAGGED one."""
+    return _roof(bottom=_FLAGGED_RUN, cover_provenance=cover_provenance)
 
 
 def measured_roof():
-    return RoofTerminationPlan(
-        termination=_MEASURED_TERMINATION, directions=_DIRECTIONS,
-        floor_label="Floor 424637", thickness_mm=200.0, cover_mm=25.0,
-        cover_provenance="read")
+    """The right run short because the tool MEASURED a nearby slab edge,
+    every other run full."""
+    return _roof(right=_MEASURED_RUN)
 
 
-def test_every_direction_is_named_FLAGGED_or_DEFAULTED():
-    """R41's own words: a flagged free edge and a measured slab edge are
-    different facts, and a reviewer must be able to tell every direction
-    apart, not only the one the bend took -- that is how a missed pick is
-    caught."""
+def test_a_run_names_only_its_OWN_two_candidates():
+    """R44: a run only ever had two directions to choose from, and its
+    line must show only those two -- never the other axis' pair, which
+    belongs to a different run entirely."""
     lines = "\n".join(roof_termination_section(flagged_roof()).lines)
-    assert "-Facing -- FLAGGED free edge (the engineer's own statement" in lines
-    assert "+Hand -- DEFAULTED: slab assumed to continue" in lines
-    assert "+Facing -- DEFAULTED: slab assumed to continue" in lines
-    assert "-Hand -- DEFAULTED: slab assumed to continue" in lines
+    bottom_block = lines.split("Bottom face run:")[1].split("Right face run:")[0]
+    assert "-Facing -- FLAGGED free edge (the engineer's own statement" in bottom_block
+    assert "+Facing -- DEFAULTED: slab assumed to continue" in bottom_block
+    assert "+Hand" not in bottom_block
+    assert "-Hand" not in bottom_block
+
+
+def test_every_run_gets_its_own_heading_and_line():
+    """A reviewer must see that the four faces bent four different ways --
+    #180's own words -- so every one of the four runs gets a heading."""
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    for heading in ("Bottom face run:", "Right face run:", "Top face run:",
+                   "Left face run:"):
+        assert heading in lines
+
+
+def test_the_slab_facts_appear_EXACTLY_ONCE_never_per_run():
+    """#180: thickness, cover and provenance are the COLUMN's slab, not a
+    run's -- a reviewer must not be able to read two different slab covers
+    off one report."""
+    lines = "\n".join(roof_termination_section(flagged_roof()).lines)
+    assert lines.count("thickness 200 mm (R37)") == 1
+    assert lines.count("Slab cover:") == 1
+    assert lines.count("READ from Floor 424637 (R38)") == 1
 
 
 def test_the_available_run_names_its_own_source_per_direction():
@@ -381,9 +433,13 @@ def test_the_available_run_names_its_own_source_per_direction():
 
 
 def test_the_bend_taken_is_marked_on_its_own_direction_line():
+    """Every run marks its own bend -- so with the default fixture's four
+    runs, four lines carry BEND TAKEN, and the bottom run's is the FLAGGED
+    one under test."""
     lines = "\n".join(roof_termination_section(flagged_roof()).lines)
-    assert "-Facing -- FLAGGED free edge" in lines
-    taken_line = [line for line in lines.split("\n")
+    bottom_block = lines.split("Bottom face run:")[1].split("Right face run:")[0]
+    assert "-Facing -- FLAGGED free edge" in bottom_block
+    taken_line = [line for line in bottom_block.split("\n")
                  if "BEND TAKEN" in line]
     assert len(taken_line) == 1
     assert taken_line[0].strip().startswith("-Facing")
@@ -408,16 +464,19 @@ def test_a_shortfall_names_WHY_it_is_short_flagged_vs_measured():
     assert "the FLAGGED free edge" not in measured_lines
 
 
+def test_different_runs_can_report_different_shortfalls_at_once():
+    """#180's own point: up to four different bends, so a single report
+    may carry BOTH a flagged and a measured shortfall at the same time,
+    on different runs."""
+    both = _roof(bottom=_FLAGGED_RUN, right=_MEASURED_RUN)
+    lines = "\n".join(roof_termination_section(both).lines)
+    assert "the FLAGGED free edge" in lines
+    assert "the MEASURED slab edge" in lines
+
+
 def test_a_full_LD_reports_no_shortfall():
-    full = RoofTerminationPlan(
-        termination=RoofTermination(
-            direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
-            achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
-            bend_loss_mm=19.87, run_limited=False),
-        directions=_DIRECTIONS, floor_label="Floor 424637",
-        thickness_mm=200.0, cover_mm=25.0, cover_provenance="read")
-    lines = "\n".join(roof_termination_section(full).lines)
-    assert "No shortfall -- the full L_D was achieved." in lines
+    lines = "\n".join(roof_termination_section(_roof()).lines)
+    assert lines.count("No shortfall -- the full L_D was achieved.") == 4
     assert FLAG_PREFIX not in lines
 
 

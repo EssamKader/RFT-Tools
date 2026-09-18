@@ -52,6 +52,22 @@ multiplication is arithmetic and lives in :func:`development_length_mm`;
 beam module's ``DEFAULT_LD_BTM_MULTIPLIER`` / ``DEFAULT_LD_TOP_MULTIPLIER``
 (55 / 60) are the beam spec's numbers for bars in bending and are not
 imported, not copied, and not implied.
+
+## R44: a run bends only perpendicular to its own step axis
+
+``CreateFromCurves``'s ``normal`` must be perpendicular to the bend plane
+(#173's probe), and #131 already proved the array runs ALONG that same
+``normal``. A face run whose bars step along ``Hand`` therefore cannot
+bend along ``Hand`` too -- the call would need ``normal`` to be both an
+axis and its own perpendicular, which is impossible, and is why #173's
+part 3 failed outright. **Each run may bend only along the two directions
+perpendicular to its own step axis**, so a bottom or top run (stepping
+along Hand) chooses between ``+Facing``/``-Facing``, and a right or left
+run (stepping along Facing) between ``+Hand``/``-Hand``.
+:func:`terminate_bar` itself does not change -- R41's "most room wins"
+still decides between whichever two candidates it is handed.
+:func:`terminate_run` is the one place that narrows the four to a run's
+own two before calling it.
 """
 
 import math
@@ -132,6 +148,28 @@ RoofTermination = namedtuple(
     "RoofTermination",
     "direction a_mm b_mm ld_mm achieved_mm shortfall_mm free_edge "
     "bend_loss_mm run_limited")
+
+
+#: R44's two step axes -- the horizontal axis a face run's bars are
+#: ARRAYED along, never the axis the run may bend in (those are the other
+#: two, perpendicular to this one).
+STEP_AXIS_HAND = "Hand"
+STEP_AXIS_FACING = "Facing"
+
+#: Which two of `RoofBendDirection`'s four names are perpendicular to each
+#: step axis. A run stepping along Hand may bend only along Facing, and a
+#: run stepping along Facing only along Hand.
+_PERPENDICULAR_DIRECTION_NAMES = {
+    STEP_AXIS_HAND: ("+Facing", "-Facing"),
+    STEP_AXIS_FACING: ("+Hand", "-Hand"),
+}
+
+#: One face run's termination (R44) -- `terminate_bar`'s own choice,
+#: alongside the exact two candidates it chose between. A run's report
+#: line must show only ITS OWN two directions, never all four the column
+#: has, so this is carried per run rather than re-filtered by a reader
+#: that only has the column's full `directions` tuple.
+RunTermination = namedtuple("RunTermination", "termination directions")
 
 
 def development_length_mm(multiplier, bar_diameter_mm):
@@ -292,3 +330,41 @@ def terminate_bar(ld_mm, slab_thickness_mm, slab_cover_mm, directions,
         direction=best.name, a_mm=a, b_mm=b_edge, ld_mm=ld_mm,
         achieved_mm=achieved, shortfall_mm=max(0.0, ld_mm - achieved),
         free_edge=True, bend_loss_mm=loss)
+
+
+def candidate_directions_for_step_axis(step_axis, directions):
+    """R44: the two of ``directions`` perpendicular to ``step_axis``.
+
+    ``step_axis`` is ``STEP_AXIS_HAND`` or ``STEP_AXIS_FACING`` -- the
+    horizontal axis a face run's bars are ARRAYED along, read off
+    ``rft.core.column_layout``'s own face convention (the two ``b``-faces
+    step along Hand, the two ``h``-faces along Facing). A run may only
+    bend perpendicular to its own array axis (module docstring), so this
+    is what turns the column's full four-direction list into the two a
+    single run is allowed to choose between.
+    """
+    if step_axis not in _PERPENDICULAR_DIRECTION_NAMES:
+        raise ValueError(
+            "Unknown step axis %r; expected %r or %r."
+            % (step_axis, STEP_AXIS_HAND, STEP_AXIS_FACING))
+    wanted = _PERPENDICULAR_DIRECTION_NAMES[step_axis]
+    return tuple(direction for direction in directions
+                if direction.name in wanted)
+
+
+def terminate_run(ld_mm, slab_thickness_mm, slab_cover_mm, step_axis,
+                  directions, bend_radius_mm):
+    """One face run's termination (R44).
+
+    Narrows ``directions`` to the two perpendicular to ``step_axis`` and
+    hands them to :func:`terminate_bar` UNCHANGED -- R41's "most room
+    wins" still decides which of the two the run's bars actually take.
+    Returns a :class:`RunTermination` carrying both the chosen
+    ``RoofTermination`` and the exact two candidates it was chosen from,
+    so a report line for this run never has to re-filter the column's
+    full ``directions`` tuple to know which two were even possible here.
+    """
+    candidates = candidate_directions_for_step_axis(step_axis, directions)
+    termination = terminate_bar(ld_mm, slab_thickness_mm, slab_cover_mm,
+                                candidates, bend_radius_mm)
+    return RunTermination(termination=termination, directions=candidates)
