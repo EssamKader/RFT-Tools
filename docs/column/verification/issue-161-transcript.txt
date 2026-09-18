@@ -1,0 +1,78 @@
+#161 -- what is above a roof column, and can a bar be BENT?
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+document.IsModifiable = False
+
+Pick a TOP-STOREY column -- one with the roof over it.
+
+column: id 424596  450 x 600mm
+top of its bounding box: 3000.0 mm
+
+search view: {3D} -- chosen by behaviour, the same way the tool chooses it. Run this from ANY view.
+
+==================================================================
+PART 1 -- what the upward ray finds (R37)
+
+--- joined elements (JoinGeometryUtils) ---
+  joined to 1 element(s):
+     id 424637  class Floor  category Floors  z 2700..3000 mm
+        the COLUMN cuts it: False
+  thickness candidates:
+     FLOOR_ATTR_THICKNESS_PARAM         300.0 mm   <-- ANSWERS
+     ROOF_ATTR_THICKNESS_PARAM          absent on this element
+     STRUCTURAL_FLOOR_CORE_THICKNESS    300.0 mm   <-- ANSWERS
+  compound structure: width 300.0 mm, 1 layer(s)
+  cover candidates:
+     CLEAR_COVER_TOP                    0.0 mm   <-- ANSWERS
+     CLEAR_COVER_BOTTOM                 0.0 mm   <-- ANSWERS
+     CLEAR_COVER_OTHER                  0.0 mm   <-- ANSWERS
+     CLEAR_COVER                        absent on this element
+
+--- SHIPPED categories (no roofs) ---
+  element: id 424637  class Floor  category Floors
+  type: Generic 300mm
+  face z: 2700.0 mm
+  thickness candidates:
+     FLOOR_ATTR_THICKNESS_PARAM         300.0 mm   <-- ANSWERS
+     ROOF_ATTR_THICKNESS_PARAM          absent on this element
+     STRUCTURAL_FLOOR_CORE_THICKNESS    300.0 mm   <-- ANSWERS
+  compound structure: width 300.0 mm, 1 layer(s)
+  cover candidates:
+     CLEAR_COVER_TOP                    0.0 mm   <-- ANSWERS
+     CLEAR_COVER_BOTTOM                 0.0 mm   <-- ANSWERS
+     CLEAR_COVER_OTHER                  0.0 mm   <-- ANSWERS
+     CLEAR_COVER                        absent on this element
+
+--- WITH OST_Roofs added ---
+  element: id 424637  class Floor  category Floors
+  type: Generic 300mm
+  face z: 2700.0 mm
+  thickness candidates:
+     FLOOR_ATTR_THICKNESS_PARAM         300.0 mm   <-- ANSWERS
+     ROOF_ATTR_THICKNESS_PARAM          absent on this element
+     STRUCTURAL_FLOOR_CORE_THICKNESS    300.0 mm   <-- ANSWERS
+  compound structure: width 300.0 mm, 1 layer(s)
+  cover candidates:
+     CLEAR_COVER_TOP                    0.0 mm   <-- ANSWERS
+     CLEAR_COVER_BOTTOM                 0.0 mm   <-- ANSWERS
+     CLEAR_COVER_OTHER                  0.0 mm   <-- ANSWERS
+     CLEAR_COVER                        absent on this element
+
+==================================================================
+PART 2 -- can CreateFromCurves take a BENT bar?
+
+This part WRITES, inside a transaction that is ROLLED BACK.
+
+bar type: 13M
+curves: vertical 500 mm, then 400 mm along +Hand
+normal passed: Facing (0.000000000, 1.000000000, 0.000000000) (the bend turns in the Z/Hand plane, so its normal is Facing)
+RESULT: created rebar id 424696
+  centreline curves: 3
+    0: Line  length 453.7 mm
+    1: Arc  length 72.8 mm
+    2: Line  length 353.7 mm
+  shape-driven accessor: RebarShapeDrivenAccessor
+
+transaction ROLLED BACK -- nothing was kept.
+
+Send the text above back.
