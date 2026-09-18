@@ -2,8 +2,9 @@
 
 > **Partial. The geometry half is proven; the PICKING half is not run yet.**
 > `PickObjects` has still never executed against this host. Everything below
-> was read non-interactively, so it answers §5's item 2 (correlation) and
-> nothing of item 1 (picking) or item 3 (rotation).
+> was read non-interactively, so it answers §5's item 2 (correlation);
+> item 3 (rotation) was answered later, by the #104 batch probe. Items 1
+> and 4 — the PICKING half — are still not run.
 
 ## What ran, and against what
 
@@ -92,10 +93,13 @@ above.
    tracer bullet's picking half probably has to run from the pushbutton's
    `execute_in_revit_context` path, not from MCP. **Probably** — that has not
    been tested either way, and this document does not claim it.
-3. **Rotation.** §5 item 3. #69 found `Hand`/`Facing` invariant under a 35°
-   rotation, which is *why* the dot-product correlation above is the right
-   mechanism rather than comparing against world X/Y — but a rotated column's
-   face normals have not been read.
+3. ~~**Rotation.**~~ **ANSWERED** — by the #104 batch probe, on columns the
+   owner rotated to **45°** and **315°** in the same document. Every vertical
+   face normal on both comes back as **exactly ±`Hand` or ±`Facing`**
+   (`1.000000` / `0.000000` at full precision), wide faces to ±Hand, exactly
+   as on the unrotated columns — so the dot-product correlation above holds
+   at a rotation, which is what #69 could only suggest. Recorded in
+   `issue-104-batch-grouping.md`.
 4. **The refusal paths** — a picked slab face, a picked end face, Escape.
 
 Nothing in `specs/column-roof-termination.md` may be implemented on the

@@ -96,11 +96,9 @@ worth asking with these numbers in hand rather than in the abstract.
 2. **Whether any of these columns is refused** as out of scope (#87's
    refusal paths), which would remove it from a batch before grouping ever
    arises.
-3. **Rotation as a splitter.** Every column here reads rotation 0 and the
-   same Hand/Facing, so this model cannot say whether a rotated column
-   belongs in the same batch. #69 found Hand/Facing invariant under a 35°
-   rotation, which suggests it does not matter — suggests, on a different
-   question.
+3. ~~**Rotation as a splitter.**~~ **Answered — see the second pass
+   below.** It was open because every column in the first pass read
+   rotation 0.
 4. **Performance.** Ten columns says nothing about a hundred, and #104's
    own text raises one transaction versus many. Untouched here.
 
@@ -110,3 +108,41 @@ The probe is a throwaway button outside the repo,
 `RFTProbe.extension/Probe.tab/Probe.panel/BatchGroups.pushbutton`, written
 so it does not depend on the MCP channel being up. It reports, per family
 type, which fields vary between instances and marks them.
+
+## Second pass — the owner modified the `300 x 600mm` group
+
+The group that was "genuinely identical" no longer is, on purpose: the
+owner changed several of its columns so the split could be tested rather
+than argued about. Same document, same build, read-only, same fields.
+
+| id | top offset | **clear height** | **rotation** |
+|---|---|---|---|
+| 424280 | 0 | **2500** | 0° |
+| 424287 | 0 | **2500** | 0° |
+| 424293 | 0 | **2500** | **315°** |
+| 424290 | 1000 | **3500** | **45°** |
+| 424284 | 1500 | **4000** | 0° |
+
+**Three groups out of one family type** — 2500 (three columns), 3500 (one)
+and 4000 (one) — which exercises R33's split and, twice, the "a group of
+one is not an error" rule that the first pass could only state.
+
+### Rotation: measured, not inferred
+
+The two rotated columns are what closes the open item above. For each
+column, every **vertical** face of the cut solid was taken and its normal
+dotted against that column's own `HandOrientation` and
+`FacingOrientation`:
+
+- every normal is **exactly ±Hand or ±Facing** — `1.000000` on one axis
+  and `0.000000` on the other, at full printed precision, at **45°** and
+  at **315°** alike;
+- the **wide** faces map to ±Hand in every case, rotated or not.
+
+So the frame the cage is expressed in rotates with the column. **Rotation
+stays out of the grouping key**, and 424293 correctly shares a group with
+two unrotated columns of the same clear height — the case that looks wrong
+at a glance and is right.
+
+This also answers #103's item 3 (does the face/orientation correlation
+survive a rotated column) on the same evidence, at two angles.
