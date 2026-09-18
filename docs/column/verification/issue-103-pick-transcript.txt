@@ -1,0 +1,27 @@
+#103 -- PickObjects tracer bullet
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+document.IsModifiable = False (no transaction is opened here)
+
+Pick one or more FACES, then press Finish. Pick a column's vertical
+face, its top or bottom, and a slab face -- all three are wanted.
+Press Escape instead to record the cancel path.
+
+
+references returned: 2
+
+--- pick 1 ---
+stable: d7acde30-359f-48ac-84c3-4eb4714e1528-0006795f:0:INSTANCE:d7acde30-359f-48ac-84c3-4eb4714e1528-0006795a:15:SURFACE
+element: id 424287  300 x 600mm  category Structural Columns
+normal: (1.000000000, 0.000000000, 0.000000000)
+area:   16.1459
+VERDICT: +Hand  (dot Hand = 1.000000, dot Facing = 0.000000)
+
+--- pick 2 ---
+stable: d7acde30-359f-48ac-84c3-4eb4714e1528-0006795f:0:INSTANCE:d7acde30-359f-48ac-84c3-4eb4714e1528-0006795a:18:SURFACE
+element: id 424287  300 x 600mm  category Structural Columns
+normal: (0.000000000, -1.000000000, 0.000000000)
+area:   8.0729
+VERDICT: -Facing  (dot Hand = 0.000000, dot Facing = -1.000000)
+
+Nothing was modified. Send the text above back.

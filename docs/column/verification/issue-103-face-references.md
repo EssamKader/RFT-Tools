@@ -1,7 +1,9 @@
 # #103 — does a picked face map back to `column_layout`'s four? (PART 1)
 
-> **Partial. The geometry half is proven; the PICKING half is not run yet.**
-> `PickObjects` has still never executed against this host. Everything below
+> **PICKING PROVEN.** `PickObjects` has now run interactively against this
+> host from the pushbutton path, returning two face references in one
+> selection, each correlating exactly to ±Hand/±Facing. §5's prerequisite is
+> met for the normal path; only the REFUSAL cases (item 4) are still unrun. Everything below
 > was read non-interactively, so it answers §5's item 2 (correlation);
 > item 3 (rotation) was answered later, by the #104 batch probe. Items 1
 > and 4 — the PICKING half — are still not run.
@@ -86,13 +88,16 @@ above.
 ---
 ## What is still UNPROVEN
 
-1. **`PickObjects` itself.** Never executed against this host. §5 item 1.
-2. **Whether it can be run from the MCP path at all.** The MCP executor holds
-   an open transaction — `document.IsModifiable` came back **True** in the same
-   session. Revit does not allow a pick to be started from inside one, so this
-   tracer bullet's picking half probably has to run from the pushbutton's
-   `execute_in_revit_context` path, not from MCP. **Probably** — that has not
-   been tested either way, and this document does not claim it.
+1. ~~**`PickObjects` itself.**~~ **ANSWERED** — see "The interactive pick"
+   below. §5 item 1.
+2. ~~**Whether it can be run from the MCP path at all.**~~ **ANSWERED, and
+   the hypothesis held.** The MCP executor holds an open transaction
+   (`document.IsModifiable` came back **True**), and Revit does not allow a
+   pick to start from inside one. The probe run below reports
+   `document.IsModifiable = False` from the **pushbutton** path and the pick
+   succeeded there — so the picking half belongs to
+   `execute_in_revit_context`, as suspected, now measured rather than
+   supposed.
 3. ~~**Rotation.**~~ **ANSWERED** — by the #104 batch probe, on columns the
    owner rotated to **45°** and **315°** in the same document. Every vertical
    face normal on both comes back as **exactly ±`Hand` or ±`Facing`**
@@ -105,3 +110,42 @@ above.
 Nothing in `specs/column-roof-termination.md` may be implemented on the
 strength of this document. The addendum remains blocked on **#102** regardless
 of what the rest of #103 finds.
+
+## The interactive pick — `PickObjects` run for real
+
+Same document, same build. `document.IsModifiable = **False**`, from the
+throwaway `RFTProbe.extension` pushbutton: **no transaction is open**, which is
+the condition the MCP path could not offer.
+
+One selection action returned **two** face references — §3's multi-pick, not a
+repeated single pick — both on column **424287** (`300 x 600mm`):
+
+| pick | face normal | area | verdict |
+|---|---|---|---|
+| 1 | `(1.000000000, 0.000000000, 0.000000000)` | 16.1459 ft² ≈ **1.50 m²** | **+Hand** (dot Hand `1.000000`, dot Facing `0.000000`) |
+| 2 | `(0.000000000, -1.000000000, 0.000000000)` | 8.0729 ft² ≈ **0.75 m²** | **−Facing** (dot Hand `0.000000`, dot Facing `-1.000000`) |
+
+**The areas are the cross-check that this is the right face and not merely a
+face.** The column is 300 × 600 with a 2500 mm clear height: the wide face is
+0.6 × 2.5 = **1.50 m²** and the narrow face 0.3 × 2.5 = **0.75 m²**. The wide
+face returned ±Hand and the narrow ±Facing, which is the same mapping the
+non-interactive pass measured and the same one the rotated columns kept.
+
+So a picked reference correlates back to one of `column_layout`'s four faces
+**exactly**, at full printed precision, through the real selection API rather
+than through a collector. That is what §5 required before the addendum's logic
+may be implemented.
+
+### What this run did NOT cover — §5 item 4
+
+The transcript has **no slab face, no column end face and no Escape**. The
+probe asked for all three and the run returned two vertical column faces only.
+So every refusal path remains unproven:
+
+- a picked **slab** face — must be refused, and the message must say what to
+  pick instead;
+- a picked **top or bottom** face of the column itself — a vertical-face filter
+  has to reject it, and its normal is ±Z rather than ±Hand/±Facing;
+- **Escape** — the cancel path, which must leave the tool exactly as it was.
+
+These are cheap to add: the same button, one more run.
