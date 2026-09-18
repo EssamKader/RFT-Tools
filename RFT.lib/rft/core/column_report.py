@@ -262,6 +262,58 @@ def outstanding_section():
     ])
 
 
+def roof_termination_section(roof):
+    """`specs/column-roof-termination.md` section 4 (issue #172).
+
+    ``roof`` is a `rft.core.column_plan.RoofTerminationPlan` -- one object,
+    so nothing here is recomputed. A reviewer must be able to catch a
+    missed pick by READING this, not by finding a stray bar in the model,
+    so EVERY direction is named, not only the one the bend took.
+    """
+    t = roof.termination
+    if roof.cover_provenance == "read":
+        cover_line = "READ from %s (R38)" % roof.floor_label
+    else:
+        cover_line = ("TYPED -- %s's own cover reads zero, which R38 "
+                     "treats as nobody having set one" % roof.floor_label)
+    lines = [
+        "Top-floor slab: %s -- thickness %s (R37)"
+        % (roof.floor_label, _mm(roof.thickness_mm)),
+        "Slab cover: %s -- %s" % (_mm(roof.cover_mm), cover_line),
+    ]
+    for direction in roof.directions:
+        taken = " -- BEND TAKEN" if direction.name == t.direction else ""
+        if direction.has_slab:
+            lines.append(
+                "  %s -- DEFAULTED: slab assumed to continue -- available "
+                "run %s, MEASURED to the slab edge (R41/R42)%s"
+                % (direction.name, _mm(direction.available_run_mm), taken))
+        else:
+            lines.append(
+                "  %s -- FLAGGED free edge (the engineer's own statement, "
+                "section 3) -- available run %s, the column's OWN WIDTH at "
+                "this face (section 2's b_E cap)%s"
+                % (direction.name, _mm(direction.available_run_mm), taken))
+    lines.append(
+        "Bend taken: %s -- vertical leg a %s, horizontal leg b %s (nominal "
+        "legs handed to the API, R40)"
+        % (t.direction, _mm(t.a_mm), _mm(t.b_mm)))
+    lines.append(
+        "Achieved development: %s of %s L_D required -- the BUILT bar's "
+        "centreline length after Revit's %.1f mm fillet loss (R40), never "
+        "the nominal legs" % (_mm(t.achieved_mm), _mm(t.ld_mm), t.bend_loss_mm))
+    if t.shortfall_mm > 0.0:
+        lines.append(
+            FLAG_PREFIX + "Shortfall: %s short of full L_D, because %s "
+            "limited the run to what fits (R41)."
+            % (_mm(t.shortfall_mm),
+               "the FLAGGED free edge" if t.free_edge else
+               "the MEASURED slab edge"))
+    else:
+        lines.append("No shortfall -- the full L_D was achieved.")
+    return ReportSection("Top-floor termination", lines)
+
+
 def batch_group_section(groups):
     """Issue #153 / R33: name every group and its clear height, and which
     columns fell in it.
@@ -333,22 +385,31 @@ def batch_replacement_section(rows):
 
 
 def build_report(data, bars, splice, splice_line, bar_type_name,
-                 bar_diameter_mm, plan, ladder, findings=(), tie_lines=()):
+                 bar_diameter_mm, plan, ladder, findings=(), tie_lines=(),
+                 roof_termination=None):
     """The whole page, in order.
 
     Every argument is a value some other module already decided. This
     function chooses wording and order and nothing else -- which is what
     keeps it incapable of disagreeing with the placer.
+
+    ``roof_termination`` (issue #172, R36) is OPTIONAL and defaults to
+    ``None`` -- an ordinary column states no top-floor condition, and its
+    report must carry no section about one. Only a
+    `rft.core.column_plan.RoofTerminationPlan` adds the section.
     """
-    return [
+    sections = [
         host_section(data),
         longitudinal_section(bars, splice, bar_type_name, bar_diameter_mm,
                              splice_line),
         spacing_section(plan),
         tie_level_section(ladder),
         tie_section(list(findings), list(tie_lines)),
-        outstanding_section(),
     ]
+    if roof_termination is not None:
+        sections.append(roof_termination_section(roof_termination))
+    sections.append(outstanding_section())
+    return sections
 
 
 def render(sections):

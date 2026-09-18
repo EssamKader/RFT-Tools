@@ -883,8 +883,8 @@ CASES = [
      TL + "test_a_column_shorter_than_two_confinement_zones_is_refused",
      "a silently empty middle zone on a short column"),
 
-    (COL_REPORT, '        outstanding_section(),',
-     '',
+    (COL_REPORT, '    sections.append(outstanding_section())\n    return sections',
+     '    return sections',
      TP + "test_the_report_says_its_positions_are_IDEALISED",
      "the page dropping what it cannot yet claim"),
 
@@ -1678,6 +1678,77 @@ CASES = [
      TCRS + "test_a_floor_with_only_a_DOWNWARD_face_is_refused",
      "a floor with no upward face allowed through instead of "
      "refused, so the run would be measured from nothing"),
+
+    # ---- #172: the roof termination joined into the plan and the report
+    # (R36, R38, R40, R41) ----
+
+    (COL_PLAN,
+     'manual_confinement_mm=None, manual_middle_zone_mm=None,\n'
+     '                  roof_termination=None):',
+     'manual_confinement_mm=None, manual_middle_zone_mm=None,\n'
+     '                  roof_termination="unstated"):',
+     TPL + "test_an_ordinary_column_carries_no_roof_termination",
+     "R36 -- the default for roof_termination changed away from None, so "
+     "an ordinary column's plan would carry an opinion about a condition "
+     "nobody stated"),
+
+    (COL_PLAN, '        roof_termination=roof_termination,\n    )',
+     '        roof_termination=None,\n    )',
+     TPL + "test_a_stated_roof_termination_is_carried_through_unexamined",
+     "a stated roof termination silently dropped on the way into "
+     "ColumnPlan"),
+
+    (COL_REPORT,
+     '    if roof_termination is not None:\n'
+     '        sections.append(roof_termination_section(roof_termination))\n',
+     '    sections.append(roof_termination_section(roof_termination))\n',
+     TP + "test_the_section_is_absent_from_an_ordinary_columns_report",
+     "R36 -- the roof section rendered unconditionally, so an ordinary "
+     "column's report would carry a section about a condition nobody "
+     "stated"),
+
+    (COL_REPORT, '        if direction.has_slab:',
+     '        if not direction.has_slab:',
+     TP + "test_every_direction_is_named_FLAGGED_or_DEFAULTED",
+     "R41 -- FLAGGED and DEFAULTED swapped, so a genuinely flagged free "
+     "edge would read as the conservative default and vice versa"),
+
+    (COL_REPORT,
+     '"the nominal legs" % (_mm(t.achieved_mm), _mm(t.ld_mm), t.bend_loss_mm))',
+     '"the nominal legs" % (_mm(t.a_mm + t.b_mm), _mm(t.ld_mm), t.bend_loss_mm))',
+     TP + "test_achieved_is_the_BUILT_bar_never_the_nominal_legs",
+     "R40 -- the report shows the NOMINAL legs handed to the API instead "
+     "of what the built bar actually develops, claiming an anchorage the "
+     "steel does not have"),
+
+    (COL_REPORT,
+     '               "the FLAGGED free edge" if t.free_edge else\n'
+     '               "the MEASURED slab edge"))',
+     '               "the FLAGGED free edge" if not t.free_edge else\n'
+     '               "the MEASURED slab edge"))',
+     TP + "test_a_shortfall_names_WHY_it_is_short_flagged_vs_measured",
+     "R41 -- a flagged free edge and a measured slab edge swapped in the "
+     "shortfall's own explanation, which are different facts and only "
+     "one of them is the engineer's own statement"),
+
+    (COL_REPORT, '    if roof.cover_provenance == "read":',
+     '    if roof.cover_provenance != "read":',
+     TP + "test_cover_provenance_names_the_slab_READ_vs_TYPED",
+     "R38 -- READ and TYPED swapped, so a slab with a real cover would be "
+     "reported as typed and a typed exception would be reported as read"),
+
+    (COL_REPORT,
+     '        taken = " -- BEND TAKEN" if direction.name == t.direction else ""',
+     '        taken = " -- BEND TAKEN"',
+     TP + "test_the_bend_taken_is_marked_on_its_own_direction_line",
+     "every direction marked as the bend taken, so the marker stops "
+     "identifying which one actually was"),
+
+    (COL_REPORT, '    if t.shortfall_mm > 0.0:',
+     '    if t.shortfall_mm >= 0.0:',
+     TP + "test_a_full_LD_reports_no_shortfall",
+     "a full L_D (zero shortfall) reported as a shortfall, flagging a bar "
+     "that developed everything it was asked for"),
 
 ]
 

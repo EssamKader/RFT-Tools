@@ -23,7 +23,10 @@ from rft.core.column_host_rules import (
     SOURCE_SUPPORT_FACE, ColumnExtent, section_from_dimensions,
 )
 from rft.core.column_inputs import perimeter_bars, splice_length
-from rft.core.column_plan import bar_plan, complete_plan, is_blocked
+from rft.core.column_plan import (
+    RoofTerminationPlan, bar_plan, complete_plan, is_blocked,
+)
+from rft.core.column_roof import RoofBendDirection, RoofTermination
 from rft.core.column_spacing import MODE_AUTO, MODE_MANUAL
 from rft.core.column_ties import KIND_CROSS_TIE
 
@@ -57,10 +60,31 @@ def bars():
 
 
 def plan(text=CONVENTIONAL, mode=MODE_AUTO,
-         confinement=None, middle=None):
+         confinement=None, middle=None, roof_termination=None):
     return complete_plan(bars(), mode, BEND, text,
                          manual_confinement_mm=confinement,
-                         manual_middle_zone_mm=middle)
+                         manual_middle_zone_mm=middle,
+                         roof_termination=roof_termination)
+
+
+def roof_termination_plan():
+    """A stand-in `RoofTerminationPlan` (#172), for the composition tests
+    below -- not a re-derivation of `column_roof`'s own math, which
+    `tests/test_column_roof.py` already covers on its own terms."""
+    termination = RoofTermination(
+        direction="+Hand", a_mm=175.0, b_mm=805.0, ld_mm=960.0,
+        achieved_mm=960.0, shortfall_mm=0.0, free_edge=False,
+        bend_loss_mm=19.87, run_limited=False)
+    directions = (
+        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Hand", has_slab=False, available_run_mm=220.0),
+        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
+    )
+    return RoofTerminationPlan(
+        termination=termination, directions=directions,
+        floor_label="Floor 424637", thickness_mm=300.0, cover_mm=25.0,
+        cover_provenance="read")
 
 
 # --------------------------------------------------------------------- #
@@ -233,3 +257,37 @@ def test_the_plan_carries_the_tie_LINES_the_report_prints():
     for stated in ("1 6", "9 3", "8 4"):
         assert stated in joined, (
             "the report must name the tie the engineer typed: %s" % stated)
+
+
+# --------------------------------------------------------------------- #
+# #172: the OPTIONAL top-floor termination (R36)
+
+
+def test_an_ordinary_column_carries_no_roof_termination():
+    """R36: an unticked box means section 9's ordinary splice. Absent must
+    be the default EVERYWHERE, so this is asserted directly rather than
+    assumed from the signature.
+
+    Calls ``complete_plan`` directly WITHOUT naming ``roof_termination`` at
+    all -- this file's own ``plan()`` fixture always passes it explicitly
+    (even as ``None``), which would let ``complete_plan``'s own default
+    value change without this test ever exercising it.
+    """
+    p = complete_plan(bars(), MODE_AUTO, BEND, CONVENTIONAL)
+    assert p.roof_termination is None
+
+
+def test_omitting_roof_termination_leaves_every_other_field_UNCHANGED():
+    """The ordinary column's plan must be byte-for-byte what it is today.
+    Compared field by field rather than by the object's identity, because a
+    plan built with the new optional argument omitted must equal one built
+    without the argument existing at all."""
+    without_arg = plan()
+    with_default = plan(roof_termination=None)
+    assert without_arg == with_default
+
+
+def test_a_stated_roof_termination_is_carried_through_unexamined():
+    roof = roof_termination_plan()
+    p = plan(roof_termination=roof)
+    assert p.roof_termination is roof
