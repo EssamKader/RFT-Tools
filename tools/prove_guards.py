@@ -883,8 +883,8 @@ CASES = [
      TL + "test_a_column_shorter_than_two_confinement_zones_is_refused",
      "a silently empty middle zone on a short column"),
 
-    (COL_REPORT, '        outstanding_section(),',
-     '',
+    (COL_REPORT, '    sections.append(outstanding_section())\n    return sections',
+     '    return sections',
      TP + "test_the_report_says_its_positions_are_IDEALISED",
      "the page dropping what it cannot yet claim"),
 

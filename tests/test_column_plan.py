@@ -266,8 +266,15 @@ def test_the_plan_carries_the_tie_LINES_the_report_prints():
 def test_an_ordinary_column_carries_no_roof_termination():
     """R36: an unticked box means section 9's ordinary splice. Absent must
     be the default EVERYWHERE, so this is asserted directly rather than
-    assumed from the signature."""
-    assert plan().roof_termination is None
+    assumed from the signature.
+
+    Calls ``complete_plan`` directly WITHOUT naming ``roof_termination`` at
+    all -- this file's own ``plan()`` fixture always passes it explicitly
+    (even as ``None``), which would let ``complete_plan``'s own default
+    value change without this test ever exercising it.
+    """
+    p = complete_plan(bars(), MODE_AUTO, BEND, CONVENTIONAL)
+    assert p.roof_termination is None
 
 
 def test_omitting_roof_termination_leaves_every_other_field_UNCHANGED():
