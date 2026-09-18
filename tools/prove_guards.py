@@ -121,6 +121,35 @@ CATCH_MUTANT = ("        except ValueError as ex:\n"
 
 # (file, find, replace, test node, what defect this reintroduces)
 CASES = [
+    # ---- #176: the roof assembler, R44 -------------------------------
+    # INVERTING, not disabling: a swap cannot be read two ways, and an
+    # `if False:` mutation on this repo once passed in CI while failing
+    # locally on identical content (see R45's case below).
+    (COL_PLAN,
+     '    ("bottom", STEP_AXIS_HAND),
+'
+     '    ("right", STEP_AXIS_FACING),',
+     '    ("bottom", STEP_AXIS_FACING),
+'
+     '    ("right", STEP_AXIS_HAND),',
+     TPL + "test_each_run_bends_PERPENDICULAR_to_the_axis_it_steps_along",
+     "R44 -- the two step axes swapped, so every run bends ALONG the "
+     "axis its own bars are arrayed on: the exact CreateFromCurves call "
+     "that raised an internal error in #173's part 3"),
+
+    (COL_PLAN,
+     '    ("right", STEP_AXIS_FACING),
+'
+     '    ("top", STEP_AXIS_HAND),',
+     '    ("top", STEP_AXIS_HAND),
+'
+     '    ("right", STEP_AXIS_FACING),',
+     TPL + "test_the_assembler_states_the_axis_mapping_in_the_PERIMETER_order",
+     "R44 -- the run order no longer matches the order "
+     "_face_run_slices slices the perimeter in, and column_place_bars "
+     "looks its run up BY INDEX: every run would be handed another "
+     "run's bend, with no error anywhere"),
+
     # ---- #119: the bar placer, R22 ----------------------------------
     (COL_PLACE_BARS, 'candidate.SetDistanceToTargetHostFace(-offset_internal)',
      'candidate.SetDistanceToTargetHostFace(offset_internal)',

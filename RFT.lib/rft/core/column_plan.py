@@ -49,6 +49,9 @@ from .column_layout import perimeter_bar_positions
 from .column_spacing import (
     FIRST_TIE_OFFSET_MM, MODE_AUTO, MODE_MANUAL, spacing_plan,
 )
+from .column_roof import (
+    STEP_AXIS_FACING, STEP_AXIS_HAND, terminate_run,
+)
 from .column_tie_levels import tie_levels
 from .column_ties import (
     is_blocking, parse_tie_subsets, resolve_ties, tie_report_lines, validate,
@@ -109,6 +112,69 @@ RoofTerminationPlan = namedtuple(
     "RoofTerminationPlan",
     "bottom right top left floor_label thickness_mm cover_mm "
     "cover_provenance")
+
+
+#: R44's run-to-step-axis mapping, stated ONCE so no caller has to know
+#: it. `rft.core.column_layout.perimeter_bar_positions` walks the
+#: perimeter bottom (+u), right (+v), top (-u), left (-v), and
+#: `rft.revit.column_place_bars._face_run_slices` slices it in that same
+#: order -- so the two b-faces step along Hand and the two h-faces along
+#: Facing. A run may bend only PERPENDICULAR to the axis it steps along
+#: (R44), which is what turns this table into each run's own two
+#: candidates.
+RUN_STEP_AXES = (
+    ("bottom", STEP_AXIS_HAND),
+    ("right", STEP_AXIS_FACING),
+    ("top", STEP_AXIS_HAND),
+    ("left", STEP_AXIS_FACING),
+)
+
+
+def roof_termination_plan(ld_mm, thickness_mm, cover_mm, cover_provenance,
+                          floor_label, directions, bend_radius_mm):
+    """Build the `RoofTerminationPlan` for a top-floor column (#176).
+
+    This is the ONLY place the four runs are turned into four
+    terminations. The window reads the slab
+    (`rft.revit.column_roof_slab.read_top_floor_slab`) and states
+    ``ld_mm`` (R35 -- the engineer's own multiplier, never the tool's),
+    then hands both here; it does not call `terminate_run` itself,
+    because the run-to-axis mapping is a detailing fact and a window is
+    not where detailing facts belong.
+
+    ``directions`` are all four `rft.core.column_roof.RoofBendDirection`
+    the adapter measured. Each run is narrowed to its own two by
+    `rft.core.column_roof.terminate_run`; nothing here decides which of
+    the two wins -- R41's "most room" still does.
+
+    **The bottom and top runs necessarily agree, and so do right and
+    left, and that is not a bug.** Both b-face runs step along Hand, so
+    both choose between the same ``+Facing``/``-Facing`` pair with the
+    same measured runs, and reach the same answer. R44's "up to four
+    different bends" is four SLOTS; today's inputs fill them as two
+    distinct pairs. They are kept as four because §4 reports a line per
+    run and `rft.revit.column_place_bars` looks its own run up by index
+    -- and because the day a run's candidates stop being column-wide
+    (see the known understatement below), the shape is already right.
+
+    **Known understatement, recorded rather than silently relied on**:
+    ``available_run_mm`` is measured from the COLUMN's own face outward
+    (R42), so a run bending back ACROSS the column -- which R44 expressly
+    permits -- really has the column's own depth available on top of
+    that, and this does not count it. The effect is always to cap ``b``
+    SHORTER than the concrete allows, so it can report a shortfall that
+    is not real; it can never run steel outside the slab. The shortfall
+    is reported either way (R41/R42), so the engineer sees it.
+    """
+    runs = dict(
+        (name, terminate_run(ld_mm, thickness_mm, cover_mm, step_axis,
+                             directions, bend_radius_mm))
+        for name, step_axis in RUN_STEP_AXES)
+    return RoofTerminationPlan(
+        bottom=runs["bottom"], right=runs["right"], top=runs["top"],
+        left=runs["left"], floor_label=floor_label,
+        thickness_mm=thickness_mm, cover_mm=cover_mm,
+        cover_provenance=cover_provenance)
 
 
 def bar_plan(host, counts, splice, bar_diameter_mm, tie_diameter_mm,
