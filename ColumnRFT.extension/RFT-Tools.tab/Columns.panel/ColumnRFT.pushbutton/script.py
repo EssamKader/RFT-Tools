@@ -43,6 +43,9 @@ from pyrevit import forms, revit
 # reviewed.
 try:
     from System.Windows import Point
+    # #176: the second window shows its typed-cover box only when the
+    # slab's own cover reads zero (R38), so it needs Visibility.
+    from System.Windows import Visibility
     from System.Windows.Media import PointCollection
     from System.Windows.Controls import TextBlock as WpfTextBlock
     from System.Windows.Controls import Canvas as WpfCanvas
@@ -77,16 +80,21 @@ from rft.core.column_inputs import (
 from rft.core.column_layout import tier_summary
 from rft.core.column_plan import (
     MODE_AUTO, MODE_MANUAL, bar_plan, complete_plan, is_blocked,
+    roof_termination_plan,
 )
 from rft.core.column_report import (
     batch_exclusion_section, batch_group_section, batch_replacement_section,
     build_report, render,
 )
 from rft.revit.bar_types import (
-    bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
-    hook_angle_deg, hook_type_options, list_stirrup_hook_types,
+    bar_type_bend_diameter_mm, bar_type_centreline_bend_radius_mm,
+    bar_type_diameter_mm, bar_type_options, hook_angle_deg,
+    hook_type_options, list_stirrup_hook_types,
 )
 from rft.revit.column_host import ColumnHostError, read_column
+from rft.revit.column_roof_slab import (
+    BEND_DIRECTION_NAMES, ColumnRoofSlabError, read_top_floor_slab,
+)
 from rft.revit import column_batch, column_placer
 from rft.revit.units import internal_to_mm
 from rft.ui.column_sketch import (
@@ -208,6 +216,304 @@ def _loaded_version():
         return "unversioned build"
 
 
+#: R35's two ways of stating L_D, index-matched to ``ld_mode_cb``'s items.
+#: There is no third "the tool decides" entry: R35 is that the engineer
+#: states it.
+LD_MODE_CHOICES = ("x bar diameter", "mm")
+
+#: The four free-edge checkboxes, paired with the direction each flags.
+#: Named once so the read and the clear cannot drift, and ordered as
+#: `rft.revit.column_roof_slab.BEND_DIRECTION_NAMES` orders them.
+FREE_EDGE_CHECKBOXES = (
+    ("free_plus_hand_cb", "+Hand"),
+    ("free_minus_hand_cb", "-Hand"),
+    ("free_plus_facing_cb", "+Facing"),
+    ("free_minus_facing_cb", "-Facing"),
+)
+
+#: Where each direction's measured run is shown, same order.
+RUN_READOUTS = (
+    ("run_plus_hand_tb", "+Hand"),
+    ("run_minus_hand_tb", "-Hand"),
+    ("run_plus_facing_tb", "+Facing"),
+    ("run_minus_facing_tb", "-Facing"),
+)
+
+#: The four face runs, in the order
+#: `rft.revit.column_place_bars._face_run_slices` slices the perimeter --
+#: also `rft.core.column_plan.RoofTerminationPlan`'s own field
+#: names. NOT a list of control names -- hence not *_NAMES, which
+#: this repo's guard reads as read-outs that must be cleared on a
+#: re-pick.
+RUN_ORDER = ("bottom", "right", "top", "left")
+
+
+def floor_label(floor):
+    """How a floor is NAMED in the window and in section 4's report.
+
+    The element id, because that is what an engineer types into Revit's
+    own "select by ID" to find the thing a number came from. A type name
+    would read more kindly and would identify nothing.
+    """
+    return "Floor {}".format(floor.Id)
+
+
+class RoofWindow(forms.WPFWindow):
+    """R43's second window: the top-floor inputs, and nothing else.
+
+    **It owns the inputs; the main window owns the plan.** It hands back
+    one `rft.core.column_plan.RoofTerminationPlan` and keeps no plan state
+    of its own, because two windows each holding a copy is how they drift
+    -- and the drift would show up as a cage rather than as an error.
+
+    Unticking the box drops everything it held (R43): no top-floor state
+    survives an unticked box, or the tool carries something the report
+    never shows.
+
+    Like the main window it is MODELESS, and every Revit call goes through
+    ``execute_in_revit_context`` -- reading the slab walks geometry and
+    fires a ``ReferenceIntersector``, both illegal outside Revit's API
+    context. That helper is asynchronous and SWALLOWS exceptions into
+    pyRevit's log, so the work it is handed catches everything itself;
+    otherwise a failure reaches the engineer as nothing happening at all.
+    """
+
+    def __init__(self, owner):
+        forms.WPFWindow.__init__(
+            self,
+            window_xaml(os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "RoofWindow.xaml",
+            )),
+            literal_string=True,
+        )
+        _apply_window_icon(self)
+        self.owner = owner
+        #: What the adapter read, or None. The only model state this
+        #: window holds, and it dies with the window.
+        self.slab = None
+
+        # Wired here, never with Click="..." in the markup: the window is
+        # loaded from a STRING, which has no code behind, so WPF cannot
+        # resolve a handler name and throws at parse time.
+        self.read_slab_btn.Click += self.on_read_slab_click
+        self.use_btn.Click += self.on_use_click
+        self.cancel_btn.Click += self.on_cancel_click
+        for name, _direction in FREE_EDGE_CHECKBOXES:
+            box = getattr(self, name)
+            # A free edge changes the RUN a face is allowed (section 3
+            # caps it where R42 would have measured it), so the read goes
+            # stale the moment one is ticked. Saying so beats leaving a
+            # number on screen that is quietly no longer true.
+            box.Checked += self.on_free_edge_changed
+            box.Unchecked += self.on_free_edge_changed
+
+        # Filled through Items.Add, the way every other combo in these
+        # two windows is: section 7's rule that one dropdown's list can
+        # never reach another is guarded as a SUBSTRING over the whole
+        # script, so the forbidden member is not named even here.
+        for label in LD_MODE_CHOICES:
+            self.ld_mode_cb.Items.Add(label)
+        self.ld_mode_cb.SelectedIndex = 0
+
+    # ----------------------------------------------------------- reading
+    def free_edge_names(self):
+        """The directions the engineer has FLAGGED, in the adapter's order.
+
+        Never inferred from a short measured run: a flagged free edge and
+        a measured short run are different facts, and section 4 reports
+        which of the two shortened a bar.
+        """
+        return tuple(
+            direction for name, direction in FREE_EDGE_CHECKBOXES
+            if getattr(self, name).IsChecked)
+
+    def typed_cover_mm(self):
+        text = self.typed_cover_tb.Text.strip()
+        if not text:
+            return None
+        return parse_positive_float(text, "Slab cover")
+
+    def on_free_edge_changed(self, sender, args):
+        self.slab = None
+        self.use_btn.IsEnabled = False
+        self.preview_tb.Text = "--"
+        self.roof_status_tb.Text = (
+            "Free edges changed -- read the slab again, because a free "
+            "edge changes the run its face is allowed.")
+
+    def on_read_slab_click(self, sender, args):
+        if self.owner.column is None:
+            self.roof_status_tb.Text = "Pick a column in the main window first."
+            return
+        try:
+            typed_cover = self.typed_cover_mm()
+        except ValueError as refusal:
+            self.roof_status_tb.Text = str(refusal)
+            return
+        self.roof_status_tb.Text = "Reading the floor above -- waiting for Revit..."
+        revit.events.execute_in_revit_context(self._read_slab_in_context,
+                                              typed_cover)
+
+    def _read_slab_in_context(self, typed_cover):
+        """Inside Revit's API context, and catching everything: the
+        dispatcher swallows exceptions into pyRevit's log."""
+        try:
+            self.slab = read_top_floor_slab(
+                revit.doc, self.owner.column,
+                typed_cover_mm=typed_cover,
+                free_edge_names=self.free_edge_names())
+        except ColumnRoofSlabError as refusal:
+            # EXPECTED: a slab this tool will not detail against, with the
+            # reason. Not a crash, so no stack trace and no "failed".
+            self._refuse_read(str(refusal))
+            return
+        except Exception as failure:
+            self._refuse_read(
+                "The floor above could not be read: {}: {}".format(
+                    type(failure).__name__, failure))
+            return
+        self._show_read()
+
+    def _refuse_read(self, message):
+        self.slab = None
+        self.use_btn.IsEnabled = False
+        self._clear_read_outs()
+        self.roof_status_tb.Text = message
+
+    def _clear_read_outs(self):
+        self.floor_tb.Text = "--"
+        self.floor_source_tb.Text = ""
+        self.slab_thickness_tb.Text = "--"
+        self.slab_thickness_source_tb.Text = ""
+        self.slab_cover_tb.Text = "--"
+        self.slab_cover_source_tb.Text = ""
+        for name, _direction in RUN_READOUTS:
+            getattr(self, name).Text = "--"
+        self.preview_tb.Text = "--"
+
+    def _show_read(self):
+        slab = self.slab
+        self.floor_tb.Text = floor_label(slab["floor"])
+        self.floor_source_tb.Text = (
+            "the floor above this column (R37)")
+        self.slab_thickness_tb.Text = "{:.0f} mm".format(slab["thickness_mm"])
+        self.slab_thickness_source_tb.Text = "read from the floor type (R37)"
+        self.slab_cover_tb.Text = "{:.0f} mm".format(slab["cover_mm"])
+        if slab["cover_provenance"] == "read":
+            self.slab_cover_source_tb.Text = "READ from the floor's own cover (R38)"
+            self.typed_cover_panel.Visibility = Visibility.Collapsed
+        else:
+            self.slab_cover_source_tb.Text = (
+                "TYPED -- this floor's own cover reads zero, which R38 "
+                "treats as nobody having set one")
+            # R38: the typed box opens ONLY here. One that is always open
+            # invites a number that disagrees with the model.
+            self.typed_cover_panel.Visibility = Visibility.Visible
+
+        by_name = {}
+        for one in slab["directions"]:
+            by_name[one.name] = one
+        for readout_name, direction in RUN_READOUTS:
+            one = by_name.get(direction)
+            if one is None:
+                getattr(self, readout_name).Text = "--"
+                continue
+            getattr(self, readout_name).Text = "{:.0f} mm  {}".format(
+                one.available_run_mm,
+                "FLAGGED free edge, capped inside the column (section 3)"
+                if not one.has_slab
+                else "measured to the slab boundary (R42)")
+
+        self.use_btn.IsEnabled = True
+        self.roof_status_tb.Text = "Slab read. State L_D, then use these inputs."
+        self._refresh_preview()
+
+    # ------------------------------------------------------------- L_D
+    def ld_mm(self):
+        """R35: the engineer's own number, refused rather than defaulted.
+
+        Neither branch invents a multiplier, and neither inherits the beam
+        tool's 55/60 -- those are the beam spec's numbers for bars in
+        bending, and they are not this element's.
+        """
+        value = parse_positive_float(self.ld_value_tb.Text, "L_D")
+        if self.ld_mode_cb.SelectedIndex == 0:
+            diameter_mm = self.owner.selected_bar_diameter_mm()
+            if diameter_mm is None:
+                raise ValueError(
+                    "L_D is stated as a multiple of the bar diameter, and "
+                    "no main bar type is selected, so there is no diameter "
+                    "to multiply. Select one on the first tab.")
+            return value * diameter_mm
+        return value
+
+    def build_plan(self):
+        """The one object this window hands back (R43).
+
+        Every number in it is either READ (the slab) or STATED (L_D, the
+        free edges). Nothing here decides a detailing rule: the
+        run-to-axis mapping, and the choice between a run's two
+        directions, belong to `rft.core.column_plan.roof_termination_plan`
+        -- which is where they can be tested.
+        """
+        if self.slab is None:
+            raise ValueError(
+                "The floor above has not been read, so there is no slab "
+                "thickness or cover to bend into. Read the slab first.")
+        bend_radius_mm = self.owner.selected_bar_bend_radius_mm()
+        if bend_radius_mm is None:
+            raise ValueError(
+                "No main bar type is selected, so the bend radius R40 "
+                "takes the fillet loss from cannot be read. Select one on "
+                "the first tab.")
+        return roof_termination_plan(
+            ld_mm=self.ld_mm(),
+            thickness_mm=self.slab["thickness_mm"],
+            cover_mm=self.slab["cover_mm"],
+            cover_provenance=self.slab["cover_provenance"],
+            floor_label=floor_label(self.slab["floor"]),
+            directions=self.slab["directions"],
+            bend_radius_mm=bend_radius_mm)
+
+    def _refresh_preview(self):
+        try:
+            plan = self.build_plan()
+        except (ValueError, ColumnRoofSlabError) as refusal:
+            self.preview_tb.Text = str(refusal)
+            return
+        lines = []
+        for run_name in RUN_ORDER:
+            end = getattr(plan, run_name).termination
+            lines.append(
+                "{:<7} bends {:<8} a {:.0f} + b {:.0f} -> {:.0f} of {:.0f} "
+                "required{}".format(
+                    run_name, end.direction, end.a_mm, end.b_mm,
+                    end.achieved_mm, end.ld_mm,
+                    "" if end.shortfall_mm <= 0.0
+                    else "   SHORT by {:.0f} mm".format(end.shortfall_mm)))
+        self.preview_tb.Text = "\n".join(lines)
+
+    # --------------------------------------------------------- the exits
+    def on_use_click(self, sender, args):
+        try:
+            plan = self.build_plan()
+        except (ValueError, ColumnRoofSlabError) as refusal:
+            self.roof_status_tb.Text = str(refusal)
+            return
+        self.owner.accept_roof_termination(plan)
+        self.roof_status_tb.Text = (
+            "Handed to the main window. Apply the Ties tab to build the "
+            "plan with it.")
+        self._refresh_preview()
+
+    def on_cancel_click(self, sender, args):
+        # Unticking the box is what DROPS the state (R43). This only asks
+        # for that; the owner's handler does the dropping and the closing,
+        # so there is one path out and not two.
+        self.owner.top_floor_cb.IsChecked = False
+
+
 class ColumnWindow(forms.WPFWindow):
     """The four-tab shell. Only the first tab does anything yet."""
 
@@ -242,6 +548,12 @@ class ColumnWindow(forms.WPFWindow):
         self.build_report_btn.Click += self.on_build_report_click
         self.apply_place_btn.Click += self.on_apply_click
         self.apply_batch_btn.Click += self.on_apply_batch_click
+        # R36/R43: ticking opens the second window, unticking closes it
+        # AND drops what it held. Two handlers, not a toggle, because
+        # WPF raises Checked and Unchecked separately and a toggle that
+        # reads IsChecked can be called when it is neither.
+        self.top_floor_cb.Checked += self.on_top_floor_checked
+        self.top_floor_cb.Unchecked += self.on_top_floor_unchecked
         # The sketch redraws when the canvas is first sized, which is
         # after the window is laid out -- a canvas has no ActualWidth
         # before that, and scaling to zero draws nothing.
@@ -298,6 +610,10 @@ class ColumnWindow(forms.WPFWindow):
         #: Never built for strip_canvas -- nothing there is clickable.
         self._section_transform = None
         self._api_call_in_flight = False
+        #: R43's second window while it is open, else None. Set
+        #: BEFORE _reset_column_state, which reads it.
+        self.roof_window = None
+        self.roof_termination = None
         self._reset_column_state()
 
     # ------------------------------------------------------------- state
@@ -322,6 +638,13 @@ class ColumnWindow(forms.WPFWindow):
         self.tie_bar_type_cb.IsEnabled = False
         self.bars = None
         self.plan = None
+        # R43: no top-floor state survives a new column. The slab above
+        # THIS column says nothing about the next one, and unticking the
+        # box is what drops the inputs -- so the box is unticked here
+        # rather than the window being closed behind its own back.
+        self.roof_termination = None
+        self.top_floor_cb.IsChecked = False
+        self.top_floor_status_tb.Text = ""
         self.longitudinal = None
         self.splice = None
         self.spacing = None
@@ -335,6 +658,77 @@ class ColumnWindow(forms.WPFWindow):
         self.place_status_tb.Text = "Apply the bar and tie inputs first."
         self.batch_status_tb.Text = "Apply the bar and tie inputs first."
         self._clear_canvases()
+
+    # -------------------------------------------------------- top floor
+    def on_top_floor_checked(self, sender, args):
+        """R36/R43: the second window opens, owning its own inputs."""
+        if self.column is None:
+            self.top_floor_status_tb.Text = (
+                "Pick a column first -- the top-floor inputs are read from "
+                "the floor above THIS column.")
+            self.top_floor_cb.IsChecked = False
+            return
+        if self.roof_window is None:
+            self.roof_window = RoofWindow(self)
+            # MODELESS, for the same reason the main window is: a modal
+            # second window would disable Revit, and the read it performs
+            # runs through an ExternalEvent that needs Revit alive.
+            self.roof_window.show()
+        self.top_floor_status_tb.Text = (
+            "Top-floor inputs are stated in their own window. Apply the "
+            "Ties tab once they are handed back.")
+
+    def on_top_floor_unchecked(self, sender, args):
+        """R43: unticking DROPS the inputs, it does not park them.
+
+        A parked termination would be carried into the next plan without
+        appearing in the window that states it, and section 4 would report
+        a bend nobody asked for.
+        """
+        self.roof_termination = None
+        if self.roof_window is not None:
+            window_to_close = self.roof_window
+            self.roof_window = None
+            window_to_close.Close()
+        self.top_floor_status_tb.Text = (
+            "Not a top-floor column. Bars lap into the storey above "
+            "(section 9).")
+
+    def accept_roof_termination(self, plan):
+        """Taken from the second window, which owns the inputs (R43).
+
+        Stored, never merged into anything here: the plan is composed once
+        by ``complete_plan``, and a second place that half-composes it is
+        how the report and the placer drift apart.
+        """
+        self.roof_termination = plan
+        self.top_floor_status_tb.Text = (
+            "Top-floor termination accepted: {} -- Apply the Ties tab to "
+            "build the plan with it.".format(plan.floor_label))
+
+    def selected_bar_diameter_mm(self):
+        """The main bar's diameter, for the second window (R43).
+
+        Public because the second window is a caller, not an insider: it
+        may ask this window for what the engineer selected, and for
+        nothing else.
+        """
+        return self._selected_bar_diameter_mm()
+
+    def selected_bar_bend_radius_mm(self):
+        """R46's CENTRELINE bend radius for the selected main bar type.
+
+        Measured, not derived: ``(StandardBendDiameter + nominal) / 2``.
+        Half the standard bend diameter -- the obvious reading -- is
+        13.7% low on 13M, and the fillet loss it feeds is SUBTRACTED from
+        the development length section 4 certifies.
+        """
+        options = self._options_for(self.main_bar_type_cb)
+        index = self.main_bar_type_cb.SelectedIndex
+        if index < 0 or index >= len(options):
+            return None
+        _label, bar_type = options[index]
+        return bar_type_centreline_bend_radius_mm(bar_type, internal_to_mm)
 
     # ---------------------------------------------------------- dispatch
     def _dispatch_to_revit_context(self, func, action_label):
@@ -646,6 +1040,16 @@ class ColumnWindow(forms.WPFWindow):
                 "Apply the Longitudinal bars tab first -- a tie arrangement "
                 "is stated in bar indices, and there are no bars yet.")
             return
+        # R36/R43: a ticked box with nothing handed back means the
+        # engineer asked for a top-floor termination and the tool has none.
+        # Building the plan anyway would lap the bars into a storey that is
+        # not there -- silently, because every other number would be right.
+        if self.top_floor_cb.IsChecked and self.roof_termination is None:
+            self.ties_status_tb.Text = (
+                "This column is marked as top floor, but its top-floor "
+                "inputs have not been handed back yet. In the top-floor "
+                "window: read the slab, state L_D, then Use these inputs.")
+            return
         mode = MODE_MANUAL if self.mode_b_rb.IsChecked else MODE_AUTO
         try:
             manual_confinement = manual_middle = None
@@ -663,7 +1067,8 @@ class ColumnWindow(forms.WPFWindow):
                 self._selected_tie_bend_diameter_mm(),
                 self.tie_subsets_tb.Text,
                 manual_confinement_mm=manual_confinement,
-                manual_middle_zone_mm=manual_middle)
+                manual_middle_zone_mm=manual_middle,
+                roof_termination=self.roof_termination)
         except ValueError as ex:
             self.ties_status_tb.Text = str(ex)
             return
@@ -740,6 +1145,17 @@ class ColumnWindow(forms.WPFWindow):
             self.place_status_tb.Text = (
                 "Pick a column and Apply both the Longitudinal and Ties "
                 "tabs first.")
+            return
+
+        # The same gate as the Ties tab, asserted again HERE because a
+        # plan built before the box was ticked is a plan with no
+        # termination in it, and Place is the last point at which that can
+        # still be caught.
+        if self.top_floor_cb.IsChecked and self.plan.roof_termination is None:
+            self.place_status_tb.Text = (
+                "This column is marked as top floor, but the plan carries "
+                "no top-floor termination. Hand the inputs back in the "
+                "top-floor window, then Apply the Ties tab again.")
             return
 
         main_bar_type = self._selected_bar_type_object(self.main_bar_type_cb)

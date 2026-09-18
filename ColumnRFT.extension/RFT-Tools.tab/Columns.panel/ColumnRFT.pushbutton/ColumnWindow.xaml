@@ -347,6 +347,16 @@
                                        Style="{StaticResource ReadOutSource}" Text=""/>
                         </Grid>
 
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Top floor (R36)"/>
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Text="A top-floor column is DECLARED, never detected. Nothing above a column is the same silence a legitimately unbuilt search returns, and a guess there would place the wrong bar in the commonest case."/>
+                        <CheckBox x:Name="top_floor_cb" Margin="0,6,0,0"
+                                  Content="This column is at the top floor: its bars bend into the slab above instead of lapping into a storey that is not there"/>
+                        <TextBlock x:Name="top_floor_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="0,4,0,0" Text=""/>
+
                         <Button x:Name="apply_longitudinal_btn"
                                 Content="Apply" Margin="0,12,0,0"
                                 HorizontalAlignment="Left" Padding="12,5,12,5"/>

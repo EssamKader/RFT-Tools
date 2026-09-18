@@ -25,7 +25,8 @@ from rft.ui.shared_styles import (
     PLACEHOLDER_SOURCE, SHARED_STYLES_FILENAME, window_xaml,
 )
 from xaml_keys import (
-    COLUMN_PUSHBUTTON_DIR, COLUMN_XAML_PATH, SHARED_STYLES_PATH,
+    COLUMN_PUSHBUTTON_DIR, COLUMN_ROOF_XAML_PATH, COLUMN_XAML_PATH,
+    SHARED_STYLES_PATH,
     WINDOW_XAML_PATHS, declared_keys_in, merges_shared_styles, read,
     resolvable_keys,
 )
@@ -252,6 +253,26 @@ def test_the_column_window_resolves_and_still_parses():
     assert 'Source="file:///' in resolved
 
 
+
+def _method_body_in(class_name, method_name):
+    """One method's source, scoped to the class it is declared in.
+
+    script.py now defines TWO window classes (#176), so a body looked up
+    by name alone can silently come from the wrong one.
+    """
+    script = _script()
+    start = script.index("class %s(" % class_name)
+    rest = script[start:]
+    end = rest.find("\nclass ", 1)
+    if end != -1:
+        rest = rest[:end]
+    match = re.search(
+        r"    def %s\(.*?\n(.*?)(?=\n    def |\Z)" % re.escape(method_name),
+        rest, re.DOTALL)
+    assert match, "no %s.%s in script.py" % (class_name, method_name)
+    return match.group(1)
+
+
 # --------------------------------------------------------------------- #
 # XAML <-> script cross-checks
 
@@ -262,7 +283,12 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     inside an ExternalEvent whose handler swallows it -- so the engineer
     sees nothing happen at all.
     """
-    names = _x_names(COLUMN_XAML_PATH)
+    # BOTH windows (#176): script.py drives the main window and R43's
+    # second one, and a name declared in either is a real control. The
+    # union is deliberate -- checking only the main window would report
+    # every second-window control as missing, and the natural way to
+    # silence THAT is to weaken the guard.
+    names = _x_names(COLUMN_XAML_PATH) | _x_names(COLUMN_ROOF_XAML_PATH)
     script = _script()
     # Attributes assigned in __init__ that are ordinary Python state, not
     # controls. Listed rather than pattern-matched: the point is that
@@ -270,6 +296,9 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     not_controls = {
         "column", "column_data", "bar_type_options", "Title",
         "_api_call_in_flight",
+        # #176: the second window and what it hands back. Neither is
+        # a control, and both are assigned on this window.
+        "roof_window", "roof_termination", "owner", "slab",
     }
     used = set(re.findall(r"self\.([a-zA-Z_][a-zA-Z0-9_]*)", script))
     used -= not_controls
@@ -277,7 +306,7 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     missing = sorted(n for n in used if n.endswith(("_tb", "_cb", "_btn", "_tab"))
                      and n not in names)
     assert not missing, (
-        "script.py reads these as window controls, but ColumnWindow.xaml "
+        "script.py reads these as window controls, but neither window's XAML "
         "declares no such x:Name: %s" % missing)
 
 
@@ -412,9 +441,19 @@ def test_every_readout_is_cleared_on_a_re_pick():
     # the lists the reset loops over with getattr -- both clear it, and
     # a check that only saw the literal assignment would demand the
     # lists be abandoned.
+    # #176: the SECOND window's own status line is not cleared on a
+    # re-pick -- the WINDOW is dropped instead, which is stronger. The
+    # re-pick unticks the box, and unticking closes the window and drops
+    # what it held (R43). Asserted by
+    # `tests/test_column_roof_window.py::
+    #  test_a_re_pick_unticks_the_top_floor_box_and_drops_its_inputs`,
+    # so this exemption is not a hole: something still fails if that
+    # stops being true.
+    dropped_with_their_window = set(_x_names(COLUMN_ROOF_XAML_PATH))
     not_reset = sorted(
         name for name in status_lines
-        if ("self.%s.Text" % name) not in reset and name not in listed)
+        if ("self.%s.Text" % name) not in reset and name not in listed
+        and name not in dropped_with_their_window)
     assert not not_reset, (
         "these status lines are written on one column and never reset "
         "for the next: %s" % not_reset)
@@ -430,6 +469,20 @@ def test_every_readout_is_cleared_on_a_re_pick():
     # direct assignment in the reset (possibly inside a helper it
     # calls). Both clear it; only "cleared nowhere" is a defect.
     cleared_directly = set(re.findall(r"self\.([a-z_]+_tb)\.Text = ", reset))
+    # #176: the SECOND window's read-outs are cleared by its own
+    # `_clear_read_outs`, on another object. They are still required to be
+    # cleared SOMEWHERE, so this reads that method too rather than
+    # exempting the window: a read-out added there and forgotten still
+    # fails here.
+    #
+    # This only works because the two windows share NO control name --
+    # asserted below. When they shared three, this clause reported the
+    # main window's `cover_source_tb` as cleared because the SECOND
+    # window cleared its own, and the prover caught it: the mutation
+    # that drops `cover_source_tb` from PROVENANCE_NAMES stopped failing.
+    cleared_directly |= set(
+        re.findall(r"self\.([a-z_]+_tb)\.Text = ",
+                   _method_body_in("RoofWindow", "_clear_read_outs")))
     missing = sorted(written - listed - cleared_directly)
     assert not missing, (
         "these read-outs are populated on pick but never cleared on the "
@@ -1019,3 +1072,22 @@ def test_section_6_1_s_verdict_has_ONE_reader_in_the_window():
     assert "is_blocked(" in script
     assert "is_blocking(" not in script, (
         "the window must ask the plan, not re-apply the test itself")
+
+
+def test_the_two_windows_share_NO_control_name():
+    """#176. Two windows may legally reuse an x:Name -- they are separate
+    element trees -- and this repo cannot afford it.
+
+    `test_every_readout_is_cleared_on_a_re_pick` proves that a read-out
+    is cleared on a re-pick by finding a clear SOMEWHERE in script.py.
+    With a name in both windows, the second window's clear answers for
+    the first window's field, and the main window's read-out can keep the
+    previous column's value with nothing failing. That is not theoretical:
+    it happened, and `tools/prove_guards.py` caught it when the mutation
+    that drops "cover_source_tb" from PROVENANCE_NAMES stopped failing.
+    """
+    shared = _x_names(COLUMN_XAML_PATH) & _x_names(COLUMN_ROOF_XAML_PATH)
+    assert not shared, (
+        "these x:Names are declared in BOTH windows, so a guard that "
+        "searches script.py cannot tell which one it found: %s"
+        % sorted(shared))

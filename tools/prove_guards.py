@@ -84,6 +84,7 @@ TSL = "tests/test_ui_sketch_layout.py::"
 COL_OWNERSHIP = "RFT.lib/rft/revit/column_ownership.py"
 TW = "tests/test_column_ownership.py::"
 TPL = "tests/test_column_plan.py::"
+TRW = "tests/test_column_roof_window.py::"
 # ---- #118: the tie placer -------------------------------------
 COL_PLACE_TIES = "RFT.lib/rft/revit/column_place_ties.py"
 TPT = "tests/test_column_place_ties.py::"
@@ -121,6 +122,34 @@ CATCH_MUTANT = ("        except ValueError as ex:\n"
 
 # (file, find, replace, test node, what defect this reintroduces)
 CASES = [
+    # ---- #176: R43's second window ----------------------------------
+    # All INVERTING. A disabling mutation on this repo once passed in CI
+    # while failing locally on identical content (see R45's case).
+    (COL_SCRIPT,
+     "if self.top_floor_cb.IsChecked and self.roof_termination is None:",
+     "if self.top_floor_cb.IsChecked and self.roof_termination is not None:",
+     TRW + "test_apply_is_REFUSED_while_the_top_floor_inputs_are_missing",
+     "R36/R43 -- the top-floor gate inverted, so a column MARKED top "
+     "floor with no inputs sails through and laps its bars into a storey "
+     "that is not there, while every other number stays right"),
+
+    (COL_SCRIPT,
+     "        self.roof_termination = None\n"
+     "        self.top_floor_cb.IsChecked = False\n",
+     "        self.top_floor_cb.IsChecked = False\n",
+     TRW + "test_a_re_pick_unticks_the_top_floor_box_and_drops_its_inputs",
+     "R43 -- the previous column's termination survives a re-pick, so "
+     "the new column is detailed against the OLD column's slab while "
+     "every other read-out on screen belongs to the new one"),
+
+    (COL_SCRIPT,
+     "        self.owner.accept_roof_termination(plan)\n",
+     "        self.owner.roof_termination = plan\n",
+     TRW + "test_the_window_hands_the_plan_over_rather_than_keeping_it",
+     "R43 -- the second window writes the owner's state directly instead "
+     "of handing it over, so the main window never says what it took and "
+     "the two can disagree about what is loaded"),
+
     # ---- #176: the roof assembler, R44 -------------------------------
     # INVERTING, not disabling: a swap cannot be read two ways, and an
     # `if False:` mutation on this repo once passed in CI while failing

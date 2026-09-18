@@ -113,10 +113,10 @@
                                Text="Slab thickness"
                                Style="{StaticResource ReadOutLabel}"/>
                     <TextBlock Grid.Row="1" Grid.Column="1"
-                               x:Name="thickness_tb"
+                               x:Name="slab_thickness_tb"
                                Style="{StaticResource ReadOut}" Text="--"/>
                     <TextBlock Grid.Row="1" Grid.Column="2"
-                               x:Name="thickness_source_tb"
+                               x:Name="slab_thickness_source_tb"
                                Style="{StaticResource ReadOutSource}" Text=""/>
 
                     <!-- R38: the cover is READ when the slab has one, and
@@ -128,10 +128,10 @@
                                Text="Slab cover"
                                Style="{StaticResource ReadOutLabel}"/>
                     <TextBlock Grid.Row="2" Grid.Column="1"
-                               x:Name="cover_tb"
+                               x:Name="slab_cover_tb"
                                Style="{StaticResource ReadOut}" Text="--"/>
                     <TextBlock Grid.Row="2" Grid.Column="2"
-                               x:Name="cover_source_tb"
+                               x:Name="slab_cover_source_tb"
                                Style="{StaticResource ReadOutSource}" Text=""/>
                 </Grid>
 
@@ -258,7 +258,7 @@
 
         <!-- ==================================== the footer -->
         <StackPanel Grid.Row="2" Margin="2,10,2,0">
-            <TextBlock x:Name="status_tb"
+            <TextBlock x:Name="roof_status_tb"
                        Style="{StaticResource ReadOutSource}" Text=""/>
             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                 <Button x:Name="read_slab_btn" Content="Read the slab again"
