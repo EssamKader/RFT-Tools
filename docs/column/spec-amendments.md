@@ -1508,3 +1508,53 @@ actually be implemented, and it is correct because the vertical leg's handles
 come first on every bar measured. **Recorded as a stated default**: if a
 future Revit orders them differently, this is the line that breaks, and it
 will break loudly because the bent bar's leg will move.
+
+---
+
+## R46 — R40's bend radius is the CENTRELINE radius, and it is measured
+
+**Measured, not decided.** Revit 2024 build 24.3.40.26, document
+`ColumnRFT.Trail`. Write-up: `docs/column/verification/issue-176-bend-radius.md`.
+
+R40 said the fillet radius "comes from the BAR TYPE, never from a typed
+input". Nothing read it — every test passed a number in — and the second
+window (#176) is the first caller that must obtain one. So it was measured
+before it was written, per CONTEXT.md's rule against guessing an API name.
+
+### The rule
+
+```
+centreline bend radius = (StandardBendDiameter + BarNominalDiameter) / 2
+```
+
+`StandardBendDiameter` is the bend diameter to the bar's **inner face**;
+the centreline Revit returns runs half a bar diameter outside it. Exact on
+all four types built and read back:
+
+| type | nominal | StandardBend | measured arc | implied radius |
+|---|---|---|---|---|
+| 13M | 12.70 | 80.00 | 72.806 | 46.350 |
+| 19M | 19.10 | 115.00 | 105.322 | 67.050 |
+| 12T | 12.00 | 72.00 | 65.973 | 42.000 |
+| 16T | 16.00 | 96.00 | 87.965 | 56.000 |
+
+### Why this is not a detail
+
+`StandardBendDiameter / 2` — the obvious reading — gives **40.00 mm** for
+13M against the measured **46.35**: a **13.7% error in the fillet loss**.
+That loss is SUBTRACTED from the achieved development length §4 certifies,
+so the error runs in the direction of **claiming more development than was
+built**. `StirrupTieBendDiameter` is ruled out decisively by 12T and 16T
+(155.00 against measured 42.00 and 56.00).
+
+### Stated, not proven
+
+`StandardHookBendDiameter` equals `StandardBendDiameter` on all four types
+measured. `StandardBendDiameter` is used because this is a **bend, not a
+hook** — an argument from meaning rather than from the data. A bar type
+where the two differ would settle it.
+
+### Corroboration
+
+13M's arc of 72.806 mm reproduces the 72.8 mm #161 read months earlier, on
+a different probe, for a different question.

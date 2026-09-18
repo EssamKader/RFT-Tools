@@ -994,8 +994,15 @@ class FakeRebarBarType(object):
     """
 
     def __init__(self, bar_nominal_diameter=None, name=None, id_value=None,
-                 material_id=None):
+                 material_id=None, standard_bend_diameter=None,
+                 stirrup_tie_bend_diameter=None):
         self.BarNominalDiameter = bar_nominal_diameter
+        #: #176, MEASURED on Revit 2024: the bend diameter to the bar's
+        #: INNER face. The centreline radius the API actually builds is
+        #: ``(this + BarNominalDiameter) / 2`` -- see
+        #: ``rft.revit.bar_types.bar_type_centreline_bend_radius_mm``.
+        self.StandardBendDiameter = standard_bend_diameter
+        self.StirrupTieBendDiameter = stirrup_tie_bend_diameter
         self._name = name
         self.Id = id_value
         #: issue #133. ``None`` models a type with NO material assigned --
