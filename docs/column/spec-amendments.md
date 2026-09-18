@@ -1025,3 +1025,61 @@ revisited against a real project if it appears in one.
 
 **Nothing in the code changed.** §0/C2 and `specs/column-batch-placement.md`
 §7 stand as written, and no amendment to either was merged.
+
+---
+
+## R35 — `L_D` is stated, never computed
+
+**Decided by the owner**, setting up the roof addendum's implementation.
+
+The roof termination's development length is a **raw input**: a value, or a
+×diameter multiplier, typed on the tab. The tool never derives it.
+
+This is §9's discipline for the splice length `L_s` — *“raw user input, NEVER
+auto-calculated by the tool”* — extended to the one other length the column
+tool needs. `RFT.lib/rft/core/anchorage.py` **does** compute `LD = multiplier ×
+diameter` for the beam tool, and it is deliberately NOT called here: the beam
+spec makes that a derivation and the column spec makes it an input, and a
+shared module must not quietly convert one into the other.
+
+What IS worth reusing from that module is its **cap discipline** — `a` clamped
+so `b` can never fall below the 200 mm minimum bend leg, and a `ValueError`
+rather than a negative leg reaching the Revit API. §1's `a + b = L_D` has
+exactly the same failure mode with a small `L_D`.
+
+---
+
+## R36 — the engineer states that a column is at roof level
+
+**Decided by the owner.** A checkbox, not an inference.
+
+The model cannot distinguish *“this is the roof”* from *“the storey above is
+not modelled yet”*, and the two demand opposite detailing: a splice protruding
+into the segment above (§9) versus a bend into the slab (this addendum §1).
+Guessing wrong swaps one for the other and **looks correct in the browser**,
+which is the failure mode this project exists to refuse.
+
+So the roof condition is **stated**. An unticked box means the ordinary §9
+splice, unchanged, whatever happens to sit above the column.
+
+---
+
+## R37 — the roof slab's thickness and cover are READ
+
+**Decided by the owner.** From the slab element above, never typed.
+
+§1 measures `a` from the slab's bottom face up to (thickness − cover). Both
+numbers come from the element the upward support search already locates — that
+search currently hands back only a z, and must be extended to hand back the
+element too.
+
+This is **A2** applied where it has always applied: cover is read from the
+model, never typed, so a typed value can never disagree with what will be
+built.
+
+### The default under it, stated because it was not ruled on
+
+**If the upward search finds no slab, the tool refuses**, naming what it looked
+for. A roof column with no roof above it is a modelling problem, and falling
+back to typed values would turn it into a detailing number nobody re-checks.
+Recorded here as a default rather than as part of the ruling.

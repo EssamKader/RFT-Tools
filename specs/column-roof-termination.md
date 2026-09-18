@@ -1,14 +1,14 @@
 # Column RFT — Roof-Level Termination Addendum
 
-> **Status: rules LOCKED, citation NAMED — edition pending (#102).**
-> §1 and §2 now cite the **ECP Detailing Code for Concrete Structures**,
-> Figure 3-14, named by the owner. What is still unconfirmed is the
-> **edition/year**, and whether that book is the same publication as the
-> *Egyptian Detailing Guide (2001)* cited for Figure 13-3 in the main spec.
-> The rules therefore have the named numbered source
-> [`CONTEXT.md`](../CONTEXT.md)'s rule 1 demands, and the edition does not
-> change `a + b = L_D`. **§5's tracer bullet (#103) is now the live
-> blocker on implementation, not the citation.**
+> **Status: READY TO IMPLEMENT.** Every gate this file has carried is down.
+> §7's citation is **named** (ECP Detailing Code for Concrete Structures,
+> Figure 3-14 — #102; the edition/year is still unconfirmed and changes
+> nothing about `a + b = L_D`). §5's tracer bullet is **complete** (#103): the
+> pick runs, a picked face maps exactly to one of `column_layout`'s four, that
+> survives rotation, a slab face and an end face are **unpickable**, and Escape
+> raises `OperationCanceledException`. The three decisions left open are now
+> owner rulings — **R35** (`L_D` is stated), **R36** (the engineer states the
+> roof condition) and **R37** (the slab's thickness and cover are read).
 
 **A roof column is not a new element — it is a *condition* an ordinary column
 can be in.** It has the same section, the same cage, the same confinement, and
@@ -35,6 +35,11 @@ roof level there is no storey above — the bar has to terminate into the roof
 slab instead. This addendum defines that termination.
 
 ## 1. Base geometry — bend into slab
+
+> **R35**: `L_D` is **stated by the engineer** (a value or a ×diameter
+> multiplier), never computed — §9's rule for `L_s`, extended.
+> **R37**: the slab's **thickness and cover are READ** from the element the
+> upward support search locates; if it finds no slab, the tool refuses.
 
 The longitudinal bar's development length `L_D` is split into two legs:
 
@@ -72,6 +77,19 @@ free-edge faces a column happens to have (0 / 1 / 2 adjacent), **not three
 separately-implemented logic paths.**
 
 ## 3. How the tool knows which faces have slab — pick the exception
+
+> **R36**: the tool does not infer that a column is at roof level. **The
+> engineer states it**, and an unticked box means §9's ordinary splice,
+> whatever sits above the column.
+>
+> **§5 is satisfied** — see
+> [`docs/column/verification/issue-103-face-references.md`](../docs/column/verification/issue-103-face-references.md).
+> The pick runs, a picked face maps exactly to one of `column_layout`'s four,
+> that survives rotation, an end face and a slab face are **unpickable** at
+> pick time via `ISelectionFilter`, and Escape raises
+> `OperationCanceledException`. One constraint from it: the filter must match
+> the **picked column's own element id**, not merely the structural-column
+> category, or a free edge could be flagged on the neighbouring column.
 
 **Default: every face is assumed to have slab continuing (full `L_D`)**, unless
 the engineer explicitly flags it otherwise.
