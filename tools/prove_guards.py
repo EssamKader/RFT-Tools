@@ -1750,6 +1750,32 @@ CASES = [
      "a full L_D (zero shortfall) reported as a shortfall, flagging a bar "
      "that developed everything it was asked for"),
 
+    # ---- #173: the bent bar's own two curves
+
+    (COL_PLACE_BARS,
+     '        z_bend_internal = mm_to_internal(top_z_mm + termination.a_mm)',
+     '        z_bend_internal = mm_to_internal(top_z_mm)',
+     TPB + "test_the_vertical_leg_runs_from_base_to_the_bend_at_top_plus_a",
+     "R40/section 1 -- the bend placed at the slab's SOFFIT instead of "
+     "a mm up inside it, so the horizontal leg runs under the slab "
+     "rather than within it"),
+
+    (COL_PLACE_BARS,
+     '        curves.Add(DB.Line.CreateBound(p_bend, p_bend_end))',
+     '        pass',
+     TPB + "test_a_roof_terminated_bar_is_built_from_TWO_curves",
+     "the horizontal leg dropped, leaving a straight bar that stops "
+     "inside the slab with no bend -- section 1's whole anchorage gone "
+     "while the bar still looks placed"),
+
+    (COL_PLACE_BARS,
+     '        bend_vector = _bend_direction_vector(termination.direction,',
+     '        bend_vector = _bend_direction_vector("+Hand",',
+     TPB + "test_a_MINUS_facing_bend_moves_the_opposite_way_from_facing",
+     "every bend forced along +Hand whatever R41 chose, so a bar bends "
+     "toward the face with the LEAST room -- the defect R41 exists to "
+     "prevent, reintroduced in the placer"),
+
 ]
 
 
