@@ -24,7 +24,8 @@ from rft.core.column_host_rules import (
 )
 from rft.core.column_inputs import perimeter_bars, splice_length
 from rft.core.column_plan import (
-    RoofTerminationPlan, bar_plan, complete_plan, is_blocked,
+    RUN_STEP_AXES, RoofTerminationPlan, bar_plan, complete_plan, is_blocked,
+    roof_termination_plan,
 )
 from rft.core.column_roof import RoofBendDirection, RoofTermination, RunTermination
 from rft.core.column_spacing import MODE_AUTO, MODE_MANUAL
@@ -67,7 +68,9 @@ def plan(text=CONVENTIONAL, mode=MODE_AUTO,
                          roof_termination=roof_termination)
 
 
-def roof_termination_plan():
+def _stub_roof_plan():
+    # Renamed from `roof_termination_plan` (#176): the real assembler now
+    # has that name, and this helper was SHADOWING the import of it.
     """A stand-in `RoofTerminationPlan` (#172, R44), for the composition
     tests below -- not a re-derivation of `column_roof`'s own math, which
     `tests/test_column_roof.py` already covers on its own terms.
@@ -301,6 +304,118 @@ def test_omitting_roof_termination_leaves_every_other_field_UNCHANGED():
 
 
 def test_a_stated_roof_termination_is_carried_through_unexamined():
-    roof = roof_termination_plan()
+    roof = _stub_roof_plan()
     p = plan(roof_termination=roof)
     assert p.roof_termination is roof
+
+
+# --------------------------------------------------------------------- #
+# #176: the assembler -- four runs from one slab read
+
+
+#: The column's own four measured directions (R41/R42), the shape
+#: `rft.revit.column_roof_slab.read_top_floor_slab` returns. Deliberately
+#: asymmetric: +Hand has the room, -Hand is a short flagged free edge,
+#: +Facing is a MEASURED short run and -Facing has room. A symmetric
+#: fixture would let a wrong axis mapping pass.
+_MEASURED = (
+    RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+    RoofBendDirection(name="-Hand", has_slab=False, available_run_mm=220.0),
+    RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=300.0),
+    RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=5000.0),
+)
+
+
+def _assembled(directions=_MEASURED, ld_mm=960.0):
+    return roof_termination_plan(
+        ld_mm=ld_mm, thickness_mm=300.0, cover_mm=25.0,
+        cover_provenance="read", floor_label="Floor 424637",
+        directions=directions, bend_radius_mm=46.3)
+
+
+def test_each_run_bends_PERPENDICULAR_to_the_axis_it_steps_along():
+    """R44, as the assembler's whole reason to exist: a b-face run steps
+    along Hand and must bend along Facing, an h-face run the reverse. A
+    run bending along its own step axis is the call that raised an
+    internal error in #173's part 3.
+    """
+    roof = _assembled()
+    assert roof.bottom.termination.direction.endswith("Facing")
+    assert roof.top.termination.direction.endswith("Facing")
+    assert roof.right.termination.direction.endswith("Hand")
+    assert roof.left.termination.direction.endswith("Hand")
+
+
+def test_a_run_is_never_offered_a_direction_it_cannot_take():
+    """Not only the winner: the two CANDIDATES a run was narrowed to are
+    carried for section 4, and a run must never carry its own step axis
+    among them even as a rejected option.
+    """
+    roof = _assembled()
+    for run in (roof.bottom, roof.top):
+        assert [d.name for d in run.directions] == ["+Facing", "-Facing"]
+    for run in (roof.right, roof.left):
+        assert [d.name for d in run.directions] == ["+Hand", "-Hand"]
+
+
+def test_the_run_with_the_MOST_ROOM_wins_within_each_run_s_own_two():
+    """R41 is unchanged by R44 -- it just chooses from two instead of
+    four. -Facing has the room and +Facing is capped at 300, so both
+    b-face runs go -Facing; +Hand has the room against a 220 free edge,
+    so both h-face runs go +Hand.
+    """
+    roof = _assembled()
+    assert roof.bottom.termination.direction == "-Facing"
+    assert roof.right.termination.direction == "+Hand"
+
+
+def test_the_slab_facts_are_stated_ONCE_not_once_per_run():
+    """A reviewer must never be able to read two different slab covers off
+    one report, so thickness/cover/provenance live on the plan, not on a
+    run."""
+    roof = _assembled()
+    assert roof.thickness_mm == 300.0
+    assert roof.cover_mm == 25.0
+    assert roof.cover_provenance == "read"
+    assert roof.floor_label == "Floor 424637"
+    for run in (roof.bottom, roof.right, roof.top, roof.left):
+        assert not hasattr(run, "cover_mm")
+
+
+def test_the_two_runs_on_the_SAME_axis_agree_and_that_is_not_a_bug():
+    """Documented in `roof_termination_plan`'s own docstring: both b-face
+    runs choose between the same two measured directions and therefore
+    reach the same answer. Asserted so that a future change making them
+    differ is a deliberate change with a failing test, not a surprise.
+    """
+    roof = _assembled()
+    assert roof.bottom == roof.top
+    assert roof.right == roof.left
+
+
+def test_the_assembler_states_the_axis_mapping_in_the_PERIMETER_order():
+    """The mapping must stay in the order
+    `rft.revit.column_place_bars._face_run_slices` slices the perimeter,
+    because that module looks its run up BY INDEX -- a reordering here
+    would silently give a run another run's bend.
+    """
+    assert [name for name, _ in RUN_STEP_AXES] == [
+        "bottom", "right", "top", "left"]
+    assert [axis for _, axis in RUN_STEP_AXES] == [
+        "Hand", "Facing", "Hand", "Facing"]
+
+
+def test_a_shortfall_on_one_run_does_not_touch_another():
+    """Each run develops what ITS OWN two directions allow. With every
+    Facing direction short, the b-face runs fall short while the h-face
+    runs still reach full L_D -- the per-run split's whole point.
+    """
+    short_facing = (
+        RoofBendDirection(name="+Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="-Hand", has_slab=True, available_run_mm=5000.0),
+        RoofBendDirection(name="+Facing", has_slab=True, available_run_mm=300.0),
+        RoofBendDirection(name="-Facing", has_slab=True, available_run_mm=280.0),
+    )
+    roof = _assembled(directions=short_facing)
+    assert roof.bottom.termination.shortfall_mm > 0.0
+    assert roof.right.termination.shortfall_mm == 0.0
