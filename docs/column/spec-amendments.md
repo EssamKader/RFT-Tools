@@ -1032,15 +1032,28 @@ revisited against a real project if it appears in one.
 
 **Decided by the owner**, setting up the roof addendum's implementation.
 
-The roof termination's development length is a **raw input**: a value, or a
-×diameter multiplier, typed on the tab. The tool never derives it.
+The roof termination's development length is a **raw input**. The owner's own
+clarification, given while this was being written:
 
-This is §9's discipline for the splice length `L_s` — *“raw user input, NEVER
-auto-calculated by the tool”* — extended to the one other length the column
-tool needs. `RFT.lib/rft/core/anchorage.py` **does** compute `LD = multiplier ×
-diameter` for the beam tool, and it is deliberately NOT called here: the beam
-spec makes that a derivation and the column spec makes it an input, and a
-shared module must not quietly convert one into the other.
+> l_d for roof column can be calculated as in beam like 60 column bar diameter
+> or 50 or whatever
+
+So the **multiplier is the input**, and `L_D = multiplier × bar diameter` is
+arithmetic on it — exactly the beam tool's form. A plain millimetre value is
+accepted too, for the case where the engineer has the number and not the
+multiple.
+
+**What the tool never does is choose the multiplier.** That is the whole of
+§9's discipline for the splice length `L_s` — *“raw user input, NEVER
+auto-calculated by the tool”* — and 50 against 60 is a detailing decision, not
+a default to inherit.
+
+`RFT.lib/rft/core/anchorage.py`'s `development_length(diameter_mm, multiplier)`
+is that multiplication and may be reused for it. Its **defaults must not be**:
+`DEFAULT_LD_BTM_MULTIPLIER = 55` and `DEFAULT_LD_TOP_MULTIPLIER = 60` are the
+beam spec's numbers for top and bottom bars in bending, and a vertical column
+bar anchoring into a roof slab is neither. Reuse the multiply; state the
+multiplier.
 
 What IS worth reusing from that module is its **cap discipline** — `a` clamped
 so `b` can never fall below the 200 mm minimum bend leg, and a `ValueError`

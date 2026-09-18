@@ -36,8 +36,11 @@ slab instead. This addendum defines that termination.
 
 ## 1. Base geometry — bend into slab
 
-> **R35**: `L_D` is **stated by the engineer** (a value or a ×diameter
-> multiplier), never computed — §9's rule for `L_s`, extended.
+> **R35**: the engineer states the **multiplier** — `L_D = multiplier × bar
+> diameter`, as in the beam tool (60Ø, 50Ø, whatever the job calls for) — or a
+> plain value. The tool does the multiplication; it never picks the multiplier,
+> and it never inherits the beam's 55/60 defaults, which are for bars in
+> bending.
 > **R37**: the slab's **thickness and cover are READ** from the element the
 > upward support search locates; if it finds no slab, the tool refuses.
 
