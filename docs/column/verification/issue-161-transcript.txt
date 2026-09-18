@@ -1,0 +1,39 @@
+#161 -- what is above a roof column, and can a bar be BENT?
+document: ColumnRFT.Trail
+Revit 2024 build 24.3.40.26
+document.IsModifiable = False
+
+Pick a TOP-STOREY column -- one with the roof over it.
+
+column: id 424596  450 x 600mm
+top of its bounding box: 3000.0 mm
+
+active view: {3D} (ThreeD)
+
+==================================================================
+PART 1 -- what the upward ray finds (R37)
+
+--- SHIPPED categories (no roofs) ---
+  NOTHING FOUND. Under R37's stated default the tool would refuse this column.
+
+--- WITH OST_Roofs added ---
+  NOTHING FOUND. Under R37's stated default the tool would refuse this column.
+
+==================================================================
+PART 2 -- can CreateFromCurves take a BENT bar?
+
+This part WRITES, inside a transaction that is ROLLED BACK.
+
+bar type: 13M
+curves: vertical 500 mm, then 400 mm along +Hand
+normal passed: Facing (0.000000000, 1.000000000, 0.000000000) (the bend turns in the Z/Hand plane, so its normal is Facing)
+RESULT: created rebar id 424651
+  centreline curves: 3
+    0: Line  length 453.7 mm
+    1: Arc  length 72.8 mm
+    2: Line  length 353.7 mm
+  shape-driven accessor: RebarShapeDrivenAccessor
+
+transaction ROLLED BACK -- nothing was kept.
+
+Send the text above back.
