@@ -189,6 +189,14 @@ def tie_level_section(ladder):
         "short final bay." % _mm(ladder.middle_spacing_mm),
         "Hook corner alternates between consecutive levels (section 6.3). "
         "Mirrored levels are marked M.",
+        # R32. Stated unconditionally because it is a RULE, not a fact
+        # about this ladder -- the ladder does not know what shapes the
+        # ties are, and the mirror map it carries is the same either way.
+        # Saying it here stops the line above reading as a promise the
+        # triangles do not keep.
+        "A TRIANGLE does not alternate (R32): its closure stays at the "
+        "apex on every level. The mirror applies to closed loops, whose "
+        "four corners give it somewhere to alternate to.",
     ]
     for level in ladder.levels:
         lines.append("  %2d  %8s  %-22s %s"
