@@ -18,7 +18,11 @@ and 5 add on top of the single-column path:
        `complete_plan` the window calls, off the SAME shared inputs, then
        run the SAME `refuse_if_not_ready` gate the single-column placer
        uses (Section 5) -- a further exclusion, same report;
-    5. place every remaining candidate inside ONE transaction, all-or-
+    5. read what each survivor's host ALREADY holds -- once, before any
+       dialog and before any transaction -- so R23's replacement count and
+       R24's foreign list are the same query the placement then uses
+       (Section 6);
+    6. place every remaining candidate inside ONE transaction, all-or-
        nothing (Section 4, R25 extended) -- refusing the whole run rather
        than opening an empty transaction if nothing survived.
 
@@ -40,7 +44,7 @@ from collections import namedtuple
 from Autodesk.Revit import DB
 from Autodesk.Revit.DB import Transaction
 
-from ..core.column_batch import Exclusion, group_hosts
+from ..core.column_batch import BatchExisting, Exclusion, group_hosts
 from ..core.column_plan import bar_plan, complete_plan
 from . import column_placer
 from .column_host import ColumnHostError, read_column
@@ -72,12 +76,22 @@ BatchInputs = namedtuple(
 class ColumnCandidate(object):
     """One column that survived reading and refusal: its element, its own
     host read, and the ``ColumnPlan`` built from it -- ready for step 4's
-    transaction."""
+    transaction.
+
+    ``ours``/``foreign`` stay ``None`` until :func:`read_existing` fills
+    them. They are NOT read inside the transaction: spec Section 6 keeps
+    R23's count and the set Apply deletes the same single read, exactly as
+    `column_placer.apply` takes them as arguments rather than re-reading
+    them, so the number the engineer confirmed and the elements that go
+    cannot be two different queries.
+    """
 
     def __init__(self, element, host, plan):
         self.element = element
         self.host = host
         self.plan = plan
+        self.ours = None
+        self.foreign = None
 
 
 class BatchPlan(object):
@@ -152,9 +166,6 @@ def plan_candidates(doc, host_element, inputs):
     elements = collect_candidates(doc, host_element)
     reads, exclusions = read_candidates(doc, elements)
 
-    groups = group_hosts(
-        [(element.Id.IntegerValue, host) for element, host in reads])
-
     candidates = []
     for element, host in reads:
         bars = bar_plan(
@@ -175,8 +186,38 @@ def plan_candidates(doc, host_element, inputs):
         candidates.append(
             ColumnCandidate(element=element, host=host, plan=plan))
 
+    # Grouped from the SURVIVORS, never from every read: R33 makes the
+    # group listing the thing a reviewer checks a split by, so a column
+    # named in a group must be a column that gets steel. Grouping before
+    # the refusal gate would print an excluded column in a group AND in
+    # the exclusion list, and the report would contradict itself.
+    groups = group_hosts([(candidate.element.Id.IntegerValue, candidate.host)
+                          for candidate in candidates])
+
     return BatchPlan(groups=groups, exclusions=exclusions,
                      candidates=candidates)
+
+
+def read_existing(doc, batch_plan):
+    """Spec Section 6, per column and BEFORE any transaction: this tool's
+    own elements on each candidate's host, and the foreign rebar R24
+    leaves alone -- through the SAME `existing_elements` the single-column
+    path calls.
+
+    R23 says "show the count, then replace", and the spec says that for a
+    batch it "is a table". This returns that table's rows; the window
+    shows them and asks. The values are also kept on the candidates, so
+    :func:`apply_batch` deletes exactly the elements that were counted.
+    """
+    rows = []
+    for candidate in batch_plan.candidates:
+        candidate.ours, candidate.foreign = existing_elements(
+            doc, candidate.element)
+        rows.append(BatchExisting(
+            element_id=candidate.element.Id.IntegerValue,
+            replaced_count=len(candidate.ours),
+            foreign_ids=[found.element_id for found in candidate.foreign]))
+    return rows
 
 
 def apply_batch(doc, batch_plan, bar_type, tie_bar_type, outer_hook_type,
@@ -205,13 +246,22 @@ def apply_batch(doc, batch_plan, bar_type, tie_bar_type, outer_hook_type,
     # transaction opens.
     for candidate in batch_plan.candidates:
         refuse_if_not_ready(candidate.plan)
+        if candidate.ours is None or candidate.foreign is None:
+            # R23 again: a caller that never ran `read_existing` never
+            # showed the engineer a count, so this run would delete
+            # reinforcement nobody confirmed. Refused before the
+            # transaction, like every other thing knowable beforehand.
+            raise ColumnPlacementError(
+                "Column %s: existing reinforcement was never read, so R23's "
+                "replacement count was never shown. Call read_existing "
+                "before apply_batch." % candidate.element.Id.IntegerValue)
 
     transaction = Transaction(doc, BATCH_TRANSACTION_NAME)
     transaction.Start()
     try:
         per_column = []
         for candidate in batch_plan.candidates:
-            ours, foreign = existing_elements(doc, candidate.element)
+            ours, foreign = candidate.ours, candidate.foreign
             for element in ours:
                 doc.Delete(element.Id)
 

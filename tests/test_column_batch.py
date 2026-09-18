@@ -44,10 +44,13 @@ from rft.core.column_host_rules import (
 from rft.core.column_inputs import perimeter_bars
 from rft.core.column_layout import perimeter_bar_positions
 from rft.core.column_plan import MODE_AUTO, bar_plan, complete_plan
-from rft.core.column_report import batch_exclusion_section, batch_group_section
+from rft.core.column_batch import BatchExisting
+from rft.core.column_report import (
+    batch_exclusion_section, batch_group_section, batch_replacement_section,
+)
 from rft.revit.column_batch import (
     BatchInputs, BatchPlan, ColumnCandidate, apply_batch, collect_candidates,
-    plan_candidates, read_candidates,
+    plan_candidates, read_candidates, read_existing,
 )
 from rft.revit.column_host import ColumnHostError
 from rft.revit.column_ownership import partition_tag
@@ -424,6 +427,7 @@ def test_apply_batch_uses_exactly_one_transaction_for_every_candidate(
     batch = BatchPlan(groups=[], exclusions=[],
                       candidates=[_candidate(1), _candidate(2), _candidate(3)])
 
+    read_existing(doc, batch)
     apply_batch(doc, batch, object(), object(), object(), object())
 
     assert len(_SpyTransaction.constructed) == 1
@@ -435,6 +439,7 @@ def test_apply_batch_places_every_candidate_and_tags_it_with_its_own_host_id():
                       candidates=[_candidate(101, 2700.0),
                                  _candidate(102, 3000.0)])
 
+    read_existing(doc, batch)
     result = apply_batch(doc, batch, object(), object(), object(), object())
 
     ids = [element_id for element_id, _result in result.per_column]
@@ -475,6 +480,7 @@ def test_a_failure_placing_one_column_rolls_back_the_WHOLE_batch(
         return real_place_bars(doc_, element, bar_type, plan)
 
     monkeypatch.setattr(column_batch_module, "place_bars", _boom)
+    read_existing(doc, batch)
 
     with pytest.raises(RuntimeError, match="second column's bars blew up"):
         apply_batch(doc, batch, object(), object(), object(), object())
@@ -509,3 +515,116 @@ def test_apply_batch_refuses_before_opening_when_a_candidate_plan_is_blocked(
         apply_batch(doc, batch, object(), object(), object(), object())
 
     assert _SpyTransaction.constructed == []
+
+
+# ----------------------------------------------------------------- #
+# Spec Section 6: R23's count and R24's foreign list, read ONCE
+
+
+def test_read_existing_returns_a_row_per_candidate_with_its_own_counts():
+    host = FakeColumn(element_id=301)
+    ours = FakeRebarElement(host_id=host.Id, id_value=901,
+                           partition=partition_tag(301))
+    FakeFilteredElementCollector._ITEMS = [ours]
+    candidate = _candidate(301)
+    candidate.element = host
+    batch = BatchPlan(groups=[], exclusions=[], candidates=[candidate])
+
+    rows = read_existing(FakeDocument({}), batch)
+
+    assert [row.element_id for row in rows] == [301]
+    assert rows[0].replaced_count == 1
+    assert candidate.ours and candidate.foreign == []
+
+
+def test_apply_batch_deletes_exactly_what_read_existing_counted():
+    """Spec Section 6: ONE read. What the engineer confirmed and what goes
+    are the same elements -- so an element that appears only AFTER the
+    count was taken is not swept up by a second read inside the
+    transaction."""
+    host = FakeColumn(element_id=302)
+    counted = FakeRebarElement(host_id=host.Id, id_value=902,
+                              partition=partition_tag(302))
+    FakeFilteredElementCollector._ITEMS = [counted]
+    candidate = _candidate(302)
+    candidate.element = host
+    batch = BatchPlan(groups=[], exclusions=[], candidates=[candidate])
+    doc = FakeDocument({})
+
+    rows = read_existing(doc, batch)
+    assert rows[0].replaced_count == 1
+    # Appears after the count was shown -- never confirmed, so never
+    # deleted.
+    latecomer = FakeRebarElement(host_id=host.Id, id_value=903,
+                                partition=partition_tag(302))
+    FakeFilteredElementCollector._ITEMS = [counted, latecomer]
+
+    apply_batch(doc, batch, object(), object(), object(), object())
+
+    assert 902 in [element_id.IntegerValue for element_id in doc.deleted_ids]
+    assert 903 not in [element_id.IntegerValue
+                      for element_id in doc.deleted_ids]
+
+
+def test_apply_batch_refuses_when_read_existing_was_never_run(
+        monkeypatch, _reset_spy_transaction):
+    """R23: no count shown, no deletion. Refused before the transaction,
+    like everything else knowable beforehand."""
+    monkeypatch.setattr(column_batch_module, "Transaction", _SpyTransaction)
+    batch = BatchPlan(groups=[], exclusions=[], candidates=[_candidate(401)])
+
+    with pytest.raises(ColumnPlacementError, match="never read"):
+        apply_batch(FakeDocument({}), batch, object(), object(), object(),
+                    object())
+
+    assert _SpyTransaction.constructed == []
+
+
+def test_batch_replacement_section_names_every_column_and_its_count():
+    section = batch_replacement_section([
+        BatchExisting(element_id=1, replaced_count=17, foreign_ids=[]),
+        BatchExisting(element_id=2, replaced_count=0, foreign_ids=[55, 56]),
+    ])
+
+    text = "\n".join(section.lines)
+    assert "Column 1" in text and "17" in text
+    # Every column that will be placed appears, including one holding
+    # nothing -- a reviewer counts lines against the groups.
+    assert "Column 2" in text
+    # R24: foreign named, and said to be left alone.
+    assert "55, 56" in text and "left untouched" in text
+
+
+def test_batch_replacement_section_with_no_rows_says_nothing_is_replaced():
+    section = batch_replacement_section([])
+    assert "nothing will be replaced" in "\n".join(section.lines)
+
+
+def test_a_column_excluded_by_the_refusal_gate_is_in_NO_group(monkeypatch):
+    """R33's group listing is what a reviewer checks a split by, so it must
+    name only columns that get steel -- never a column the report also
+    lists as excluded."""
+    shared_symbol = FakeFamilySymbol("450 x 600mm")
+    col_a = FakeColumn(symbol=shared_symbol, element_id=1)
+    col_b = FakeColumn(symbol=shared_symbol, element_id=2)
+    FakeFilteredElementCollector._ITEMS = [col_a, col_b]
+    _install_reads(monkeypatch, {
+        1: _host(2700.0, False, 1),
+        2: _host(2700.0, False, 2),
+    })
+    real_refuse = column_batch_module.refuse_if_not_ready
+
+    def fake_refuse(plan):
+        if plan.host["element_id"] == 2:
+            raise ColumnPlacementError("refused: unbuildable tie (test)")
+        return real_refuse(plan)
+
+    monkeypatch.setattr(column_batch_module, "refuse_if_not_ready",
+                        fake_refuse)
+
+    result = plan_candidates(FakeDocument({}), col_a, _shared_inputs())
+
+    grouped = [element_id for group in result.groups
+               for element_id in group.element_ids]
+    assert grouped == [1]
+    assert [exclusion.element_id for exclusion in result.exclusions] == [2]

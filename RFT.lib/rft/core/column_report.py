@@ -300,6 +300,38 @@ def batch_exclusion_section(exclusions):
     return ReportSection("Excluded columns", lines)
 
 
+def batch_replacement_section(rows):
+    """Issue #153 / spec Section 6: R23 and R24, per column.
+
+    "Reporting '17 existing bars will be replaced' for one column is a
+    sentence; for forty it is a table, and the confirmation must stay
+    readable or it stops being a confirmation" -- so this IS the table,
+    one line per column, and it is what the batch's confirmation shows.
+    Columns holding nothing are said to hold nothing rather than left out:
+    a reviewer counting lines must find every column that will be placed.
+    """
+    if not rows:
+        return ReportSection(
+            "Existing reinforcement",
+            ["No columns will be placed, so nothing will be replaced."])
+    lines = []
+    for row in rows:
+        if row.replaced_count:
+            line = ("Column %s -- %d element(s) placed by this tool will be "
+                    "DELETED and rebuilt" % (row.element_id,
+                                             row.replaced_count))
+        else:
+            line = ("Column %s -- nothing of ours to replace"
+                    % row.element_id)
+        if row.foreign_ids:
+            # R24: named, never silently present, and never deleted.
+            line += (" | %d foreign rebar element(s) left untouched (id %s)"
+                     % (len(row.foreign_ids),
+                        ", ".join(str(found) for found in row.foreign_ids)))
+        lines.append(line)
+    return ReportSection("Existing reinforcement", lines)
+
+
 def build_report(data, bars, splice, splice_line, bar_type_name,
                  bar_diameter_mm, plan, ladder, findings=(), tie_lines=()):
     """The whole page, in order.

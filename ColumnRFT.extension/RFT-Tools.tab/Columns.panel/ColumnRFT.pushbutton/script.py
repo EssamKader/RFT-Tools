@@ -79,7 +79,8 @@ from rft.core.column_plan import (
     MODE_AUTO, MODE_MANUAL, bar_plan, complete_plan, is_blocked,
 )
 from rft.core.column_report import (
-    batch_exclusion_section, batch_group_section, build_report, render,
+    batch_exclusion_section, batch_group_section, batch_replacement_section,
+    build_report, render,
 )
 from rft.revit.bar_types import (
     bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
@@ -907,11 +908,42 @@ class ColumnWindow(forms.WPFWindow):
         host_element = self.column
 
         batch_plan = column_batch.plan_candidates(doc, host_element, inputs)
+
+        # Spec Section 6: ONE read per column, before the dialog below and
+        # before any transaction, so the count the engineer confirms and
+        # the elements apply_batch deletes are the same query.
+        existing = column_batch.read_existing(doc, batch_plan)
+
         report = render([
             batch_group_section(batch_plan.groups),
             batch_exclusion_section(batch_plan.exclusions),
+            batch_replacement_section(existing),
         ])
         self.report_tb.Text = report
+
+        # R23 per column, which for a batch "is a table" (spec Section 6).
+        # Shown ONLY when something of ours exists somewhere in the batch
+        # -- a first placement over a fresh type shows nothing -- and it
+        # stops before anything is touched, like the single-column path.
+        replacing = [row for row in existing if row.replaced_count]
+        if replacing:
+            proceed = forms.alert(
+                "{} of the {} column(s) in this batch already hold elements "
+                "placed by this tool.\nApply will DELETE them and rebuild:"
+                "\n\n{}\n\nThe full table is on the Review tab.".format(
+                    len(replacing), len(batch_plan.candidates),
+                    "\n".join(
+                        "  column {} -- {} element(s)".format(
+                            row.element_id, row.replaced_count)
+                        for row in replacing)),
+                title="Replace existing reinforcement in {} column(s)?".format(
+                    len(replacing)),
+                ok=False, yes=True, no=True)
+            if not proceed:
+                self.batch_status_tb.Text = (
+                    "Cancelled -- nothing changed. The groups and exclusions "
+                    "above still stand.")
+                return
 
         try:
             result = column_batch.apply_batch(
@@ -931,11 +963,22 @@ class ColumnWindow(forms.WPFWindow):
             forms.alert(message, title="Batch apply failed -- rolled back")
             return
 
-        self.batch_status_tb.Text = (
+        message = (
             "Placed {} column(s) in {} group(s). {} excluded -- see the "
             "report.".format(
                 len(result.per_column), len(batch_plan.groups),
                 len(batch_plan.exclusions)))
+        replaced_total = sum(row.replaced_count for row in existing)
+        if replaced_total:
+            message = "Replaced {} element(s). {}".format(
+                replaced_total, message)
+        foreign_ids = [found for row in existing for found in row.foreign_ids]
+        if foreign_ids:
+            # R24 in the batch too: named, never silently present.
+            message += " {} foreign rebar element(s) left untouched (id {}).".format(
+                len(foreign_ids),
+                ", ".join(str(found) for found in foreign_ids))
+        self.batch_status_tb.Text = message
 
     # --------------------------------------------------------- sketch
     def on_canvas_size_changed(self, sender, args):

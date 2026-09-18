@@ -46,6 +46,14 @@ BatchGroup = namedtuple("BatchGroup", "key element_ids")
 #: cannot tell (and does not need to) which stage excluded it.
 Exclusion = namedtuple("Exclusion", "element_id reason")
 
+#: What ONE candidate's host already holds, read once before any dialog
+#: and before the transaction (spec Section 6): how many of THIS tool's
+#: own elements R23's confirmation must count, and the foreign rebar R24
+#: requires naming and never deleting. Pure data, so the report's table
+#: can be tested without a document.
+BatchExisting = namedtuple("BatchExisting",
+                           "element_id replaced_count foreign_ids")
+
 
 def group_key(extent):
     """Spec Section 3's key, read off one ``ColumnExtent`` -- the object

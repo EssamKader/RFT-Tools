@@ -89,3 +89,44 @@ def test_batch_inputs_reads_the_same_fields_the_single_column_plan_used():
                   "self.bars.bar_diameter_mm", "self.bars.tie_diameter_mm",
                   "self.tie_subsets_tb.Text"):
         assert field in body, "%r not read by _batch_inputs" % field
+
+
+# --------------------------------------------------------------------- #
+# R23 per column (spec Section 6): counted, shown, and cancellable
+
+
+def test_existing_reinforcement_is_read_BEFORE_apply_batch():
+    """Spec Section 6: the count R23 shows and the set apply_batch deletes
+    must be one read, taken outside the transaction -- the same shape the
+    single-column path uses when it passes ``ours``/``foreign`` in."""
+    body = _method_body("_apply_batch_in_context")
+    read_at = body.index("column_batch.read_existing(")
+    apply_at = body.index("column_batch.apply_batch(")
+    assert read_at < apply_at
+
+
+def test_the_batch_confirmation_is_shown_before_apply_batch_and_can_cancel():
+    """R23 for a batch: a table, then a confirmation, then placement --
+    and Cancel must return before ``apply_batch`` is ever called, with
+    nothing touched."""
+    body = _method_body("_apply_batch_in_context")
+    alert_at = body.index("title=\"Replace existing reinforcement in")
+    apply_at = body.index("column_batch.apply_batch(")
+    assert alert_at < apply_at, (
+        "the replacement confirmation must be shown before any placement")
+    cancel = re.search(r"if not proceed:\n(.*?)\n\n", body, re.DOTALL)
+    assert cancel, "no cancel branch found"
+    assert "return" in cancel.group(1)
+    assert "Cancelled" in cancel.group(1)
+
+
+def test_the_batch_report_carries_the_replacement_table():
+    body = _method_body("_apply_batch_in_context")
+    assert "batch_replacement_section(existing)" in body
+
+
+def test_the_batch_status_names_foreign_rebar_it_left_alone():
+    """R24 in the batch too -- foreign rebar is reported, never silent."""
+    body = _method_body("_apply_batch_in_context")
+    assert "foreign_ids" in body
+    assert "left untouched" in body

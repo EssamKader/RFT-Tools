@@ -1434,16 +1434,65 @@ CASES = [
      "report, so the engineer sees THAT a column was excluded but not WHY"),
 
     (COL_SCRIPT,
-     '        self.report_tb.Text = report\n'
-     '\n'
-     '        try:\n'
-     '            result = column_batch.apply_batch(',
-     '        try:\n'
-     '            result = column_batch.apply_batch(',
+     '        self.report_tb.Text = report\n',
+     '',
      TCBW + "test_the_batch_report_is_rendered_before_apply_batch_is_called",
      "#153 -- the batch report's assignment removed from before "
      "apply_batch runs, so a refusal or a rolled-back failure would show "
      "no groups or exclusions at all rather than R33's report"),
+    # ---- #153 review: spec Section 6 (R23/R24) in the batch
+
+    (COL_BATCH_ADAPTER,
+     '        if candidate.ours is None or candidate.foreign is None:',
+     '        if False:',
+     TCB + "test_apply_batch_refuses_when_read_existing_was_never_run",
+     "R23 -- apply_batch allowed to open the shared transaction on "
+     "candidates whose existing reinforcement was never read, so it "
+     "would delete a cage whose count nobody was ever shown"),
+
+    (COL_BATCH_ADAPTER,
+     '            ours, foreign = candidate.ours, candidate.foreign',
+     '            ours, foreign = existing_elements(doc, candidate.element)',
+     TCB + "test_apply_batch_deletes_exactly_what_read_existing_counted",
+     "spec Section 6 -- the existing cage re-read INSIDE the "
+     "transaction instead of using the set R23's confirmation "
+     "counted, so the batch can delete elements the engineer never "
+     "saw (the single-column path passes ours/foreign IN for this "
+     "exact reason)"),
+
+    (COL_BATCH_ADAPTER,
+     '    groups = group_hosts([(candidate.element.Id.IntegerValue, candidate.host)\n'
+     '                          for candidate in candidates])',
+     '    groups = group_hosts([(element.Id.IntegerValue, host)\n'
+     '                          for element, host in reads])',
+     TCB + "test_a_column_excluded_by_the_refusal_gate_is_in_NO_group",
+     "R33 -- the groups built from every READ column rather than "
+     "the survivors, so the report names a column in a group AND in "
+     "the exclusion list, contradicting itself about whether that "
+     "column gets steel"),
+
+    (COL_REPORT,
+     '        if row.foreign_ids:',
+     '        if False:',
+     TCB + "test_batch_replacement_section_names_every_column_and_its_count",
+     "R24 in the batch -- foreign rebar dropped from the "
+     "replacement table, so bars this tool must never delete are "
+     "also never named"),
+
+    (COL_SCRIPT,
+     '            if not proceed:',
+     '            if False:',
+     TCBW + "test_the_batch_confirmation_is_shown_before_apply_batch_and_can_cancel",
+     "R23 -- Cancel on the batch's replacement confirmation ignored, "
+     "so declining still deletes and rebuilds every column"),
+
+    (COL_SCRIPT,
+     '            batch_replacement_section(existing),\n',
+     '',
+     TCBW + "test_the_batch_report_carries_the_replacement_table",
+     "spec Section 6 -- the replacement table dropped from the batch "
+     "report, leaving R23's per-column counts in a dialog that is "
+     "gone the moment it is dismissed"),
 ]
 
 
