@@ -323,8 +323,32 @@ def test_a_run_stepping_along_Facing_may_bend_only_along_Hand():
 
 
 def test_an_unknown_step_axis_is_refused_not_guessed():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as raised:
         candidate_directions_for_step_axis("Up", _ALL_FOUR)
+    # Named, not bare: this module now has TWO refusals in this function
+    # and a bare `raises` would pass on either.
+    assert "Unknown step axis" in str(raised.value)
+
+
+def test_a_run_offered_only_its_OWN_axis_is_refused_in_ITS_OWN_words():
+    """A run narrowed to nothing is not the same fact as a column with
+    nowhere to bend, and must not borrow `terminate_bar`'s message: the
+    column here HAS two directions, and they are the two this run is
+    forbidden to use. A reader told "no bend direction at all" would go
+    looking at the slab read instead of at the run.
+    """
+    hand_only = tuple(d for d in _ALL_FOUR if d.name.endswith("Hand"))
+    with pytest.raises(ValueError) as raised:
+        # A Hand-stepping run may bend only along Facing, and this column
+        # offers neither Facing direction.
+        candidate_directions_for_step_axis(STEP_AXIS_HAND, hand_only)
+    message = str(raised.value)
+    assert "stepping along Hand" in message
+    assert "+Facing or -Facing" in message
+    # The two it DOES have are named, so the reader can see why they do
+    # not help.
+    assert "+Hand, -Hand" in message
+    assert "no bend direction at all" not in message
 
 
 def test_terminate_run_never_hands_terminate_bar_its_OWN_step_axis():

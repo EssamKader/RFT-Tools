@@ -348,8 +348,19 @@ def candidate_directions_for_step_axis(step_axis, directions):
             "Unknown step axis %r; expected %r or %r."
             % (step_axis, STEP_AXIS_HAND, STEP_AXIS_FACING))
     wanted = _PERPENDICULAR_DIRECTION_NAMES[step_axis]
-    return tuple(direction for direction in directions
-                if direction.name in wanted)
+    candidates = tuple(direction for direction in directions
+                       if direction.name in wanted)
+    if not candidates:
+        # Not the same refusal as `terminate_bar`'s "no bend direction at
+        # all": the COLUMN may have had four and still leave this run
+        # none, and a message saying otherwise sends the reader looking
+        # at the wrong thing.
+        raise ValueError(
+            "A run stepping along %s may only bend %s or %s (R44), and "
+            "neither was offered. Directions given: %s."
+            % (step_axis, wanted[0], wanted[1],
+               ", ".join(one.name for one in directions) or "none"))
+    return candidates
 
 
 def terminate_run(ld_mm, slab_thickness_mm, slab_cover_mm, step_axis,
