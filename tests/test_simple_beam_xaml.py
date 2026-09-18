@@ -1239,6 +1239,12 @@ def test_the_version_file_matches_the_newest_changelog_entry():
         os.path.join(repo_root, "CHANGELOG.md"), encoding="utf-8").read()
     headings = re.findall(r"^## \[([^\]]+)\]", changelog, re.M)
     assert headings, "no release headings found in CHANGELOG.md"
+    # The COLUMN tool versions independently and prefixes its headings
+    # `column/` (#176). Its entries are newer than the beam's and must not
+    # be read as the beam's release -- that would make this guard demand
+    # a beam VERSION bump every time the column ships.
+    headings = [h for h in headings if not h.startswith("column/")]
+    assert headings, "no BEAM release headings found in CHANGELOG.md"
 
     assert version == headings[0], (
         "VERSION says %r but the newest CHANGELOG.md entry is %r -- one was "
