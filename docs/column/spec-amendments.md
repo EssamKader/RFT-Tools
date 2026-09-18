@@ -915,3 +915,59 @@ true regardless.
 The placer still does not apply the mirror. When it does, **it must skip
 triangles** — and that is now a stated rule with a test behind it rather than
 something to be rediscovered from the geometry.
+
+
+---
+
+## R33 — a batch places every group correctly and reports the split
+
+**Decided by the owner** (#104), after the tracer bullet showed that a family
+type does not determine the cage.
+
+### What was asked
+
+Five `450 x 600mm` columns in the verification model share family, type, `b`,
+`h`, cover, rotation and orientation, and **two of them sit on the same two
+levels with different clear heights** — 2700 where a beam cuts the column, 3000
+where it runs the full storey. Clear height drives the tie ladder, so one
+selection genuinely contains two different cages.
+
+Asked what should happen when a selected type splits, the owner chose: **place
+each group correctly, and report the split.**
+
+### The rule
+
+- The run **proceeds**. Each group gets the ladder its own extent requires.
+- **The report names the groups**, their clear heights, and which columns fell
+  in each. A reviewer sees that one selection produced two cages by *reading
+  the report*, not by noticing a tie count in a 3D view.
+- The **type stays the filter the engineer selects with**; the **batch key is
+  the computed extent** — clear height, and whether a top support was found.
+- A group of one is not an error.
+
+### What was rejected, and why it is worth recording
+
+**Refusing the split** — making the engineer narrow the selection until it is
+one cage — was the safest-looking option and would have matched how this tool
+already refuses out-of-scope columns.
+
+It was rejected because **a floor with a beam over some columns and not others
+is the normal case, not the exceptional one**. Refusing it would make the
+common situation the laborious one, and a tool that is laborious in the common
+case gets worked around rather than used. The report carries the burden
+instead.
+
+**Asking before placing** was also rejected: it puts a click between the
+engineer and the thing they already asked for, and the information it would
+show is the same information the report shows afterwards.
+
+### What this costs, stated plainly
+
+The engineer learns there were two cages **after** the steel exists. That is
+the accepted trade, and it is why §4 of
+[`specs/column-batch-placement.md`](../../specs/column-batch-placement.md)
+makes the group listing a requirement of the report rather than a nicety —
+the ruling is only safe if the report is actually readable.
+
+See also **R23**, which this stretches: "show the count, then replace" is a
+sentence for one column and a table for forty.
