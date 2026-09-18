@@ -971,3 +971,57 @@ the ruling is only safe if the report is actually readable.
 
 See also **R23**, which this stretches: "show the count, then replace" is a
 sentence for one column and a table for forty.
+
+
+---
+
+## R34 — WITHDRAWN: a column that crosses a level stays refused
+
+**Proposed and then withdrawn by the owner, in the same session** (#155,
+closed unimplemented). Kept in the ledger as a withdrawal rather than deleted,
+because the reasoning is the standing answer to “why not just place it
+anyway?”
+
+### What was proposed
+
+On the two columns #153's first live batch excluded — 424290 and 424284 in
+`ColumnRFT.Trail`, base offset −2500 and top offsets +1000 and +1500, so Level
+1 at 0 mm falls strictly inside them:
+
+> you place rebar no matter its instances and then report that after placement
+
+`multi_storey_refusal` would have become a finding: detail the column, name the
+crossed level and what the cage lacks there.
+
+### Why it was withdrawn
+
+> you know what single story column should be the right call ... due to
+> construction sequance
+
+A column is not cast in one piece through a floor. The pour stops at the
+soffit, a construction joint forms there, and the next storey follows the
+floor. A one-segment cage spanning a level cannot honour three things at once:
+
+1. **the splice belongs above the joint** — bars lap just above the floor,
+   which is exactly what §6's splice protrusion into the segment above models;
+   a spanning cage laps wherever its ladder happened to end;
+2. **confinement is required either side of the joint** — a continuous ladder
+   runs ordinary middle-zone spacing through the one place it matters most;
+3. **it cannot physically be placed** — the beam cage and the floor formwork
+   occupy that elevation.
+
+So `multi_storey_refusal` is not a gap standing in for a missing feature. It is
+the tool declining to produce a cage that does not match how the column is
+built, and its message already names the action: split at each level and detail
+the storeys separately. The live trigger is a **model** condition — those two
+columns are drawn through Level 1.
+
+### What this leaves open, deliberately
+
+A level datum with **nothing framing into it** is not a construction joint, and
+refusing there is a false positive. Still refused today, on the grounds that a
+stray datum is a two-second fix in the model and a wrong cage is not — to be
+revisited against a real project if it appears in one.
+
+**Nothing in the code changed.** §0/C2 and `specs/column-batch-placement.md`
+§7 stand as written, and no amendment to either was merged.
