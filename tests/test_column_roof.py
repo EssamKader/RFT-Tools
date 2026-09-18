@@ -32,8 +32,13 @@ BEND_RADIUS_MM = 46.3
 LOSS_MM = 19.87            # 46.3 x (2 - pi/2)
 
 
-def _slab(name="+Hand"):
-    return RoofBendDirection(name=name, has_slab=True, available_run_mm=0.0)
+#: Deep interior: slab in that direction with more room than any L_D here
+#: needs. Under R41 the run ALWAYS governs, so a "has slab" direction with
+#: a zero run would now cap the bend to nothing -- which is the whole
+#: point of the change.
+def _slab(name="+Hand", run_mm=5000.0):
+    return RoofBendDirection(name=name, has_slab=True,
+                             available_run_mm=run_mm)
 
 
 def _edge(name, width_mm=NARROW_FACE_MM):
@@ -165,10 +170,9 @@ def test_a_corner_bar_bends_where_the_SLAB_is_not_where_it_was_listed():
 
 
 def test_with_every_direction_a_free_edge_the_LONGEST_run_is_taken():
-    """A stated default, not a rule: section 2 caps each free edge and does
-    not choose between two. The longest run develops the most bar, so a
-    default that picked the first-listed would throw away anchorage that
-    was available."""
+    """R41 makes this the same rule as every other direction choice: most
+    room wins. It was a stated default when free edges were their own
+    branch; it is now simply what the rule does."""
     result = terminate_bar(
         LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
         [_edge("-Facing", NARROW_FACE_MM), _edge("-Hand", WIDE_FACE_MM)],
@@ -194,6 +198,61 @@ def test_a_bar_with_nowhere_to_bend_is_refused():
     with pytest.raises(ValueError):
         terminate_bar(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM, [],
                       BEND_RADIUS_MM)
+
+
+# --------------------------------------------------------------- R41
+
+
+def test_an_interior_column_NEAR_the_slab_edge_is_capped_too():
+    """The owner's case: an interior column about 500 mm from the edge.
+
+    The slab continues, so the old binary rule took the full-L_D branch and
+    asked for a 705 mm leg into 475 mm of room -- putting roughly 230 mm of
+    bar outside the concrete. R41: the run governs whatever limits it.
+    """
+    result = terminate_bar(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+                           [_slab("+Hand", run_mm=475.0)], BEND_RADIUS_MM)
+
+    assert result.b_mm == 475.0
+    assert result.run_limited is True
+    # Not a free edge: the slab IS there, it is just short. The report has
+    # to tell those apart.
+    assert result.free_edge is False
+    assert result.shortfall_mm == pytest.approx(
+        LD_MM - (175.0 + 475.0 - LOSS_MM), abs=0.01)
+
+
+def test_a_deep_interior_bar_is_not_flagged_as_limited():
+    result = terminate_bar(LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+                           [_slab("+Hand")], BEND_RADIUS_MM)
+
+    assert result.run_limited is False
+    assert result.shortfall_mm == 0.0
+
+
+def test_the_bend_goes_where_the_MOST_room_is_not_merely_where_slab_is():
+    """R41 strengthens section 2's corner rule: a direction with slab but a
+    short run loses to one with more room, even a free edge, because what
+    matters is how much bar can be developed."""
+    result = terminate_bar(
+        LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+        [_slab("+Hand", run_mm=120.0), _edge("-Facing", WIDE_FACE_MM)],
+        BEND_RADIUS_MM)
+
+    assert result.direction == "-Facing"
+    assert result.b_mm == 520.0
+
+
+def test_with_room_everywhere_the_first_stated_direction_still_wins():
+    """Section 2's "no preferred direction" is untouched where it applies:
+    with room everywhere every direction achieves full L_D, so the tie-break
+    stays a stated default rather than becoming a rule."""
+    result = terminate_bar(
+        LD_MM, SLAB_THICKNESS_MM, SLAB_COVER_MM,
+        [_slab("+Hand"), _slab("+Facing")], BEND_RADIUS_MM)
+
+    assert result.direction == "+Hand"
+    assert result.shortfall_mm == 0.0
 
 
 # --------------------------------------------------------------- R40

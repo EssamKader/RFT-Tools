@@ -75,6 +75,14 @@ whenever slab genuinely continues in the bar's bend direction (§2).
 bar, evaluate whether slab continues beyond the column in that bar's bend
 direction:
 
+> **R41 supersedes the binary below.** Every direction carries an available
+> **run**, and the run always governs: the column's own width at a free edge,
+> the distance to the slab edge for an interior column near one, and no limit
+> at all deep inside. The bend takes the direction with the most room, a
+> capped leg places and reports its shortfall, and the report says whether the
+> run was short because of a flagged free edge or a measured slab edge.
+> **R42**: that distance is measured from the floor's boundary, never typed.
+
 - **Slab continues** → the bend achieves full `L_D` via `a + b = L_D` (§1).
 - **No slab continues in that direction** (a free building edge) → accept the
   reduced `a_E + b_E` instead, where `b_E` is capped to whatever horizontal run
