@@ -1498,7 +1498,7 @@ CASES = [
     # ---- #160: the roof termination math (sections 1-2, R35)
 
     (COL_ROOF,
-     '    a = min(a_formula_mm, ld_mm - MIN_BEND_LEG_MM)',
+     '    a = min(a_formula_mm, nominal - MIN_BEND_LEG_MM)',
      '    a = a_formula_mm',
      TCR + "test_the_bend_leg_never_falls_below_the_minimum",
      "section 2.3's cap on a removed, so a thick slab and a short L_D "
@@ -1513,33 +1513,51 @@ CASES = [
      "and the straight run reverses direction into the Revit API"),
 
     (COL_ROOF,
-     '    b_edge = min(b, best.available_run_mm)',
-     '    b_edge = b',
-     TCR + "test_a_free_edge_caps_the_bend_to_what_fits_inside_the_column",
-     "section 2's b_E cap dropped, so a free-edge bar bends its full "
-     "horizontal leg out into open air beyond the column"),
-
-    (COL_ROOF,
      '    run = column_width_mm - cover_mm * 2.0',
      '    run = column_width_mm - cover_mm',
      TCR + "test_the_free_edge_run_is_the_face_width_less_cover_BOTH_sides",
      "cover counted on ONE side only, so the bend ends one cover short "
      "of the far face -- outside the concrete, by exactly the cover"),
 
-    (COL_ROOF,
-     '    with_slab = [one for one in directions if one.has_slab]',
-     '    with_slab = [one for one in directions[:1] if one.has_slab]',
-     TCR + "test_a_corner_bar_bends_where_the_SLAB_is_not_where_it_was_listed",
-     "section 2's corner rule narrowed to the FIRST stated direction, so "
-     "a corner bar listed edge-first takes the reduced a_E + b_E while "
-     "slab was available in its other direction"),
+    # R41 collapsed section 2's two return paths into one, and three
+    # cases went with it. Two are REMOVED rather than contrived: they
+    # mutated `b_edge = min(b, run)` and `achieved = a + b_edge - loss`
+    # on the free-edge-only branch, and both defects are now the SAME
+    # single mutation as the R41 cases above -- a second case proving
+    # the same line proves nothing twice. The third was retargeted at
+    # the surviving return.
 
     (COL_ROOF,
-     '    best = max(directions, key=lambda one: one.available_run_mm)',
+     '        return min(b, direction.available_run_mm)',
+     '        return b',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- the available run ignored, so an interior column 500 mm "
+     "from the slab edge is handed the full leg and puts about 230 mm "
+     "of bar outside the concrete (the owner's own case)"),
+
+    (COL_ROOF,
+     '    best = max(directions, key=developed_in)',
      '    best = directions[0]',
-     TCR + "test_with_every_direction_a_free_edge_the_LONGEST_run_is_taken",
-     "the free-edge default reverted to first-listed, throwing away the "
-     "anchorage a wider face had available"),
+     TCR + "test_the_bend_goes_where_the_MOST_room_is_not_merely_where_slab_is",
+     "R41 -- the bend forced into the first stated direction rather "
+     "than the one with the most room, throwing away anchorage that "
+     "was there"),
+
+    (COL_ROOF,
+     '        run_limited=b_final < b)',
+     '        run_limited=False)',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- a capped leg no longer reported as capped, so the one "
+     "thing the engineer must notice about a short run is missing "
+     "from the report"),
+
+    (COL_ROOF,
+     '        free_edge=not best.has_slab, bend_loss_mm=loss,',
+     '        free_edge=True, bend_loss_mm=loss,',
+     TCR + "test_an_interior_column_NEAR_the_slab_edge_is_capped_too",
+     "R41 -- a measured slab edge reported as a free edge the "
+     "engineer flagged, which are different facts and only one of "
+     "them is the engineer's own statement"),
 
     (COL_ROOF,
      '    if leg <= 0.0:',
@@ -1554,6 +1572,38 @@ CASES = [
      TCR + "test_this_module_does_NOT_import_anchorage",
      "the constant imported from anchorage instead of restated, which is "
      "the dependency CONTEXT.md forbids and #99 is open about"),
+
+    # ---- R40: L_D is the DEVELOPED centreline length
+
+    (COL_ROOF,
+     '    return 2.0 * tangent - bend_radius_mm * theta',
+     '    return 0.0',
+     TCR + "test_the_fillet_loss_reproduces_the_LIVE_measurement",
+     "R40 -- the fillet allowance dropped to zero, so every top-floor bar "
+     "is handed nominal legs summing to L_D and develops about 2% less "
+     "than L_D, invisibly, on every bar"),
+
+    (COL_ROOF,
+     '    nominal = ld_mm + bend_loss_mm',
+     '    nominal = ld_mm',
+     TCR + "test_a_and_b_add_up_to_LD_where_slab_continues",
+     "R40 -- the allowance computed and then not ADDED to the legs, which "
+     "is the same 2% shortfall with the arithmetic still in the file"),
+
+    (COL_ROOF,
+     '    achieved = a + b_final - loss',
+     '    achieved = a + b_final',
+     TCR + "test_a_and_b_add_up_to_LD_where_slab_continues",
+     "R40 -- the report's achieved length taken from the NOMINAL legs "
+     "rather than the built bar, so the page claims an anchorage the steel "
+     "does not have"),
+
+    (COL_ROOF,
+     '    if leg_mm < needed:',
+     '    if False:',
+     TCR + "test_a_leg_shorter_than_the_tangent_is_refused",
+     "R40 -- a leg shorter than the bend's own tangent allowed through, so "
+     "a narrow free edge asks Revit to build a corner that cannot exist"),
 
 ]
 

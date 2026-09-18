@@ -53,9 +53,14 @@ slab instead. This addendum defines that termination.
 > host (#161) — and only then may the engineer type one. An empty field is a
 > refusal, and the report names which of the two it was.
 
+> **R40**: `L_D` is the **developed centreline length of the built bar**.
+> Revit fillets the corner, so the legs handed to the API are longer than
+> `L_D` by `Δ = r(2 - π/2)`, with `r` read from the bar type. Measured in
+> #161: 900 mm of nominal leg builds an 880.2 mm bar.
+
 The longitudinal bar's development length `L_D` is split into two legs:
 
-    a + b = L_D
+    a + b = L_D + Δ        (R40; Δ = 0 only if the corner were unfilleted)
 
 where `a` is the vertical run from the slab's bottom face up to
 (floor thickness − cover), starting from the floor's bottom face, and
@@ -69,6 +74,14 @@ whenever slab genuinely continues in the bar's bend direction (§2).
 **Replaces separate Interior / Edge / Corner cases.** For each longitudinal
 bar, evaluate whether slab continues beyond the column in that bar's bend
 direction:
+
+> **R41 supersedes the binary below.** Every direction carries an available
+> **run**, and the run always governs: the column's own width at a free edge,
+> the distance to the slab edge for an interior column near one, and no limit
+> at all deep inside. The bend takes the direction with the most room, a
+> capped leg places and reports its shortfall, and the report says whether the
+> run was short because of a flagged free edge or a measured slab edge.
+> **R42**: that distance is measured from the floor's boundary, never typed.
 
 - **Slab continues** → the bend achieves full `L_D` via `a + b = L_D` (§1).
 - **No slab continues in that direction** (a free building edge) → accept the
