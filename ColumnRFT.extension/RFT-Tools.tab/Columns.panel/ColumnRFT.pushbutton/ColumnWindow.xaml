@@ -602,6 +602,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
@@ -628,7 +629,24 @@
                                    Text="Apply the bar and tie inputs first."/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="2" Margin="0,8,0,6" TextWrapping="Wrap"
+                    <!-- #153, specs/column-batch-placement.md: the same
+                         inputs, run over every column of this column's own
+                         family type. See rft.revit.column_batch. The tie
+                         subsets, hooks, mode and every other stated input
+                         above are shared; the extent, the clear height and
+                         the tie ladder are read and planned per column. -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal"
+                                Margin="0,8,0,0">
+                        <Button x:Name="apply_batch_btn"
+                                Content="Apply to every column of this type"
+                                Padding="12,5,12,5"/>
+                        <TextBlock x:Name="batch_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="12,6,0,0" TextWrapping="Wrap"
+                                   Text="Apply the bar and tie inputs first."/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="3" Margin="0,8,0,6" TextWrapping="Wrap"
                                Foreground="{StaticResource InkMuted}"
                                Text="Read this before placing. Every number here comes from the same computation the placer will use, so the page and the model cannot disagree."/>
 
@@ -637,7 +655,7 @@
                          and a TextBlock cannot be. Monospace because the tie
                          level table is columnar and proportional digits
                          destroy it. -->
-                    <TextBox Grid.Row="3" x:Name="report_tb"
+                    <TextBox Grid.Row="4" x:Name="report_tb"
                              IsReadOnly="True" AcceptsReturn="True"
                              FontFamily="Consolas" FontSize="11"
                              VerticalScrollBarVisibility="Auto"

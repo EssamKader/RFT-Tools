@@ -91,6 +91,11 @@ TPT = "tests/test_column_place_ties.py::"
 COL_PLACER = "RFT.lib/rft/revit/column_placer.py"
 TCP = "tests/test_column_placer.py::"
 TCA = "tests/test_column_apply.py::"
+# ---- #153: batch placement (R33) --------------------------------
+COL_BATCH_CORE = "RFT.lib/rft/core/column_batch.py"
+COL_BATCH_ADAPTER = "RFT.lib/rft/revit/column_batch.py"
+TCB = "tests/test_column_batch.py::"
+TCBW = "tests/test_column_batch_window.py::"
 T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
@@ -1345,6 +1350,149 @@ CASES = [
      "#140 -- the sketch reverted to re-deriving the tie's corners from "
      "centre/half instead of drawing tie.vertices, so a mutated vertex "
      "order never reaches the canvas"),
+
+    # ---- #153: batch placement, R33 ----------------------------------
+    (COL_BATCH_CORE, '        clear_height_mm=extent.clear_height_mm,',
+     '        clear_height_mm=0.0,',
+     TCB + "test_two_columns_same_type_different_clear_height_land_in_different_groups",
+     "R33 -- the grouping key's clear height dropped to a constant, so two "
+     "columns with genuinely different clear heights would land in the "
+     "SAME group and one of them would get the other's tie ladder"),
+
+    (COL_BATCH_CORE,
+     '        top_support_found=(extent.top_source == SOURCE_SUPPORT_FACE))',
+     '        top_support_found=True)',
+     TCB + "test_same_clear_height_but_different_top_support_split_too",
+     "R33 -- the grouping key reduced to the family type in all but name: "
+     "whether a top support was found no longer varies the key, so two "
+     "columns that #104 measured as needing separate cages would merge"),
+
+    (COL_BATCH_ADAPTER,
+     '        try:\n'
+     '            refuse_if_not_ready(plan)\n'
+     '        except ColumnPlacementError as refusal:\n'
+     '            exclusions.append(Exclusion(\n'
+     '                element_id=element.Id.IntegerValue, reason=str(refusal)))\n'
+     '            continue\n'
+     '        candidates.append(\n'
+     '            ColumnCandidate(element=element, host=host, plan=plan))',
+     '        candidates.append(\n'
+     '            ColumnCandidate(element=element, host=host, plan=plan))',
+     TCB + "test_plan_candidates_excludes_a_column_refuse_if_not_ready_declines",
+     "spec Section 5 -- the per-column refuse_if_not_ready gate skipped in "
+     "plan_candidates, so a column the single-column path would refuse "
+     "reaches the batch's own candidate list uncaught"),
+
+    (COL_BATCH_ADAPTER,
+     '        refuse_if_not_ready(candidate.plan)\n'
+     '        if candidate.ours is None or candidate.foreign is None:',
+     '        if candidate.ours is None or candidate.foreign is None:',
+     TCB + "test_apply_batch_refuses_before_opening_when_a_candidate_plan_is_blocked",
+     "R25 extended -- apply_batch's own belt-and-braces refuse_if_not_ready "
+     "re-check deleted, so a caller that reached apply_batch with an "
+     "already-blocked plan could open the shared transaction anyway"),
+
+    (COL_BATCH_ADAPTER,
+     '            per_column.append((host_id, PlacementResult(\n'
+     '                ties_created=ties_created, bars_created=bars_created,\n'
+     '                replaced_count=len(ours), foreign=foreign)))\n'
+     '    except Exception:',
+     '            per_column.append((host_id, PlacementResult(\n'
+     '                ties_created=ties_created, bars_created=bars_created,\n'
+     '                replaced_count=len(ours), foreign=foreign)))\n'
+     '            transaction.Commit()\n'
+     '            transaction = Transaction(doc, BATCH_TRANSACTION_NAME)\n'
+     '            transaction.Start()\n'
+     '    except Exception:',
+     TCB + "test_apply_batch_uses_exactly_one_transaction_for_every_candidate",
+     "spec Section 4 -- the single shared transaction split into one per "
+     "candidate, committing after each column instead of once for the "
+     "whole batch, so a later column's failure can no longer roll back an "
+     "earlier column's own rebuild (R25 extended)"),
+
+    (COL_REPORT,
+     '        lines.append(\n'
+     '            "Group %d -- clear height %s, %s -- column(s): %s"\n'
+     '            % (index, _mm(group.key.clear_height_mm), support,\n'
+     '               ", ".join(str(element_id)\n'
+     '                        for element_id in group.element_ids)))',
+     '        lines.append("Group %d -- %s" % (index, support))',
+     TCB + "test_batch_group_section_names_each_group_its_height_and_its_columns",
+     "R33 -- the group's clear height and its column ids dropped from the "
+     "report line, so a reviewer can no longer see WHICH columns fell in "
+     "which group or WHY the run split them"),
+
+    (COL_REPORT,
+     '        lines = ["Column %s -- %s" % (exclusion.element_id, exclusion.reason)\n'
+     '                 for exclusion in exclusions]',
+     '        lines = ["Column %s" % exclusion.element_id\n'
+     '                 for exclusion in exclusions]',
+     TCB + "test_batch_exclusion_section_names_every_exclusion_and_its_reason",
+     "spec Section 5 -- an excluded column's reason dropped from the "
+     "report, so the engineer sees THAT a column was excluded but not WHY"),
+
+    (COL_SCRIPT,
+     '        self.report_tb.Text = report\n',
+     '',
+     TCBW + "test_the_batch_report_is_rendered_before_apply_batch_is_called",
+     "#153 -- the batch report's assignment removed from before "
+     "apply_batch runs, so a refusal or a rolled-back failure would show "
+     "no groups or exclusions at all rather than R33's report"),
+    # ---- #153 review: spec Section 6 (R23/R24) in the batch
+
+    (COL_BATCH_ADAPTER,
+     '        if candidate.ours is None or candidate.foreign is None:',
+     '        if False:',
+     TCB + "test_apply_batch_refuses_when_read_existing_was_never_run",
+     "R23 -- apply_batch allowed to open the shared transaction on "
+     "candidates whose existing reinforcement was never read, so it "
+     "would delete a cage whose count nobody was ever shown"),
+
+    (COL_BATCH_ADAPTER,
+     '            ours, foreign = candidate.ours, candidate.foreign',
+     '            ours, foreign = existing_elements(doc, candidate.element)',
+     TCB + "test_apply_batch_deletes_exactly_what_read_existing_counted",
+     "spec Section 6 -- the existing cage re-read INSIDE the "
+     "transaction instead of using the set R23's confirmation "
+     "counted, so the batch can delete elements the engineer never "
+     "saw (the single-column path passes ours/foreign IN for this "
+     "exact reason)"),
+
+    (COL_BATCH_ADAPTER,
+     '    groups = group_hosts([(candidate.element.Id.IntegerValue, candidate.host)\n'
+     '                          for candidate in candidates])',
+     '    groups = group_hosts([(element.Id.IntegerValue, host)\n'
+     '                          for element, host in reads])',
+     TCB + "test_a_column_excluded_by_the_refusal_gate_is_in_NO_group",
+     "R33 -- the groups built from every READ column rather than "
+     "the survivors, so the report names a column in a group AND in "
+     "the exclusion list, contradicting itself about whether that "
+     "column gets steel"),
+
+    (COL_REPORT,
+     '        if row.foreign_ids:',
+     '        if False:',
+     TCB + "test_batch_replacement_section_names_every_column_and_its_count",
+     "R24 in the batch -- foreign rebar dropped from the "
+     "replacement table, so bars this tool must never delete are "
+     "also never named"),
+
+    (COL_SCRIPT,
+     '            if not proceed:\n'
+     '                self.batch_status_tb.Text = (',
+     '            if False:\n'
+     '                self.batch_status_tb.Text = (',
+     TCBW + "test_the_batch_confirmation_is_shown_before_apply_batch_and_can_cancel",
+     "R23 -- Cancel on the batch's replacement confirmation ignored, "
+     "so declining still deletes and rebuilds every column"),
+
+    (COL_SCRIPT,
+     '            batch_replacement_section(existing),\n',
+     '',
+     TCBW + "test_the_batch_report_carries_the_replacement_table",
+     "spec Section 6 -- the replacement table dropped from the batch "
+     "report, leaving R23's per-column counts in a dialog that is "
+     "gone the moment it is dismissed"),
 ]
 
 

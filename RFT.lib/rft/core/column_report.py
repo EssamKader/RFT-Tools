@@ -262,6 +262,76 @@ def outstanding_section():
     ])
 
 
+def batch_group_section(groups):
+    """Issue #153 / R33: name every group and its clear height, and which
+    columns fell in it.
+
+    R33's ruling is that a split TYPE is placed, not refused -- "the report
+    carries the burden instead" (spec-amendments.md). This is the sentence
+    that carries it: a reviewer must see that one selection produced more
+    than one cage by READING this, not by noticing a tie count in a 3D view.
+    """
+    lines = []
+    if not groups:
+        lines.append(
+            "No group was formed -- every candidate column was excluded "
+            "(see 'Excluded columns' below).")
+    for index, group in enumerate(groups, start=1):
+        support = ("a top support was found" if group.key.top_support_found
+                   else "no top support was found (level elevation used)")
+        lines.append(
+            "Group %d -- clear height %s, %s -- column(s): %s"
+            % (index, _mm(group.key.clear_height_mm), support,
+               ", ".join(str(element_id)
+                        for element_id in group.element_ids)))
+    return ReportSection("Batch groups", lines)
+
+
+def batch_exclusion_section(exclusions):
+    """Issue #153 / spec Section 5: every column excluded before the
+    transaction opened, named, with the reason -- whether `read_column`
+    refused it or `refuse_if_not_ready`'s later gate did.
+    """
+    if not exclusions:
+        lines = ["No columns were excluded from this batch."]
+    else:
+        lines = ["Column %s -- %s" % (exclusion.element_id, exclusion.reason)
+                 for exclusion in exclusions]
+    return ReportSection("Excluded columns", lines)
+
+
+def batch_replacement_section(rows):
+    """Issue #153 / spec Section 6: R23 and R24, per column.
+
+    "Reporting '17 existing bars will be replaced' for one column is a
+    sentence; for forty it is a table, and the confirmation must stay
+    readable or it stops being a confirmation" -- so this IS the table,
+    one line per column, and it is what the batch's confirmation shows.
+    Columns holding nothing are said to hold nothing rather than left out:
+    a reviewer counting lines must find every column that will be placed.
+    """
+    if not rows:
+        return ReportSection(
+            "Existing reinforcement",
+            ["No columns will be placed, so nothing will be replaced."])
+    lines = []
+    for row in rows:
+        if row.replaced_count:
+            line = ("Column %s -- %d element(s) placed by this tool will be "
+                    "DELETED and rebuilt" % (row.element_id,
+                                             row.replaced_count))
+        else:
+            line = ("Column %s -- nothing of ours to replace"
+                    % row.element_id)
+        if row.foreign_ids:
+            # R24: named, never silently present, and never deleted.
+            line += (" | %d foreign rebar element(s) left untouched (id %s)"
+                     % (len(row.foreign_ids),
+                        ", ".join(str(found) for found in row.foreign_ids)))
+        lines.append(line)
+    return ReportSection("Existing reinforcement", lines)
+
+
 def build_report(data, bars, splice, splice_line, bar_type_name,
                  bar_diameter_mm, plan, ladder, findings=(), tie_lines=()):
     """The whole page, in order.

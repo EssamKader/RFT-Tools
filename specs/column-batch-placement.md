@@ -81,12 +81,15 @@ single run from disagreeing.
 **A group of one is not an error.** In the model above, 423606 is simply
 its own group.
 
-> **Open, deliberately.** Rotation is not part of the key. Every column in
-> the verification model reads rotation 0, so it could not be tested;
-> #69 found `Hand`/`Facing` invariant under a 35° rotation, which suggests
-> the cage is expressed in a frame that does not care. That is a suggestion
-> about a different question, and it is recorded as an open item rather
-> than silently assumed either way.
+> **Settled by measurement, and it stays out.** Rotation is not part of
+> the key, and that is now a measured fact rather than an untested
+> omission. The owner rotated two columns of the `300 x 600mm` group to
+> **45°** and **315°**; every vertical face normal on both still comes
+> back as **exactly ±`HandOrientation` or ±`FacingOrientation`** — dot
+> products of `1.000000` and `0.000000` at full precision, with the wide
+> faces mapping to ±Hand in every case, identical to the unrotated
+> columns. The column's own frame rotates with it, so the cage does too.
+> Recorded in `docs/column/verification/issue-104-batch-grouping.md`.
 
 ## 4. When a type splits — R33
 

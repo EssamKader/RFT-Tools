@@ -1267,13 +1267,25 @@ class FakeFamilySymbol(object):
     VERIFIED LIVE: ``Name`` decl=``ElementType``, ``CanRead=False``, while
     ``Element.Name`` in C# reads ``"450 x 600mm"`` and
     ``SYMBOL_NAME_PARAM`` returns the identical string.
+
+    ``Id`` (issue #153): every ``Element`` has one, the same base-class
+    member this fake already relies on for ``FakeFamily``, ``FakeColumn``
+    and ``FakeRebarCoverType`` -- not a new assumption, just the first place
+    a ``FamilySymbol``'s own id is read (batch collection compares
+    candidates' ``Symbol.Id`` to the picked column's).
     """
 
+    _next_id = [7000]
+
     def __init__(self, name, family_name="M_Concrete-Rectangular-Column",
-                 parameters=None):
+                 parameters=None, id_value=None):
         self._name = name
         self.Family = FakeFamily(family_name)
         self._parameters = dict(parameters or {})
+        if id_value is None:
+            id_value = FakeFamilySymbol._next_id[0]
+            FakeFamilySymbol._next_id[0] += 1
+        self.Id = FakeElementId(id_value)
 
     def get_Parameter(self, built_in):
         if built_in is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
