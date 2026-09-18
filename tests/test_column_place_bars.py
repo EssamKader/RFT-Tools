@@ -260,15 +260,24 @@ def test_a_SECOND_handle_on_the_same_axis_is_left_alone():
     hundreds of millimetres away. The horizontal leg would collapse back
     onto the bar's own line and `b` would be gone, in a cage that still
     looked placed.
+
+    BOTH facing normals are offered per handle deliberately. The first
+    version of this test offered only `-Facing`, so whether the mutation
+    was reachable at all depended on which RUN consumed the armed manager
+    and which side of the axis its seed sat on -- it caught the mutation
+    locally and missed it in CI, on the same commit. A guard whose proof
+    depends on bar ordering is not a guard.
     """
     host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
     vertical_leg = FakeRebarHandle("RebarPlane")
     far_end = FakeRebarHandle("RebarPlane")
-    first = _host_face_candidate((0.0, -1.0, 0.0), host_id)
-    second = _host_face_candidate((0.0, -1.0, 0.0), host_id)
+    near = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="near")
+    far = _host_face_candidate((0.0, 1.0, 0.0), host_id, label="far")
+    end_near = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="end-")
+    end_far = _host_face_candidate((0.0, 1.0, 0.0), host_id, label="end+")
     manager = FakeRebarConstraintsManager(
         handles=[vertical_leg, far_end],
-        candidates={vertical_leg: [first], far_end: [second]})
+        candidates={vertical_leg: [near, far], far_end: [end_near, end_far]})
     FakeRebar.PENDING_CONSTRAINTS_MANAGERS = [manager]
 
     plan = _plan(count_b=2, count_h=2)
@@ -276,10 +285,13 @@ def test_a_SECOND_handle_on_the_same_axis_is_left_alone():
     host.Id = host_id
     place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
 
-    assert manager.preferred[vertical_leg] is first
+    # Whichever side the consuming run's seed sits on, ONE of the vertical
+    # leg's candidates was chosen ...
+    assert manager.preferred[vertical_leg] in (near, far)
+    # ... and the far end was left alone entirely.
     assert far_end not in manager.preferred
-    # And it was never touched at all -- not merely unpreferred.
-    assert second.distance_to_target_host_face is None
+    assert end_near.distance_to_target_host_face is None
+    assert end_far.distance_to_target_host_face is None
 
 
 def test_both_horizontal_axes_are_still_pinned():
@@ -289,11 +301,13 @@ def test_both_horizontal_axes_are_still_pinned():
     host_id = FakeColumn(element_id=HOST_ID_VALUE).Id
     u_handle = FakeRebarHandle("RebarPlane")
     v_handle = FakeRebarHandle("RebarPlane")
-    u_candidate = _host_face_candidate((-1.0, 0.0, 0.0), host_id)
-    v_candidate = _host_face_candidate((0.0, -1.0, 0.0), host_id)
+    u_near = _host_face_candidate((-1.0, 0.0, 0.0), host_id, label="u-")
+    u_far = _host_face_candidate((1.0, 0.0, 0.0), host_id, label="u+")
+    v_near = _host_face_candidate((0.0, -1.0, 0.0), host_id, label="v-")
+    v_far = _host_face_candidate((0.0, 1.0, 0.0), host_id, label="v+")
     manager = FakeRebarConstraintsManager(
         handles=[u_handle, v_handle],
-        candidates={u_handle: [u_candidate], v_handle: [v_candidate]})
+        candidates={u_handle: [u_near, u_far], v_handle: [v_near, v_far]})
     FakeRebar.PENDING_CONSTRAINTS_MANAGERS = [manager]
 
     plan = _plan(count_b=2, count_h=2)
@@ -301,8 +315,8 @@ def test_both_horizontal_axes_are_still_pinned():
     host.Id = host_id
     place_bars(doc=None, host_element=host, bar_type=object(), plan=plan)
 
-    assert manager.preferred[u_handle] is u_candidate
-    assert manager.preferred[v_handle] is v_candidate
+    assert manager.preferred[u_handle] in (u_near, u_far)
+    assert manager.preferred[v_handle] in (v_near, v_far)
 
 
 # --------------------------------------------------------------------- #
