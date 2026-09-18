@@ -25,7 +25,8 @@ from rft.ui.shared_styles import (
     PLACEHOLDER_SOURCE, SHARED_STYLES_FILENAME, window_xaml,
 )
 from xaml_keys import (
-    COLUMN_PUSHBUTTON_DIR, COLUMN_XAML_PATH, SHARED_STYLES_PATH,
+    COLUMN_PUSHBUTTON_DIR, COLUMN_ROOF_XAML_PATH, COLUMN_XAML_PATH,
+    SHARED_STYLES_PATH,
     WINDOW_XAML_PATHS, declared_keys_in, merges_shared_styles, read,
     resolvable_keys,
 )
@@ -252,6 +253,26 @@ def test_the_column_window_resolves_and_still_parses():
     assert 'Source="file:///' in resolved
 
 
+
+def _method_body_in(class_name, method_name):
+    """One method's source, scoped to the class it is declared in.
+
+    script.py now defines TWO window classes (#176), so a body looked up
+    by name alone can silently come from the wrong one.
+    """
+    script = _script()
+    start = script.index("class %s(" % class_name)
+    rest = script[start:]
+    end = rest.find("\nclass ", 1)
+    if end != -1:
+        rest = rest[:end]
+    match = re.search(
+        r"    def %s\(.*?\n(.*?)(?=\n    def |\Z)" % re.escape(method_name),
+        rest, re.DOTALL)
+    assert match, "no %s.%s in script.py" % (class_name, method_name)
+    return match.group(1)
+
+
 # --------------------------------------------------------------------- #
 # XAML <-> script cross-checks
 
@@ -262,7 +283,12 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     inside an ExternalEvent whose handler swallows it -- so the engineer
     sees nothing happen at all.
     """
-    names = _x_names(COLUMN_XAML_PATH)
+    # BOTH windows (#176): script.py drives the main window and R43's
+    # second one, and a name declared in either is a real control. The
+    # union is deliberate -- checking only the main window would report
+    # every second-window control as missing, and the natural way to
+    # silence THAT is to weaken the guard.
+    names = _x_names(COLUMN_XAML_PATH) | _x_names(COLUMN_ROOF_XAML_PATH)
     script = _script()
     # Attributes assigned in __init__ that are ordinary Python state, not
     # controls. Listed rather than pattern-matched: the point is that
@@ -270,6 +296,9 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     not_controls = {
         "column", "column_data", "bar_type_options", "Title",
         "_api_call_in_flight",
+        # #176: the second window and what it hands back. Neither is
+        # a control, and both are assigned on this window.
+        "roof_window", "roof_termination", "owner", "slab",
     }
     used = set(re.findall(r"self\.([a-zA-Z_][a-zA-Z0-9_]*)", script))
     used -= not_controls
@@ -277,7 +306,7 @@ def test_every_control_the_script_touches_exists_in_the_xaml():
     missing = sorted(n for n in used if n.endswith(("_tb", "_cb", "_btn", "_tab"))
                      and n not in names)
     assert not missing, (
-        "script.py reads these as window controls, but ColumnWindow.xaml "
+        "script.py reads these as window controls, but neither window's XAML "
         "declares no such x:Name: %s" % missing)
 
 
@@ -430,6 +459,17 @@ def test_every_readout_is_cleared_on_a_re_pick():
     # direct assignment in the reset (possibly inside a helper it
     # calls). Both clear it; only "cleared nowhere" is a defect.
     cleared_directly = set(re.findall(r"self\.([a-z_]+_tb)\.Text = ", reset))
+    # #176: the SECOND window's read-outs are cleared by its own
+    # `_clear_read_outs`, not by this window's reset -- they live on
+    # another object. They are still required to be cleared somewhere,
+    # which is why this reads that method rather than exempting the
+    # window wholesale: a new read-out added there and forgotten still
+    # fails. (The window itself is also dropped on a re-pick; that is
+    # asserted separately by
+    # `test_a_re_pick_unticks_the_top_floor_box_and_drops_its_inputs`.)
+    roof_reset = _method_body_in("RoofWindow", "_clear_read_outs")
+    cleared_directly |= set(
+        re.findall(r"self\.([a-z_]+_tb)\.Text = ", roof_reset))
     missing = sorted(written - listed - cleared_directly)
     assert not missing, (
         "these read-outs are populated on pick but never cleared on the "
