@@ -110,7 +110,12 @@ SHAPE UNVERIFIED (see also `tests/fake_revit_api.py`'s header):
 
 from Autodesk.Revit import DB
 
-from ..core.column_roof import RoofBendDirection, free_edge_run_mm
+from Autodesk.Revit.Exceptions import OperationCanceledException
+from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
+
+from ..core.column_roof import (
+    RoofBendDirection, direction_for_normal, free_edge_run_mm,
+)
 from ..core.column_roof_run import nearest_crossing_mm
 from .column_host import largest_solid, read_orientation, read_section_mm
 from .units import internal_to_mm
@@ -329,3 +334,84 @@ def read_top_floor_slab(doc, column, typed_cover_mm=None,
         "cover_provenance": provenance,
         "directions": directions,
     }
+
+
+class ColumnFreeEdgeFaceFilter(ISelectionFilter):
+    """Only THIS column's own vertical faces may be picked (section 3).
+
+    Two refusals, both measured in #103 rather than assumed:
+
+    - **This column, by element id.** Not "any structural column": the
+      probe's version filtered by CATEGORY, which would let a free edge be
+      flagged on the NEIGHBOURING column -- a face that looks right in the
+      view and describes the wrong element entirely.
+    - **Vertical faces only.** An end face and a slab face are rejected AT
+      THE PICK, so they never highlight: 205 end faces offered, 205
+      rejected; 158 vertical offered, 0 rejected.
+
+    Neither method may raise. A filter that throws is a filter Revit stops
+    calling, and the pick then quietly allows everything.
+    """
+
+    def __init__(self, document, column):
+        self.document = document
+        self.column_id = column.Id
+
+    def AllowElement(self, element):
+        try:
+            return element.Id == self.column_id
+        except Exception:
+            return False
+
+    def AllowReference(self, reference, position):
+        try:
+            element = self.document.GetElement(reference)
+            if element is None or element.Id != self.column_id:
+                return False
+            face = element.GetGeometryObjectFromReference(reference)
+            if not isinstance(face, DB.PlanarFace):
+                return False
+            # #103: the end faces came back as exactly (0, 0, +/-1), so
+            # this test is nowhere near its tolerance on real geometry.
+            return abs(face.FaceNormal.Z) < 0.001
+        except Exception:
+            return False
+
+
+def pick_free_edge_faces(uidoc, column):
+    """The faces the engineer says have no slab beyond them (section 3).
+
+    Returns their direction names, in
+    `rft.core.column_roof_slab.BEND_DIRECTION_NAMES` order, or ``None``
+    when the pick was cancelled -- which is NOT the same as an empty
+    tuple. Empty means "I looked, and no face is a free edge"; ``None``
+    means "I did not answer", and the caller must leave what was there
+    alone rather than clearing it.
+
+    A face that squares with neither axis is skipped rather than
+    guessed at (`direction_for_normal` returns ``None``); the filter
+    should already have made such a face unpickable, so this is the
+    belt to that braces.
+    """
+    document = uidoc.Document
+    hand, facing = read_orientation(column)
+    hand_xy = (hand[0], hand[1])
+    facing_xy = (facing[0], facing[1])
+    try:
+        references = uidoc.Selection.PickObjects(
+            ObjectType.Face,
+            ColumnFreeEdgeFaceFilter(document, column),
+            "Pick every face where the slab STOPS at this column, then "
+            "Finish. Escape leaves the current selection unchanged.")
+    except OperationCanceledException:
+        return None
+
+    names = []
+    for reference in references:
+        face = column.GetGeometryObjectFromReference(reference)
+        normal = face.FaceNormal
+        name = direction_for_normal((normal.X, normal.Y), hand_xy, facing_xy)
+        if name is not None and name not in names:
+            names.append(name)
+    return tuple(
+        name for name in BEND_DIRECTION_NAMES if name in names)

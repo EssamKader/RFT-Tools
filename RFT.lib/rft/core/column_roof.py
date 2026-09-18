@@ -332,6 +332,48 @@ def terminate_bar(ld_mm, slab_thickness_mm, slab_cover_mm, directions,
         free_edge=True, bend_loss_mm=loss)
 
 
+#: How square a picked face's normal must be to an axis before it counts
+#: as that face. #103 measured every vertical face normal as EXACTLY
+#: +/-Hand or +/-Facing at full printed precision, so this is not a
+#: fitting tolerance -- it is a refusal threshold for geometry that is
+#: not the column's own face at all.
+FACE_AXIS_TOLERANCE = 0.999
+
+
+def direction_for_normal(normal_xy, hand_xy, facing_xy,
+                         tolerance=FACE_AXIS_TOLERANCE):
+    """Which of the four bend directions a picked FACE points along.
+
+    PURE: plain ``(x, y)`` tuples in, one of `RoofBendDirection`'s names
+    out, or ``None`` when the face does not square with either axis.
+
+    Section 3 asks the engineer to say which faces have no slab beyond
+    them. The frame that question is ASKED in ("+Hand") is the tool's, not
+    anything visible in a view -- so the engineer points at the face and
+    this turns the face into the name. #103 measured the correlation as
+    exact: every vertical face normal came back as precisely +/-Hand or
+    +/-Facing, by dot product, with no ambiguity at that rotation.
+
+    ``None`` rather than a nearest-match guess: a face that squares with
+    neither axis is not one of the four, and picking the closest would
+    flag a face the engineer did not choose.
+    """
+    def dot(a, b):
+        return a[0] * b[0] + a[1] * b[1]
+
+    along_hand = dot(normal_xy, hand_xy)
+    along_facing = dot(normal_xy, facing_xy)
+    if along_hand >= tolerance:
+        return "+Hand"
+    if along_hand <= -tolerance:
+        return "-Hand"
+    if along_facing >= tolerance:
+        return "+Facing"
+    if along_facing <= -tolerance:
+        return "-Facing"
+    return None
+
+
 def candidate_directions_for_step_axis(step_axis, directions):
     """R44: the two of ``directions`` perpendicular to ``step_axis``.
 

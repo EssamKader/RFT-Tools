@@ -1643,6 +1643,41 @@ class FakeDocument(object):
         return [element_id]
 
 
+
+class FakeOperationCanceledException(Exception):
+    """What `Selection.PickObjects` raises on Escape.
+
+    MEASURED (#103): Escape from
+    `PickObjects(ObjectType, ISelectionFilter, String)` raises
+    `Autodesk.Revit.Exceptions.OperationCanceledException` by name -- it
+    does not return an empty list, which is why cancelling and picking
+    nothing are distinguishable at all.
+    """
+
+
+class FakeObjectType(object):
+    Element = "Element"
+    Face = "Face"
+    Edge = "Edge"
+    PointOnElement = "PointOnElement"
+
+
+class FakeISelectionFilter(object):
+    """The interface a real filter implements.
+
+    A plain base class here: what matters for the tests is that both
+    methods exist, are called, and NEVER RAISE -- a filter that throws is
+    one Revit stops calling, and the pick then silently allows
+    everything.
+    """
+
+    def AllowElement(self, element):
+        return True
+
+    def AllowReference(self, reference, position):
+        return True
+
+
 def install():
     db = types.ModuleType("Autodesk.Revit.DB")
     structure = types.ModuleType("Autodesk.Revit.DB.Structure")
@@ -1713,3 +1748,20 @@ def install():
     sys.modules["Autodesk.Revit"] = revit_pkg
     sys.modules["Autodesk.Revit.DB"] = db
     sys.modules["Autodesk.Revit.DB.Structure"] = structure
+
+    # #176: face picking for section 3's free edges. These live in
+    # namespaces of their own, NOT under DB -- `Autodesk.Revit` is not a
+    # package to the real binding either, so each one is registered by
+    # its full dotted name the way the DB modules above are.
+    exceptions = types.ModuleType("Autodesk.Revit.Exceptions")
+    exceptions.OperationCanceledException = FakeOperationCanceledException
+    ui_pkg = types.ModuleType("Autodesk.Revit.UI")
+    selection = types.ModuleType("Autodesk.Revit.UI.Selection")
+    selection.ISelectionFilter = FakeISelectionFilter
+    selection.ObjectType = FakeObjectType
+    ui_pkg.Selection = selection
+    revit_pkg.Exceptions = exceptions
+    revit_pkg.UI = ui_pkg
+    sys.modules["Autodesk.Revit.Exceptions"] = exceptions
+    sys.modules["Autodesk.Revit.UI"] = ui_pkg
+    sys.modules["Autodesk.Revit.UI.Selection"] = selection

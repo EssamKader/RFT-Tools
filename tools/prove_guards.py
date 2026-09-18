@@ -1543,11 +1543,19 @@ CASES = [
      "replacement table, so bars this tool must never delete are "
      "also never named"),
 
+    # The anchor moved when every tab refusal was routed through
+    # _refuse_on_tab, and CI caught it as NOT PROVEN: the mutation
+    # stopped APPLYING, so the case proved nothing while still
+    # reading like coverage. Re-anchored, and INVERTED rather than
+    # disabled -- `if False:` is the shape that once passed in CI
+    # while failing locally on identical content.
     (COL_SCRIPT,
      '            if not proceed:\n'
-     '                self.batch_status_tb.Text = (',
-     '            if False:\n'
-     '                self.batch_status_tb.Text = (',
+     '                self._refuse_on_tab(\n'
+     '                    self.batch_status_tb,',
+     '            if proceed:\n'
+     '                self._refuse_on_tab(\n'
+     '                    self.batch_status_tb,',
      TCBW + "test_the_batch_confirmation_is_shown_before_apply_batch_and_can_cancel",
      "R23 -- Cancel on the batch's replacement confirmation ignored, "
      "so declining still deletes and rebuilds every column"),
