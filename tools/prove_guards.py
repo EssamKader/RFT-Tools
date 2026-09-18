@@ -1513,18 +1513,19 @@ CASES = [
      "and the straight run reverses direction into the Revit API"),
 
     (COL_ROOF,
-     '    b_edge = min(b, best.available_run_mm)',
-     '    b_edge = b',
-     TCR + "test_a_free_edge_caps_the_bend_to_what_fits_inside_the_column",
-     "section 2's b_E cap dropped, so a free-edge bar bends its full "
-     "horizontal leg out into open air beyond the column"),
-
-    (COL_ROOF,
      '    run = column_width_mm - cover_mm * 2.0',
      '    run = column_width_mm - cover_mm',
      TCR + "test_the_free_edge_run_is_the_face_width_less_cover_BOTH_sides",
      "cover counted on ONE side only, so the bend ends one cover short "
      "of the far face -- outside the concrete, by exactly the cover"),
+
+    # R41 collapsed section 2's two return paths into one, and three
+    # cases went with it. Two are REMOVED rather than contrived: they
+    # mutated `b_edge = min(b, run)` and `achieved = a + b_edge - loss`
+    # on the free-edge-only branch, and both defects are now the SAME
+    # single mutation as the R41 cases above -- a second case proving
+    # the same line proves nothing twice. The third was retargeted at
+    # the surviving return.
 
     (COL_ROOF,
      '        return min(b, direction.available_run_mm)',
@@ -1590,19 +1591,12 @@ CASES = [
      "is the same 2% shortfall with the arithmetic still in the file"),
 
     (COL_ROOF,
-     '            achieved_mm=a + b - loss, shortfall_mm=0.0, free_edge=False,',
-     '            achieved_mm=a + b, shortfall_mm=0.0, free_edge=False,',
+     '    achieved = a + b_final - loss',
+     '    achieved = a + b_final',
      TCR + "test_a_and_b_add_up_to_LD_where_slab_continues",
      "R40 -- the report's achieved length taken from the NOMINAL legs "
      "rather than the built bar, so the page claims an anchorage the steel "
      "does not have"),
-
-    (COL_ROOF,
-     '    achieved = a + b_edge - loss',
-     '    achieved = a + b_edge',
-     TCR + "test_a_free_edge_caps_the_bend_to_what_fits_inside_the_column",
-     "R40 -- the fillet forgiven on a FREE EDGE, where the bar is already "
-     "short: the shortfall the report prints would understate the real one"),
 
     (COL_ROOF,
      '    if leg_mm < needed:',
