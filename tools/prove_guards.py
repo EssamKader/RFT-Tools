@@ -1857,11 +1857,13 @@ def main():
             #
             # ``run`` drains the pipes, and the timeout turns any future
             # hang into a reported failure instead of a stopped tool.
-            rc = subprocess.run(
+            finished = subprocess.run(
                 ["python", "-m", "pytest", node, "-q"],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 timeout=300,
-            ).returncode
+            )
+            rc = finished.returncode
+            child_output = finished.stdout.decode("utf-8", "replace")
         finally:
             _git("checkout", "--", path)
             restored = io.open(path, encoding="utf-8").read()
@@ -1871,7 +1873,22 @@ def main():
                 sys.exit(3)
         if rc == 0:
             missed.append(label)
-        print("%-56s %s" % (label, "caught" if rc else "*** MISSED ***"))
+            # A bare MISSED says a guard did not fire and nothing about
+            # WHY. That cost a whole afternoon once: a case passed in CI
+            # and failed locally on identical content, and the child's
+            # own output -- which this tool was throwing away -- was the
+            # only thing that could have told the difference. It is
+            # printed for a miss, and only for a miss.
+            print("%-56s *** MISSED ***" % label)
+            print("    the mutated file still passed its test. The child "
+                  "said:")
+            for line in child_output.strip().splitlines()[-12:]:
+                print("      %s" % line)
+            print("    mutation applied was:")
+            for line in replace.splitlines()[:4]:
+                print("      %s" % line)
+        else:
+            print("%-56s caught" % label)
 
     print("")
     print("guards proven: %d of %d" % (len(CASES) - len(missed), len(CASES)))
