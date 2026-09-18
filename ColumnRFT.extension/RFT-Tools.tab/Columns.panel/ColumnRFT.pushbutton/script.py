@@ -338,20 +338,20 @@ class RoofWindow(forms.WPFWindow):
         self.slab = None
         self.use_btn.IsEnabled = False
         self.preview_tb.Text = "--"
-        self.status_tb.Text = (
+        self.roof_status_tb.Text = (
             "Free edges changed -- read the slab again, because a free "
             "edge changes the run its face is allowed.")
 
     def on_read_slab_click(self, sender, args):
         if self.owner.column is None:
-            self.status_tb.Text = "Pick a column in the main window first."
+            self.roof_status_tb.Text = "Pick a column in the main window first."
             return
         try:
             typed_cover = self.typed_cover_mm()
         except ValueError as refusal:
-            self.status_tb.Text = str(refusal)
+            self.roof_status_tb.Text = str(refusal)
             return
-        self.status_tb.Text = "Reading the floor above -- waiting for Revit..."
+        self.roof_status_tb.Text = "Reading the floor above -- waiting for Revit..."
         revit.events.execute_in_revit_context(self._read_slab_in_context,
                                               typed_cover)
 
@@ -379,15 +379,15 @@ class RoofWindow(forms.WPFWindow):
         self.slab = None
         self.use_btn.IsEnabled = False
         self._clear_read_outs()
-        self.status_tb.Text = message
+        self.roof_status_tb.Text = message
 
     def _clear_read_outs(self):
         self.floor_tb.Text = "--"
         self.floor_source_tb.Text = ""
-        self.thickness_tb.Text = "--"
-        self.thickness_source_tb.Text = ""
-        self.cover_tb.Text = "--"
-        self.cover_source_tb.Text = ""
+        self.slab_thickness_tb.Text = "--"
+        self.slab_thickness_source_tb.Text = ""
+        self.slab_cover_tb.Text = "--"
+        self.slab_cover_source_tb.Text = ""
         for name, _direction in RUN_READOUTS:
             getattr(self, name).Text = "--"
         self.preview_tb.Text = "--"
@@ -397,14 +397,14 @@ class RoofWindow(forms.WPFWindow):
         self.floor_tb.Text = floor_label(slab["floor"])
         self.floor_source_tb.Text = (
             "the floor above this column (R37)")
-        self.thickness_tb.Text = "{:.0f} mm".format(slab["thickness_mm"])
-        self.thickness_source_tb.Text = "read from the floor type (R37)"
-        self.cover_tb.Text = "{:.0f} mm".format(slab["cover_mm"])
+        self.slab_thickness_tb.Text = "{:.0f} mm".format(slab["thickness_mm"])
+        self.slab_thickness_source_tb.Text = "read from the floor type (R37)"
+        self.slab_cover_tb.Text = "{:.0f} mm".format(slab["cover_mm"])
         if slab["cover_provenance"] == "read":
-            self.cover_source_tb.Text = "READ from the floor's own cover (R38)"
+            self.slab_cover_source_tb.Text = "READ from the floor's own cover (R38)"
             self.typed_cover_panel.Visibility = Visibility.Collapsed
         else:
-            self.cover_source_tb.Text = (
+            self.slab_cover_source_tb.Text = (
                 "TYPED -- this floor's own cover reads zero, which R38 "
                 "treats as nobody having set one")
             # R38: the typed box opens ONLY here. One that is always open
@@ -426,7 +426,7 @@ class RoofWindow(forms.WPFWindow):
                 else "measured to the slab boundary (R42)")
 
         self.use_btn.IsEnabled = True
-        self.status_tb.Text = "Slab read. State L_D, then use these inputs."
+        self.roof_status_tb.Text = "Slab read. State L_D, then use these inputs."
         self._refresh_preview()
 
     # ------------------------------------------------------------- L_D
@@ -499,10 +499,10 @@ class RoofWindow(forms.WPFWindow):
         try:
             plan = self.build_plan()
         except (ValueError, ColumnRoofSlabError) as refusal:
-            self.status_tb.Text = str(refusal)
+            self.roof_status_tb.Text = str(refusal)
             return
         self.owner.accept_roof_termination(plan)
-        self.status_tb.Text = (
+        self.roof_status_tb.Text = (
             "Handed to the main window. Apply the Ties tab to build the "
             "plan with it.")
         self._refresh_preview()
