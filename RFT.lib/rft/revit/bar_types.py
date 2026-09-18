@@ -112,6 +112,54 @@ def bar_type_bend_diameter_mm(bar_type, from_internal_units):
     return from_internal_units(bar_type.StirrupTieBendDiameter)
 
 
+def bar_type_centreline_bend_radius_mm(bar_type, from_internal_units):
+    """The radius of the arc Revit ACTUALLY builds at a 90-degree bend, in
+    mm -- what R40's fillet loss is computed from (#176).
+
+    R40 has said since it was written that ``bend_radius_mm`` "comes from
+    the BAR TYPE, never from a typed input", and until now nothing read
+    it: every test passed a number in. The window is the first caller
+    that has to obtain one.
+
+    **The obvious reading is wrong.** ``StandardBendDiameter`` is the bend
+    diameter to the bar's INNER face; the centreline the API returns runs
+    half a bar diameter outside it. So::
+
+        centreline radius = (StandardBendDiameter + BarNominalDiameter) / 2
+
+    MEASURED LIVE (Revit 2024 build 24.3.40.26), by building a bent bar
+    per type and reading the arc back off
+    ``GetCenterlineCurves``; the arc of a 90-degree bend is ``r * pi / 2``:
+
+    ======  =========  =============  =============  ==============
+    type    nominal    StandardBend   measured arc   implied radius
+    ======  =========  =============  =============  ==============
+    13M      12.70      80.00          72.806         46.350
+    19M      19.10     115.00         105.322         67.050
+    12T      12.00      72.00          65.973         42.000
+    16T      16.00      96.00          87.965         56.000
+    ======  =========  =============  =============  ==============
+
+    Every implied radius equals ``(StandardBendDiameter + nominal) / 2``
+    exactly. Taking ``StandardBendDiameter / 2`` instead would give 40.00
+    mm for 13M against the measured 46.35 -- a **13.7% error in the
+    fillet loss**, which is subtracted from the development length the
+    report certifies.
+
+    ``StirrupTieBendDiameter`` is ruled out decisively: 12T and 16T read
+    155.00 for it while measuring 42.00 and 56.00. (13M's own arc also
+    reproduces #161's independently measured 72.8 mm.)
+
+    **NOT discriminated by this measurement**:
+    ``StandardHookBendDiameter`` equals ``StandardBendDiameter`` on all
+    four types measured. ``StandardBendDiameter`` is used because this is
+    a BEND, not a hook -- an argument from meaning, not from the data. A
+    type where the two differ would settle it.
+    """
+    return (from_internal_units(bar_type.StandardBendDiameter)
+            + from_internal_units(bar_type.BarNominalDiameter)) / 2.0
+
+
 def hook_angle_deg(hook_type):
     """The selected ``RebarHookType``'s own hook angle, in degrees, or
     ``None`` if it cannot be read back at all (issue #25).
