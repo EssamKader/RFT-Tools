@@ -1384,11 +1384,9 @@ CASES = [
      "reaches the batch's own candidate list uncaught"),
 
     (COL_BATCH_ADAPTER,
-     '    for candidate in batch_plan.candidates:\n'
      '        refuse_if_not_ready(candidate.plan)\n'
-     '\n'
-     '    transaction = Transaction(doc, BATCH_TRANSACTION_NAME)',
-     '    transaction = Transaction(doc, BATCH_TRANSACTION_NAME)',
+     '        if candidate.ours is None or candidate.foreign is None:',
+     '        if candidate.ours is None or candidate.foreign is None:',
      TCB + "test_apply_batch_refuses_before_opening_when_a_candidate_plan_is_blocked",
      "R25 extended -- apply_batch's own belt-and-braces refuse_if_not_ready "
      "re-check deleted, so a caller that reached apply_batch with an "
@@ -1480,8 +1478,10 @@ CASES = [
      "also never named"),
 
     (COL_SCRIPT,
-     '            if not proceed:',
-     '            if False:',
+     '            if not proceed:\n'
+     '                self.batch_status_tb.Text = (',
+     '            if False:\n'
+     '                self.batch_status_tb.Text = (',
      TCBW + "test_the_batch_confirmation_is_shown_before_apply_batch_and_can_cancel",
      "R23 -- Cancel on the batch's replacement confirmation ignored, "
      "so declining still deletes and rebuilds every column"),
