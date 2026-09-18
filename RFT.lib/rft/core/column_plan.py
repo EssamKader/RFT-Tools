@@ -83,24 +83,31 @@ ColumnPlan = namedtuple(
 
 
 #: What `specs/column-roof-termination.md` section 4 needs to report a
-#: top-floor bar's bend, carried whole rather than recomputed (issue #172).
+#: top-floor bar's bend, carried whole rather than recomputed (issue #172,
+#: R44).
 #:
-#: ``termination`` is the one `rft.core.column_roof.RoofTermination`
-#: `terminate_bar` decided -- the bend actually taken. ``directions`` are
-#: ALL four `rft.core.column_roof.RoofBendDirection` values it chose among,
-#: not only the winner: R41's own words are that a short run because the
-#: engineer FLAGGED a free edge and a short run the tool MEASURED to a slab
-#: edge are different facts, and a reviewer can only tell them apart -- and
-#: catch a missed pick -- by seeing every direction's own flagged/defaulted
-#: state and available run, not only the one that was chosen.
+#: **R44: the termination is per FACE RUN, not per column.**
+#: `Rebar.CreateFromCurves`'s ``normal`` must be perpendicular to the bend
+#: plane, and #131 already proved the array runs along that same
+#: ``normal`` -- so a run may only bend perpendicular to its own bars'
+#: step axis, and up to four different bends result. ``bottom``, ``right``,
+#: ``top`` and ``left`` are each a `rft.core.column_roof.RunTermination`,
+#: keyed in the same order `rft.revit.column_place_bars._face_run_slices`
+#: already slices the perimeter in -- not a new grouping. Each carries the
+#: bend `terminate_run` chose AND the exact two candidate
+#: `rft.core.column_roof.RoofBendDirection` values it chose between (R41's
+#: own words: a short run the engineer FLAGGED and one the tool MEASURED
+#: are different facts, and a reviewer can only tell them apart by seeing
+#: every candidate a run actually had, not only the winner).
 #:
 #: ``floor_label``, ``thickness_mm``, ``cover_mm`` and ``cover_provenance``
 #: are `rft.revit.column_roof_slab.read_top_floor_slab`'s own read of the
-#: slab (R37, R38), carried as plain values so the report never re-reads
-#: the model to say where a number came from.
+#: slab (R37, R38) -- properties of the COLUMN's slab, not of a run, so
+#: they are carried ONCE here rather than once per run: a reviewer must
+#: never be able to read two different slab covers off one report.
 RoofTerminationPlan = namedtuple(
     "RoofTerminationPlan",
-    "termination directions floor_label thickness_mm cover_mm "
+    "bottom right top left floor_label thickness_mm cover_mm "
     "cover_provenance")
 
 
