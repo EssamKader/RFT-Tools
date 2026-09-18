@@ -42,10 +42,16 @@ COLUMN_PUSHBUTTON_DIR = os.path.join(
 )
 COLUMN_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "ColumnWindow.xaml")
 
+#: R43's second window (#176). It is a SECOND window of the same tool, not
+#: a second tool, and it merges the same palette -- so every guard below
+#: must see it, or the tool ships a window nobody is checking.
+COLUMN_ROOF_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "RoofWindow.xaml")
+
 #: Every window that merges the shared palette. Guards iterate this so a
 #: THIRD element cannot ship a window nobody is checking -- the failure
 #: #86 exists to prevent, one element later.
-WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH)
+WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH,
+                     COLUMN_ROOF_XAML_PATH)
 
 SHARED_STYLES_PATH = shared_styles_path()
 
