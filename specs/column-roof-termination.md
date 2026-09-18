@@ -1,4 +1,10 @@
-# Column RFT — Roof-Level Termination Addendum
+# Column RFT — Top-Floor Termination Addendum
+
+> **R39 — the wording.** This is the **top floor** case. A structural
+> model closes the top storey with a **Floor**, measured as such on a live
+> host (#161), and a Revit `Roof` is an architectural element the tool
+> does not detail under. “Roof” survives in this file's NAME only, because
+> #77, #102, #103, #161 and several verification documents cite the path.
 
 > **Status: READY TO IMPLEMENT.** Every gate this file has carried is down.
 > §7's citation is **named** (ECP Detailing Code for Concrete Structures,

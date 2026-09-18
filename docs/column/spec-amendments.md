@@ -1148,3 +1148,46 @@ A2 — *cover is READ, never typed* — assumed the model has something to read.
 R38 does not weaken it: it names the one case where that assumption fails,
 and keeps the exception visible in the report rather than letting a zero
 pass as a measurement.
+
+
+---
+
+## R39 — it is the TOP FLOOR case, and the slab above is a Floor
+
+**Decided by the owner**, closing #161's last open item:
+
+> i know that roof is modelled as floor and that is the right call for
+> structural elements so you can name it top floor case
+
+### What it settles
+
+**`OST_Roofs` does not need adding to `SUPPORT_CATEGORIES`.** #161 measured
+the slab over column 424596 coming back as a **`Floor`** (`Generic 300mm`),
+found by the shipped category list with no change. That was recorded as
+“still open, because a model using an actual Revit Roof was never tested”.
+It is now closed by **practice rather than by measurement**: a structural
+model puts a structural slab there, and a Revit Roof is an architectural
+element with no structural role. The tool details structural models.
+
+This is a deliberate narrowing, so it is written down: **a column under a
+Revit `Roof` element will find nothing and be refused**, and that refusal is
+correct — it means the thing above is not a structural slab.
+
+### The terminology
+
+**“Top floor”, not “roof”**, in the UI and in the report. The condition is
+“there is no storey above this column”, and what closes it is a **floor** —
+the same element class as every other storey's. Calling it a roof invites
+the reader to look for a roof element that structurally is not there.
+
+`specs/column-roof-termination.md` keeps its filename: it is cited by #77,
+#102, #103, #161, several verification documents and the amendments above,
+and renaming a file to improve a word would break every one of those
+references for no gain. **The prose is what the reader sees**, and that is
+what changes.
+
+### What does NOT change
+
+R35, R36, R37 and R38 stand exactly as written. So does §1's `a + b = L_D`
+and §2's per-face rule — this is a naming and scoping ruling, not a
+detailing one.
