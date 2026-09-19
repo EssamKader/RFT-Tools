@@ -108,6 +108,11 @@ T = "tests/test_simple_beam_xaml.py::"
 WORKFLOW = ".github/workflows/tests.yml"
 VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
 
+# ---- #198: the footing tool's first placement code --------------------
+FOOTING_SCRIPT = ("IsolatedFooting.extension/RFT-Tools.tab/"
+                   "Footings.panel/IsolatedFootingRFT.pushbutton/script.py")
+TFP = "tests/test_footing_plan.py::"
+
 # Read the CURRENT version rather than naming one. This case broke on the
 # very first release after it was written (VERSION had moved to rc3 while
 # the case still looked for rc2), which would have quietly become "one
@@ -1860,6 +1865,20 @@ CASES = [
      TPB + "test_a_SECOND_handle_on_the_same_axis_is_left_alone",
      "R45's bookkeeping recording nothing, so the skip never fires "
      "and every repeated axis is pinned again"),
+
+    # ---- #198: the footing tool's one composing module (spec Sec 4 /
+    # ---- docs/token-efficient-expansion.md Sec 7) -- the placer must
+    # ---- read rft.core.footing_plan.build_footing_plan, never
+    # ---- rft.core.footing_mesh directly, or a future report and this
+    # ---- placer will diverge exactly the way the beam tool's
+    # ---- ZONE_LAYOUT_FLAGS did.
+    (FOOTING_SCRIPT,
+     "from rft.core.footing_plan import FootingInputs, build_footing_plan",
+     "from rft.core.footing_mesh import mesh_bar_lengths\n"
+     "from rft.core.footing_plan import FootingInputs",
+     TFP + "test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh",
+     "the script importing rft.core.footing_mesh directly instead of "
+     "going through the one composing module"),
 
 ]
 

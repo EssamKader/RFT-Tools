@@ -53,6 +53,16 @@ COLUMN_ROOF_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "RoofWindow.xaml")
 WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH,
                      COLUMN_ROOF_XAML_PATH)
 
+#: #198: the footing tool's pushbutton. It ships no XAML window yet (see
+#: IsolatedFooting.extension/CONTEXT.md), so it is not added to
+#: WINDOW_XAML_PATHS -- only its script.py is a name this file's own
+#: consumers (test_pushbutton_scripts_resolve_their_names.py) need.
+FOOTING_PUSHBUTTON_DIR = os.path.join(
+    REPO_ROOT,
+    "IsolatedFooting.extension", "RFT-Tools.tab",
+    "Footings.panel", "IsolatedFootingRFT.pushbutton",
+)
+
 SHARED_STYLES_PATH = shared_styles_path()
 
 _X_KEY = re.compile(r'x:Key="([A-Za-z0-9_]+)"')

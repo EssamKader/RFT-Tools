@@ -1,0 +1,6 @@
+{
+    "name": "IsolatedFooting",
+    "description": "Reinforcement detailing for ONE rectangular isolated (pad) footing, per specs/isolated-footing.md. Ships one button, Isolated Footing RFT, on the shared RFT-Tools ribbon tab beside the beam and column tools -- pyRevit merges tabs by title, so this is a separate extension that lands on the same tab. Versioned and released independently, as footing/vX.Y.Z.",
+    "author": "Essam Kader",
+    "url": "https://github.com/EssamKader/RFT-Tools.git"
+}

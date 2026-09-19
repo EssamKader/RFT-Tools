@@ -42,7 +42,8 @@ import os
 
 import pytest
 
-from xaml_keys import BEAM_PUSHBUTTON_DIR, COLUMN_PUSHBUTTON_DIR
+from xaml_keys import (
+    BEAM_PUSHBUTTON_DIR, COLUMN_PUSHBUTTON_DIR, FOOTING_PUSHBUTTON_DIR)
 
 #: Every script pyRevit executes as a button. Listed rather than walked:
 #: these are the files that cannot be imported by the suite, which is
@@ -50,6 +51,7 @@ from xaml_keys import BEAM_PUSHBUTTON_DIR, COLUMN_PUSHBUTTON_DIR
 PUSHBUTTON_SCRIPTS = (
     os.path.join(COLUMN_PUSHBUTTON_DIR, "script.py"),
     os.path.join(BEAM_PUSHBUTTON_DIR, "script.py"),
+    os.path.join(FOOTING_PUSHBUTTON_DIR, "script.py"),
 )
 
 

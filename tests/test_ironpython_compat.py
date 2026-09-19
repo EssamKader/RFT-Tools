@@ -37,9 +37,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # the same trap applies one element later: the column script was real
 # IronPython code for a whole ticket while this walk still covered only
 # the beam's, and an f-string in it would have shipped green.
+# #198 adds the third (IsolatedFooting.extension), for the exact same
+# reason -- leaving it out here would let its script.py ship un-walked
+# while every OTHER check in this module stayed green.
 UI_EXT_ROOTS = (
     os.path.join(REPO_ROOT, "SimpleBeamRFT.extension"),
     os.path.join(REPO_ROOT, "ColumnRFT.extension"),
+    os.path.join(REPO_ROOT, "IsolatedFooting.extension"),
 )
 LIB_EXT_ROOT = os.path.join(REPO_ROOT, "RFT.lib")
 LOADED_ROOTS = UI_EXT_ROOTS + (LIB_EXT_ROOT,)
