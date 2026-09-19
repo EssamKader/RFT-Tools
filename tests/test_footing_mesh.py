@@ -16,11 +16,14 @@ import pytest
 from rft.core.footing_mesh import (
     DIRECTION_X,
     DIRECTION_Y,
+    MAT_SHAPE_L_ALTERNATING,
+    MAT_SHAPE_U,
     SHAPE_L,
     SHAPE_U,
     HookDevelopmentLengthTieError,
     bar_end_hook_decision,
     bar_hook_plan,
+    bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
@@ -235,3 +238,121 @@ def test_neither_end_needing_a_hook_is_not_u_shape():
     assert plan.start.needs_hook is False
     assert plan.end.needs_hook is False
     assert plan.shape == SHAPE_L
+
+
+# ---------------------------------------------------------------------
+# #200 -- per-mat U-shape/L-shape-alternating user override (Story 3,
+# Sec 6). Mutation-proven: Essam's velocity rule 3 names "the alternation
+# logic (which end gets hooked on odd/even bar index) and the
+# override-of-#199 behavior" as this ticket's genuinely new math.
+# ---------------------------------------------------------------------
+
+def test_no_override_delegates_to_bar_hook_plan_unchanged():
+    """mat_shape_mode=None must reproduce #199's own decision exactly --
+    this is the "Story 2's comparison only applies if/when the tool needs
+    to decide the shape itself" half of Sec 6, not a new code path.
+    """
+    direct = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    via_mat = bar_hook_plan_for_mat(
+        bar_index=0, mat_shape_mode=None,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert via_mat == direct
+
+
+def test_mat_shape_u_hooks_both_ends_unconditionally():
+    """A user MAT_SHAPE_U override must win even when the LD-vs-offset
+    comparison would otherwise switch this bar to L-shape (LD=160 <
+    offset=300 -> #199 alone would leave both ends unhooked / L-shape).
+    """
+    plan = bar_hook_plan_for_mat(
+        bar_index=0, mat_shape_mode=MAT_SHAPE_U,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert plan.start.needs_hook is True
+    assert plan.end.needs_hook is True
+    assert plan.shape == SHAPE_U
+
+
+def test_mat_shape_u_override_never_raises_the_199_tie_error():
+    """Sec 6: the override makes Story 2's comparison "unnecessary", not
+    merely pre-empted -- so even the exact LD == offset tie that
+    bar_end_hook_decision raises on (#199) must NOT raise here.
+    """
+    plan = bar_hook_plan_for_mat(
+        bar_index=0, mat_shape_mode=MAT_SHAPE_U,
+        start_offset_mm=160.0, end_offset_mm=160.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert plan.start.needs_hook is True
+    assert plan.end.needs_hook is True
+
+
+def test_mat_shape_l_alternating_hooks_the_start_end_on_even_bar_index():
+    plan = bar_hook_plan_for_mat(
+        bar_index=0, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    assert plan.start.needs_hook is True
+    assert plan.end.needs_hook is False
+    assert plan.shape == SHAPE_L
+
+
+def test_mat_shape_l_alternating_hooks_the_end_end_on_odd_bar_index():
+    plan = bar_hook_plan_for_mat(
+        bar_index=1, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    assert plan.start.needs_hook is False
+    assert plan.end.needs_hook is True
+    assert plan.shape == SHAPE_L
+
+
+def test_mat_shape_l_alternating_keeps_alternating_past_the_first_pair():
+    """Guards against an off-by-one or a mutation that only checks
+    ``bar_index == 0``/``== 1`` instead of parity -- indices 2 and 3 must
+    repeat the same even/odd pattern as 0 and 1.
+    """
+    even_again = bar_hook_plan_for_mat(
+        bar_index=2, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    odd_again = bar_hook_plan_for_mat(
+        bar_index=3, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    assert even_again.start.needs_hook is True
+    assert even_again.end.needs_hook is False
+    assert odd_again.start.needs_hook is False
+    assert odd_again.end.needs_hook is True
+
+
+def test_mat_shape_l_alternating_never_hooks_both_ends_of_one_bar():
+    """A mutation that drops the "not hook_start" and hard-codes both
+    ends True (silently degrading to U-shape) must fail this: Sec 6 says
+    L-Shape-Alternating bars are "each ... L-shaped (one hook)".
+    """
+    for bar_index in range(4):
+        plan = bar_hook_plan_for_mat(
+            bar_index=bar_index, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+            start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+            ld_multiplier=40.0)
+        assert plan.start.needs_hook != plan.end.needs_hook
+
+
+def test_mat_shape_l_alternating_override_never_raises_the_199_tie_error():
+    plan = bar_hook_plan_for_mat(
+        bar_index=0, mat_shape_mode=MAT_SHAPE_L_ALTERNATING,
+        start_offset_mm=160.0, end_offset_mm=160.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert plan.start.needs_hook is True
+    assert plan.end.needs_hook is False
+
+
+def test_unknown_mat_shape_mode_raises_rather_than_silently_default():
+    with pytest.raises(ValueError):
+        bar_hook_plan_for_mat(
+            bar_index=0, mat_shape_mode="bogus",
+            start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+            ld_multiplier=40.0)

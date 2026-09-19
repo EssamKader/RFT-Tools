@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Bottom-mesh bar length geometry for the isolated footing tool, plus the
-per-bar-end hook/development-length decision (#199).
+per-bar-end hook/development-length decision (#199) and the per-mat
+U-shape/L-shape-alternating user override on top of it (#200).
 
-Spec Ref: specs/isolated-footing.md Sec 3 (Story 1 and Story 2), Sec 4,
-Sec 5, Sec 2 (naming).
+Spec Ref: specs/isolated-footing.md Sec 3 (Story 1, Story 2 and Story 3),
+Sec 4, Sec 5, Sec 6, Sec 2 (naming).
 Pure core: no Revit import, plain numbers in, plain numbers out, in
 millimetres (REUSE_GUIDELINES.md Sec 1, "Strict Core/Adapter Split").
 """
@@ -20,6 +21,17 @@ DIRECTION_Y = "Y"
 #: need a hook.
 SHAPE_U = "U"
 SHAPE_L = "L"
+
+#: Spec Ref: Sec 3 (Story 3), Sec 6 -- the direct, per-mat user input that
+#: OVERRIDES Story 2's per-end LD comparison for that mat. This is a
+#: distinct concept from ``SHAPE_U``/``SHAPE_L`` above (a bar's own
+#: *computed result*): ``MAT_SHAPE_U`` is the user's *choice* of policy for
+#: the whole mat, which happens to resolve to the same ``SHAPE_U`` result
+#: every bar gets. ``MAT_SHAPE_L_ALTERNATING`` has no equivalent single-bar
+#: shape constant -- it is a mat-wide policy ("consecutive bars alternate
+#: which end is hooked"), not a per-bar shape by itself.
+MAT_SHAPE_U = SHAPE_U
+MAT_SHAPE_L_ALTERNATING = "L_ALTERNATING"
 
 
 #: Spec Ref: Sec 3 (Story 1). Z/Z2 are the straight lengths inside cover;
@@ -188,3 +200,56 @@ def bar_hook_plan(start_offset_mm, end_offset_mm, db_mm, ld_multiplier):
     end = bar_end_hook_decision(end_offset_mm, db_mm, ld_multiplier)
     shape = SHAPE_U if (start.needs_hook and end.needs_hook) else SHAPE_L
     return BarHookPlan(start=start, end=end, shape=shape)
+
+
+def bar_hook_plan_for_mat(bar_index, mat_shape_mode, start_offset_mm,
+                           end_offset_mm, db_mm, ld_multiplier):
+    """The whole-bar hook plan, honouring a mat-wide user override.
+
+    Spec Ref: Sec 3 (Story 3), Sec 6: "Whichever the user picks for a
+    given mat overrides Story 2's per-end LD comparison for that mat.
+    Story 2's comparison only applies if/when the tool needs to decide
+    the shape itself -- this input makes that unnecessary."
+
+    ``mat_shape_mode`` is ``None``, ``MAT_SHAPE_U`` or
+    ``MAT_SHAPE_L_ALTERNATING``:
+
+    - ``None`` -- no override given; delegate to ``bar_hook_plan`` so
+      Story 2's own LD-vs-offset comparison decides, exactly as #199
+      already does. ``bar_index`` is unused in this branch.
+    - ``MAT_SHAPE_U`` -- every bar hooked at both ends, unconditionally.
+      ``LD``/offset are never compared, so this never raises
+      ``HookDevelopmentLengthTieError`` -- the override makes that
+      comparison "unnecessary" per Sec 6, not merely pre-empted.
+    - ``MAT_SHAPE_L_ALTERNATING`` -- every bar is L-shaped (one hook);
+      "consecutive bars alternate which end is hooked" (Sec 6): the start
+      end is hooked on even ``bar_index`` (0, 2, 4, ...) and the end end
+      is hooked on odd ``bar_index`` (1, 3, 5, ...), so the mat is
+      anchored at both edges overall.
+
+    ``ld_mm`` is still reported on both ends in every branch (Sec 5's
+    ``LD = multiplier * db`` is informational bookkeeping, not itself
+    what decides ``needs_hook`` once a mat-wide override is set).
+    """
+    if mat_shape_mode is None:
+        return bar_hook_plan(
+            start_offset_mm, end_offset_mm, db_mm, ld_multiplier)
+
+    ld_mm = ld_multiplier * db_mm
+
+    if mat_shape_mode == MAT_SHAPE_U:
+        return BarHookPlan(
+            start=BarEndHook(ld_mm=ld_mm, needs_hook=True),
+            end=BarEndHook(ld_mm=ld_mm, needs_hook=True),
+            shape=SHAPE_U)
+
+    if mat_shape_mode == MAT_SHAPE_L_ALTERNATING:
+        hook_start = (bar_index % 2 == 0)
+        return BarHookPlan(
+            start=BarEndHook(ld_mm=ld_mm, needs_hook=hook_start),
+            end=BarEndHook(ld_mm=ld_mm, needs_hook=not hook_start),
+            shape=SHAPE_L)
+
+    raise ValueError(
+        "Unknown mat_shape_mode %r; expected None, MAT_SHAPE_U or "
+        "MAT_SHAPE_L_ALTERNATING" % (mat_shape_mode,))

@@ -11,9 +11,11 @@ import pytest
 
 from rft.core.footing_mesh import (
     DIRECTION_X,
+    MAT_SHAPE_L_ALTERNATING,
+    MAT_SHAPE_U,
     SHAPE_L,
     SHAPE_U,
-    bar_hook_plan,
+    bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
 )
@@ -81,21 +83,62 @@ def test_the_plan_keeps_the_inputs_it_was_built_from():
 
 
 def test_the_plan_carries_bar_hooks_matching_bar_hook_plan():
-    """#199: the composing module must be the ONE place bar_hook_plan is
-    called from, same as the #198 fields above -- so its own output must
-    match calling bar_hook_plan directly with the same inputs.
+    """#199/#200: the composing module must be the ONE place
+    bar_hook_plan_for_mat is called from, same as the #198 fields above --
+    so its own output must match calling bar_hook_plan_for_mat directly
+    with the same inputs (default inputs carry no #200 override, so this
+    is exactly #199's own decision).
     """
     inputs = _inputs(x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=40.0)
     plan = build_footing_plan(inputs)
 
-    expected_x_hooks = bar_hook_plan(
+    expected_x_hooks = bar_hook_plan_for_mat(
+        0, inputs.bottom_mat_shape_mode,
         inputs.x_offset_mm, inputs.x_offset_mm, inputs.mesh_bar_x_dia_mm,
         inputs.ld_multiplier)
-    expected_y_hooks = bar_hook_plan(
+    expected_y_hooks = bar_hook_plan_for_mat(
+        0, inputs.bottom_mat_shape_mode,
         inputs.y_offset_mm, inputs.y_offset_mm, inputs.mesh_bar_y_dia_mm,
         inputs.ld_multiplier)
     assert plan.bottom_mesh.bar_x_hooks == expected_x_hooks
     assert plan.bottom_mesh.bar_y_hooks == expected_y_hooks
+
+
+def test_the_plan_defaults_bottom_mat_shape_mode_to_none():
+    """#200: FootingInputs must default the new field so every #198/#199
+    call site (this test file's own ``_inputs`` helper, and script.py)
+    that predates #200 keeps building without passing it.
+    """
+    inputs = _inputs()
+    assert inputs.bottom_mat_shape_mode is None
+
+
+def test_the_plan_honours_a_mat_shape_u_override_over_the_ld_comparison():
+    # x_offset=300, ld_multiplier=10 -> LD_x=160 < 300 would be L-shape
+    # under #199 alone; the MAT_SHAPE_U override must force U regardless.
+    inputs = _inputs(
+        x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=10.0,
+        bottom_mat_shape_mode=MAT_SHAPE_U)
+    plan = build_footing_plan(inputs)
+    assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_U
+    assert plan.bottom_mesh.bar_x_hooks.start.needs_hook is True
+    assert plan.bottom_mesh.bar_x_hooks.end.needs_hook is True
+    assert plan.bottom_mesh.bar_y_hooks.shape == SHAPE_U
+
+
+def test_the_plan_honours_a_mat_shape_l_alternating_override():
+    inputs = _inputs(
+        x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=40.0,
+        bottom_mat_shape_mode=MAT_SHAPE_L_ALTERNATING)
+    plan = build_footing_plan(inputs)
+    assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_L
+    assert plan.bottom_mesh.bar_y_hooks.shape == SHAPE_L
+    # bar_index=0 (both directions' one representative bar) -> start end
+    # hooked, matching bar_hook_plan_for_mat's own even/odd rule.
+    assert plan.bottom_mesh.bar_x_hooks.start.needs_hook is True
+    assert plan.bottom_mesh.bar_x_hooks.end.needs_hook is False
+    assert plan.bottom_mesh.bar_y_hooks.start.needs_hook is True
+    assert plan.bottom_mesh.bar_y_hooks.end.needs_hook is False
 
 
 def test_the_plan_picks_up_a_u_shape_when_both_directions_still_need_hooks():
