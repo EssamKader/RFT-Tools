@@ -62,8 +62,14 @@ def _every_xaml_file():
     """
     found = []
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        # `.claude` holds agent WORKTREES -- separate checkouts of this
+        # same repository, at other commits and on other branches. Their
+        # files are not this working tree's, so walking into them reports
+        # failures about code that is not here (and cannot be fixed from
+        # here). It also makes the result depend on which worktrees
+        # happen to exist on someone's disk, which a guard must never do.
         dirnames[:] = [d for d in dirnames
-                       if d not in (".git", "__pycache__")]
+                       if d not in (".git", "__pycache__", ".claude")]
         for name in filenames:
             if name.endswith(".xaml"):
                 found.append(os.path.join(dirpath, name))
