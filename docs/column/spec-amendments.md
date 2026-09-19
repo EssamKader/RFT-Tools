@@ -1597,3 +1597,66 @@ describing "one rebar set plus a per-bar transform", and
 `rft.revit.column_place_ties` applies no transform of any kind: every tie at
 every level is built identically. Filed as **#195**. R47 is about cross-ties
 only and does not bear on it.
+
+---
+
+## R48 — §6.3's alternation is BUILT, not merely reported
+
+**#195.** Until now `TieLevel.mirrored` was computed, printed in the report
+as an `M`, and **read by nothing that built anything**. Every tie at every
+level was placed identically, with its hook in the same corner all the way
+up the column — the one outcome §6.3 exists to prevent — while the report
+asserted the opposite. The report is what an engineer checks the model
+against, so this was not a missing feature; it was a false statement.
+
+### The transform: the start vertex moves one corner, the winding does not
+
+The hook sits where the curve list closes — `curves[0]`'s start is
+`curves[-1]`'s end — so starting the loop one corner later moves the hook to
+the **adjacent** corner, which is what the owner ruled for on 2026-09-14.
+Same corners, same order, same winding.
+
+### A reflection is the WRONG transform, and it was measured failing
+
+This was implemented as a reflection first, on the strength of #78. That was
+a misreading: **#78 proved a reflection for `MoveBarInSet`** — a transform
+applied to a bar *in a set*, which carries the hook with it. Reflecting the
+input **curves** is a different operation. It reverses the winding, and
+`RebarHookOrientation.Left` is defined against each curve's own tangent, so
+the hook then turns **outward**.
+
+Built on a live host (Revit 2024 build 24.3.40.26, column 421967, rolled
+back):
+
+| level | loop starts | hook tail | tail inside the column? |
+|---|---|---|---|
+| reflected | (119.1, −351.4) | (276.4, −194.1) | **NO** |
+| plain | (−119.1, −159.1) | (−84.1, −194.1) | yes |
+| rotated | (84.1, −194.1) | (119.1, −159.1) | yes |
+
+`v = −351.4` against a 260 mm half-height is 91 mm into cover and air — the
+**exact** figure #78 recorded for the wrong hook orientation. The rotation
+puts both tails inside the concrete and moves the hook SW → SE.
+
+Had this shipped as a reflection, `_assert_hook_tails_inside_host_extent`
+would have refused every mirrored level — loudly, not silently, which is the
+guard doing its job. It would still have been a feature that could not place
+a cage.
+
+### Why this is simpler than #70 proposed
+
+#70 measured the alternation as one rebar set plus a per-bar transform, and
+flagged that *"any later layout change silently scrambles it"*. The shipped
+placer never took that route: it creates **one `Rebar` element per level per
+tie**. So the reflection goes into the curves themselves, there is no stored
+per-bar transform, and #70's scramble hazard does not apply at all. The
+report's note describing that mechanism was wrong about the shipped code and
+has been corrected.
+
+### The two exceptions, stated at the decision
+
+- **R47** — a cross-tie does not alternate; it has no corner.
+- **R32** — a triangle does not alternate; its closure stays at the apex.
+
+Both are enforced in `_uv_segments_mm`, where the decision is made, rather
+than left to callers to remember.

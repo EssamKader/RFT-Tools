@@ -1378,14 +1378,12 @@ CASES = [
 
     (COL_PLACE_TIES,
      '    corners = tie.vertices\n'
-     '    n = len(corners)\n'
-     '    return [(corners[i], corners[(i + 1) % n]) for i in range(n)]',
+     '    if mirrored:',
      '    cu, cv = tie.centre_u_mm, tie.centre_v_mm\n'
      '    hu, hv = tie.half_u_mm, tie.half_v_mm\n'
      '    corners = [(cu - hu, cv - hv), (cu + hu, cv - hv),\n'
      '               (cu + hu, cv + hv), (cu - hu, cv + hv)]\n'
-     '    n = len(corners)\n'
-     '    return [(corners[i], corners[(i + 1) % n]) for i in range(n)]',
+     '    if mirrored:',
      TV + "test_a_reordered_closed_loop_vertex_list_changes_the_drawn_polygon",
      "#140 -- the placer's curve builder reverted to re-deriving the "
      "closed loop's corners from centre/half instead of reading "
