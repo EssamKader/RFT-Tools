@@ -70,6 +70,29 @@ once"). ``_face_run_slices`` re-slices that existing list by the counts
 ``column_layout`` or recompute a position -- CONTEXT.md's "read ColumnPlan
 once" rule.
 
+## SHAPE MEASURED (#92) -- and WHEN a position becomes true
+
+**A bar's position is not settled until ``Document.Regenerate()`` runs.**
+Constraints resolve on regeneration; a read taken before it reports the
+coordinate that was REQUESTED, not the one the bar will occupy, and
+reports it with complete confidence. The same two-bar set, read twice in
+one sub-transaction, moved ``(-6.02, -20.24)`` mm between the two reads
+(`docs/column/verification/issue-92-bar-snap.md`).
+
+That is also the answer to #92. Unpinned, after regeneration, the two
+handles governing the bar's position in section bind themselves to
+**another rebar** -- a tie -- and the set TRANSLATES with its spacing
+intact. With :func:`_pin_to_host_faces` applied, **no handle targets a
+rebar any more**: all four target the host column. #92's item 3 asked
+whether that was possible and recorded that it had "never been
+attempted"; it is what this module does, and it holds.
+
+The evidence that matters is the tool's own output, read from the saved
+model: twenty longitudinal bars across two columns -- one of them with an
+inner tie whose bend sits ~12 mm from the intermediate bars, which is
+#92's own configuration -- land on their intended grid with **zero** bars
+lacking a mirror twin.
+
 ## SHAPE MEASURED (#183)
 
 **The one configuration R44 leaves open is now built and read back on a
