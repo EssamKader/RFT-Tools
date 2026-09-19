@@ -3,19 +3,28 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
-## Scope, as of #198
+## Scope, as of #199
 
-**In:** bottom mesh, straight case only (no hooks, no L-shape alternation)
--- one `mesh_bar_x` bar and one `mesh_bar_y` bar, centred on the footing's
-plan centroid, placed hosted directly on a picked isolated footing
+**In:** bottom mesh, straight case (no L-shape alternation) -- one
+`mesh_bar_x` bar and one `mesh_bar_y` bar, centred on the footing's plan
+centroid, placed hosted directly on a picked isolated footing
 `FamilyInstance`. The `rft.core.footing_plan.build_footing_plan` composing
 module (spec Sec 4) is the one object any future report/preview and the
-placer both read the bottom-mesh geometry from.
+placer both read the bottom-mesh geometry from. As of #199, that plan also
+carries each bar's per-end hook/development-length decision and resulting
+U-/L-shape (`rft.core.footing_mesh.bar_hook_plan`, spec Sec 3 Story 2 /
+Sec 5) -- the decision only, not yet wired into the Revit placement
+adapter (see "Not yet in" below).
 
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 
-- Hook / development-length decision per bar end (#199, Story 2 / spec
-  Sec 5).
+- Wiring #199's hook decision into `rft.revit.footing_mesh.place_straight_
+  bottom_mesh` -- placing an actual Revit hook (`RebarHookType`, hook
+  orientation) on a bar end. Issue #197's own tracer-bullet write-up lists
+  "hook types" under its Sec 4 "Still unverified" and #199's own ticket
+  body only asked for the core decision math, not host wiring -- zero API
+  guessing (`REUSE_GUIDELINES.md` Sec 3) means this stays a placement
+  adapter TODO, not something to guess a `RebarHookType` shape for here.
 - L-shape-alternating option (Story 3 / spec Sec 6).
 - Top mesh (Story 4 / spec Sec 7).
 - Full mesh bar count/spacing/quantity for either direction -- this
@@ -53,6 +62,15 @@ what happens when the two column-face offsets are exactly equal.
 `FootingDirectionTieError` in that case rather than guessing a tie-break --
 see that function's own docstring. If a footing with X == Y needs
 detailing, this is a decision ticket, not something to resolve inline.
+
+## Open spec gap: LD == offset at a bar end
+
+`specs/isolated-footing.md` Sec 5 defines the per-end hook decision only
+as "LD > offset" (hook) and "offset > LD" (no hook, switch to L-shape). It
+does not say what happens when they are exactly equal.
+`rft.core.footing_mesh.bar_end_hook_decision` raises
+`HookDevelopmentLengthTieError` in that case rather than guessing which
+side of the boundary applies -- same discipline as the X == Y gap above.
 
 ## Reuse already decided (not re-derived here)
 
