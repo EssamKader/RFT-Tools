@@ -7,7 +7,7 @@
 > #77, #102, #103, #161 and several verification documents cite the path.
 
 > **Status: READY TO IMPLEMENT.** Every gate this file has carried is down.
-> §7's citation is **named** (ECP Detailing Code for Concrete Structures,
+> §7's citation is **identified** (ECP Code 203,
 > Figure 3-14 — #102; the edition/year is still unconfirmed and changes
 > nothing about `a + b = L_D`). §5's tracer bullet is **complete** (#103): the
 > pick runs, a picked face maps exactly to one of `column_layout`'s four, that
@@ -201,12 +201,16 @@ termination.
 > (confirming how reliably columns of the same nominal type can be identified
 > and grouped) before design starts.
 
-## 7. Citations — NAMED, edition pending (#102)
+## 7. Citations — SOURCE IDENTIFIED (#102, closed 2026-09-19)
 
-**Source: ECP Detailing Code for Concrete Structures, Figure 3-14** — Arabic
-title *"شكل رقم (٣-١٤) — نموذج تفاصيل اتصال حائط منتهى بالسقف"*, roughly
-*"Figure 3-14 — model of wall-to-roof connection details"*. Named by the owner
-(#102).
+**Source: ECP Code 203, Figure 3-14** — the Egyptian Code of Practice for
+the design and construction of concrete structures. Arabic title
+*"شكل رقم (٣-١٤) — نموذج تفاصيل اتصال حائط منتهى بالسقف"*, roughly
+*"Figure 3-14 — model of wall-to-roof connection details"*.
+
+**Identified by the owner on 2026-09-19**, which closes #102. Before that this
+section named a *"Detailing Code for Concrete Structures"* without knowing
+whether that was a separate publication; it is ECP 203.
 
 - **§1's base bend geometry (`a + b = L_D`)** — that figure, plus the owner's
   original manual sketch which agrees with it.
@@ -224,23 +228,24 @@ are different chapters of a *detailing* code: 13-3 is a **column** figure,
 
 ### What remains open, deliberately recorded rather than assumed
 
-**The edition/year**, and whether the *Detailing Code for Concrete Structures*
-is the same publication as the *Egyptian Detailing Guide (2001)* cited for
-Figure 13-3. They very likely are. **That is not written here as fact**, and no
-year is stated anywhere in this file, because a citation is precisely the kind
-of line nobody re-checks once it looks complete.
+**The edition/year of ECP 203 is still not stated**, and no year appears
+anywhere in this file. The publication is now known; which edition of it
+carries Figure 3-14 is not, and ECP 203 has had several. That is left blank
+rather than guessed, because a citation is precisely the kind of line nobody
+re-checks once it looks complete — the objection recorded below is the same
+objection, and it earned its keep.
 
-This does not block implementation: `a + b = L_D` is the same geometry in any
-edition. **#103's tracer bullet is the live blocker** — §5 requires
-`PickObjects` proven against a real host before §3's input is built, and as of
-writing only the face-correlation half has been run (see
+This does not block anything: `a + b = L_D` is the same geometry in every
+edition.
+
+**#103 is no longer a blocker** — it was written when only the
+face-correlation half had been run. `PickObjects` has since been proven
+against a real host, and §3's input is built on it: the second window picks
+the free-edge faces directly (see
 `docs/column/verification/issue-103-face-references.md`).
 
 The main spec's own §12 note applies here too: no more granular clause number
 than the figure is claimed.
 
-If the figure is added to the repo it belongs in `technical-material/column/`;
-**this** document is what cites it.
-
-If the wall-detail figure referenced above is added to the repo, that image
-belongs in `technical-material/column/`; **this** document is what cites it.
+If the figure is added to the repo it belongs in
+`technical-material/column/`; **this** document is what cites it.

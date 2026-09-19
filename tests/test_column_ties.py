@@ -694,3 +694,29 @@ def test_the_top_of_a_rectangle_is_unambiguous_when_two_corners_share_it():
     square = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
     assert top_index(square) == 3
     assert square[top_index(square)] == (-1.0, 1.0)
+
+
+# --------------------------------------------------------------------- #
+# R47: a cross-tie does not alternate
+
+
+def test_a_cross_tie_carries_no_alternation_state_at_all():
+    """R47 (#192), the owner's ruling: a cross-tie keeps the same
+    orientation at every level.
+
+    Asserted as a property of the DATA rather than of the placer: a
+    `TieSubset` and its resolved geometry carry no per-level field, so
+    there is nowhere for an alternation to be stated. A later change that
+    started alternating cross-ties would have to add one, and this fails
+    the moment it does.
+
+    Read with R32 -- a triangle does not alternate either -- section
+    6.3's alternation applies to closed rectangular loops ONLY, and both
+    exceptions are now stated rather than inherited from silence.
+    """
+    subset = TieSubset((1, 6))
+    assert not subset.triangle
+    for forbidden in ("mirrored", "alternate", "alternation", "rotation"):
+        assert not hasattr(subset, forbidden), (
+            "TieSubset gained %r: R47 says a cross-tie does not alternate, "
+            "so there is nothing per-level to carry" % forbidden)
