@@ -572,6 +572,33 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
         reason="", vertices=vertices)
 
 
+def mirrored_vertices(vertices):
+    """Section 6.3's alternation, as the MEASURED transform (#78, R48).
+
+    PURE: ``(u, v)`` millimetre tuples in, the reflected polygon out.
+
+    #78 measured the move that puts the hook on an **adjacent** corner
+    rather than the diagonal one: a reflection whose mirror plane normal
+    is ``HandOrientation``, through the TIE's own centre. That flips ``u``
+    and leaves ``v`` alone, taking the hook corner SW -> SE.
+
+    The tie's own centre, not the column's: a subset tie is not
+    necessarily centred on the column, and reflecting such a tie about
+    ``u = 0`` would MOVE it -- it would wrap different bars, which is a
+    different tie, not an alternated one. Reflecting about its own centre
+    leaves the polygon exactly where it was and only changes which corner
+    the winding starts at.
+
+    A 180 degree rotation was rejected by the owner (2026-09-14): it gives
+    the diagonal corner, and section 6.3 asks for the adjacent one.
+    """
+    if not vertices:
+        return tuple()
+    us = [u for u, _v in vertices]
+    twice_centre = min(us) + max(us)
+    return tuple((twice_centre - u, v) for u, v in vertices)
+
+
 def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
     """One subset, turned into a rectangle and judged against A1.
 

@@ -77,10 +77,27 @@ def _outer_tie(layout):
 
 
 def _ladder(levels):
-    """`levels` as a list of z_mm; zone/mirrored are irrelevant here --
-    `place_ties` reads only `.index`/`.z_mm`."""
+    """`levels` as a list of z_mm, NONE of them mirrored.
+
+    This docstring used to say mirrored was "irrelevant here" because
+    `place_ties` read only `.index`/`.z_mm`. That was true, and it was the
+    defect: section 6.3's alternation was reported and never built
+    (#195). It is read now -- see `_alternating_ladder`.
+    """
     return TieLadder(
         levels=[TieLevel(index=i, z_mm=z, zone=ZONE_MIDDLE, mirrored=False)
+               for i, z in enumerate(levels)],
+        bottom_count=0, middle_count=len(levels), top_count=0,
+        middle_spacing_mm=0.0)
+
+
+def _alternating_ladder(levels):
+    """R48/#195: section 6.3's real ladder, where every other level is
+    mirrored -- exactly what `rft.core.column_tie_levels.tie_levels`
+    produces (`mirrored = bool(index % 2)`)."""
+    return TieLadder(
+        levels=[TieLevel(index=i, z_mm=z, zone=ZONE_MIDDLE,
+                         mirrored=bool(i % 2))
                for i, z in enumerate(levels)],
         bottom_count=0, middle_count=len(levels), top_count=0,
         middle_spacing_mm=0.0)
@@ -360,3 +377,70 @@ def test_a_triangle_places_as_one_rebar_per_level():
     assert len(created) == 2
     for rebar in created:
         assert len(rebar.args[7]) == 3  # 3 curves: a genuine triangle
+
+
+# --------------------------------------------------------------------- #
+# R48 / #195: the alternation is BUILT, not merely reported
+
+
+def test_an_M_LEVEL_is_actually_built_mirrored():
+    """The defect #195 recorded: `mirrored` was computed, printed in the
+    report as an `M`, and read by nothing that built anything. Every tie
+    at every level came out identical, hook in the same corner all the way
+    up -- which is the one thing section 6.3 exists to prevent.
+
+    The reflection is #78's measured one (about the tie's own centre,
+    flipping u), so the mirrored level's loop STARTS at the adjacent
+    corner. Asserted on the curves handed to `CreateFromCurves`, not on
+    the flag.
+    """
+    layout = _layout()
+    outer = _outer_tie(layout)
+    plan = _Plan(ties=[outer], ladder=_alternating_ladder([50.0, 150.0]),
+                base_z_mm=3000.0, layout=layout)
+
+    plain, mirrored = _place(plan)
+    plain_start = plain.args[7][0].GetEndPoint(0)
+    mirrored_start = mirrored.args[7][0].GetEndPoint(0)
+
+    assert plain_start.X != pytest.approx(mirrored_start.X), (
+        "the mirrored level starts at the same corner as the plain one, "
+        "so nothing alternates")
+    # The adjacent corner, not the diagonal: u flips, v is untouched.
+    assert plain_start.Y == pytest.approx(mirrored_start.Y)
+    assert plain_start.X == pytest.approx(-mirrored_start.X)
+
+
+def test_an_UNMIRRORED_ladder_still_builds_every_level_identically():
+    """The ordinary case must not move. A ladder with no M level is the
+    one every existing test uses."""
+    layout = _layout()
+    outer = _outer_tie(layout)
+    plan = _Plan(ties=[outer], ladder=_ladder([50.0, 150.0]),
+                base_z_mm=3000.0, layout=layout)
+
+    first, second = _place(plan)
+    a = first.args[7][0].GetEndPoint(0)
+    b = second.args[7][0].GetEndPoint(0)
+    assert a.X == pytest.approx(b.X)
+    assert a.Y == pytest.approx(b.Y)
+
+
+def test_a_CROSS_TIE_is_not_mirrored_even_on_an_M_level():
+    """R47, the owner's ruling (#192): a cross-tie has no corner for a
+    hook to alternate to, so an M level must leave it exactly where the
+    plain level put it."""
+    layout = _layout()
+    # Bars 1 and 6 face each other across the wide face, which
+    # resolve_tie turns into a cross-tie (the same fixture
+    # test_a_cross_tie_is_never_gated_by_A1 uses).
+    cross = resolve_tie(TieSubset(indices=(1, 6)), layout,
+                        TIE_DIA_MM, BAR_DIA_MM, BEND_DIAMETER_MM)
+    plan = _Plan(ties=[cross], ladder=_alternating_ladder([50.0, 150.0]),
+                base_z_mm=3000.0, layout=layout)
+
+    plain, mirrored = _place(plan)
+    a = plain.args[7][0].GetEndPoint(0)
+    b = mirrored.args[7][0].GetEndPoint(0)
+    assert a.X == pytest.approx(b.X)
+    assert a.Y == pytest.approx(b.Y)

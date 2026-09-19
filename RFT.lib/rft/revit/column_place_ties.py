@@ -58,7 +58,10 @@ from Autodesk.Revit.DB.Structure import (
     RebarStyle,
 )
 
-from ..core.column_ties import KIND_CROSS_TIE, describe_subset, is_buildable
+from ..core.column_ties import (
+    KIND_CROSS_TIE, KIND_TRIANGLE, describe_subset, is_buildable,
+    mirrored_vertices,
+)
 from .units import mm_to_internal
 
 
@@ -124,7 +127,7 @@ def _ensure_buildable(tie):
         % (_tie_label(tie), tie.narrow_mm, tie.min_buildable_mm))
 
 
-def _closed_loop_uv_segments_mm(tie):
+def _closed_loop_uv_segments_mm(tie, mirrored=False):
     """The tie's closed polygon as N consecutive-corner segments, local
     (u, v) mm, wound so ``curves[0]``'s start and ``curves[-1]``'s end
     coincide -- the hook-overlap corner both hooks attach to.
@@ -140,6 +143,12 @@ def _closed_loop_uv_segments_mm(tie):
     independent derivations that happened to agree.
     """
     corners = tie.vertices
+    if mirrored:
+        # R48/#195: section 6.3's alternation, BUILT. The reflection is
+        # #78's measured one -- about the tie's own centre, flipping u --
+        # which moves the hook-overlap corner to the ADJACENT corner. The
+        # polygon occupies the same space; only the winding's start moves.
+        corners = mirrored_vertices(corners)
     n = len(corners)
     return [(corners[i], corners[(i + 1) % n]) for i in range(n)]
 
@@ -157,15 +166,28 @@ def _cross_tie_uv_segments_mm(tie, layout):
     return [(tie.vertices[0], tie.vertices[-1])]
 
 
-def _uv_segments_mm(tie, layout):
+def _uv_segments_mm(tie, layout, mirrored=False):
     """Every non-cross-tie kind is a closed polygon (#141 adds a second
     one, the triangle, beside the rectangle) and shares the same
     consecutive-corner segment builder; only a cross-tie -- a single leg,
     not a polygon at all -- gets its own.
+
+    ``mirrored`` is section 6.3's alternation for THIS level (R48, #195).
+    It reaches only the closed-loop builder, and deliberately so:
+
+    - a **cross-tie** does not alternate -- R47, the owner's ruling: it
+      has no corner for a hook to alternate to;
+    - a **triangle** does not alternate -- R32: its closure stays at the
+      apex.
+
+    Both exceptions are stated where the decision is made rather than
+    left to the caller to remember.
     """
     if tie.kind == KIND_CROSS_TIE:
         return _cross_tie_uv_segments_mm(tie, layout)
-    return _closed_loop_uv_segments_mm(tie)
+    if tie.kind == KIND_TRIANGLE:
+        return _closed_loop_uv_segments_mm(tie, mirrored=False)
+    return _closed_loop_uv_segments_mm(tie, mirrored=mirrored)
 
 
 def _build_curves(origin_point, hand_dir, facing_dir, z_internal, uv_segments_mm):
@@ -243,9 +265,10 @@ def _assert_hook_tails_inside_host_extent(host_element, rebar, tie):
 
 
 def _place_one_tie(doc, host_element, layout, tie, bar_type, hook_type,
-                   origin_point, hand_dir, facing_dir, z_internal, norm):
+                   origin_point, hand_dir, facing_dir, z_internal, norm,
+                   mirrored=False):
     curves = _build_curves(origin_point, hand_dir, facing_dir, z_internal,
-                           _uv_segments_mm(tie, layout))
+                           _uv_segments_mm(tie, layout, mirrored))
     rebar = Rebar.CreateFromCurves(
         doc,
         RebarStyle.StirrupTie,
@@ -295,5 +318,6 @@ def place_ties(doc, host_element, plan, bar_type, hook_type):
         for tie in plan.ties:
             created.append(_place_one_tie(
                 doc, host_element, plan.layout, tie, bar_type, hook_type,
-                origin_point, hand_dir, facing_dir, z_internal, norm))
+                origin_point, hand_dir, facing_dir, z_internal, norm,
+                mirrored=level.mirrored))
     return created

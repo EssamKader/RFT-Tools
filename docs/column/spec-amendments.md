@@ -1597,3 +1597,44 @@ describing "one rebar set plus a per-bar transform", and
 `rft.revit.column_place_ties` applies no transform of any kind: every tie at
 every level is built identically. Filed as **#195**. R47 is about cross-ties
 only and does not bear on it.
+
+---
+
+## R48 — §6.3's alternation is BUILT, not merely reported
+
+**#195.** Until now `TieLevel.mirrored` was computed, printed in the report
+as an `M`, and **read by nothing that built anything**. Every tie at every
+level was placed identically, with its hook in the same corner all the way
+up the column — the one outcome §6.3 exists to prevent — while the report
+asserted the opposite. The report is what an engineer checks the model
+against, so this was not a missing feature; it was a false statement.
+
+### The transform, measured not invented
+
+#78 measured it on a live host: a reflection whose mirror plane normal is
+`HandOrientation`, **through the tie's own centre**. It flips `u`, leaves
+`v`, and moves the hook corner SW → SE — the **adjacent** corner the owner
+ruled for on 2026-09-14. A 180° rotation was rejected then because it gives
+the diagonal.
+
+**The tie's own centre, not the column's.** A subset tie need not be centred
+on the column, and reflecting such a tie about `u = 0` would move it — it
+would wrap different bars, which is a different tie, not an alternated one.
+
+### Why this is simpler than #70 proposed
+
+#70 measured the alternation as one rebar set plus a per-bar transform, and
+flagged that *"any later layout change silently scrambles it"*. The shipped
+placer never took that route: it creates **one `Rebar` element per level per
+tie**. So the reflection goes into the curves themselves, there is no stored
+per-bar transform, and #70's scramble hazard does not apply at all. The
+report's note describing that mechanism was wrong about the shipped code and
+has been corrected.
+
+### The two exceptions, stated at the decision
+
+- **R47** — a cross-tie does not alternate; it has no corner.
+- **R32** — a triangle does not alternate; its closure stays at the apex.
+
+Both are enforced in `_uv_segments_mm`, where the decision is made, rather
+than left to callers to remember.
