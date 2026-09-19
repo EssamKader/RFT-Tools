@@ -70,9 +70,12 @@ def main():
     top_cover_mm = _ask_mm("Top cover, mm", 50.0)
     x_offset_mm = _ask_mm("Column-face clear offset X, mm", 300.0)
     y_offset_mm = _ask_mm("Column-face clear offset Y, mm", 150.0)
+    ld_multiplier = _ask_mm(
+        "Development length multiplier (LD = multiplier x db)", 40.0)
 
     if None in (a_mm, b_mm, cover_mm, footing_thickness_mm,
-                bottom_cover_mm, top_cover_mm, x_offset_mm, y_offset_mm):
+                bottom_cover_mm, top_cover_mm, x_offset_mm, y_offset_mm,
+                ld_multiplier):
         return
 
     bar_x_type = _ask_bar_type(revit.doc, "mesh_bar_x type (X-direction)")
@@ -91,7 +94,8 @@ def main():
         bottom_cover_mm=bottom_cover_mm, top_cover_mm=top_cover_mm,
         mesh_bar_x_dia_mm=mesh_bar_x_dia_mm,
         mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
-        x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm)
+        x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
+        ld_multiplier=ld_multiplier)
 
     try:
         plan = build_footing_plan(inputs)

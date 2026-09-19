@@ -16,7 +16,12 @@ import pytest
 from rft.core.footing_mesh import (
     DIRECTION_X,
     DIRECTION_Y,
+    SHAPE_L,
+    SHAPE_U,
     FootingDirectionTieError,
+    HookDevelopmentLengthTieError,
+    bar_end_hook_decision,
+    bar_hook_plan,
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
@@ -143,3 +148,90 @@ def test_mesh_bar_y_sits_exactly_one_mesh_bar_x_diameter_above_mesh_bar_x():
     z_y = bar_y.start.z_mm
     assert z_x == pytest.approx(50.0 + 16.0 / 2.0)
     assert z_y == pytest.approx(z_x + 16.0 / 2.0 + 12.0 / 2.0)
+
+
+# ---------------------------------------------------------------------
+# #199 -- per-end hook/development-length decision (Story 2, Sec 5).
+# Mutation-proven: Essam's velocity rule 3 requires full coverage of
+# genuinely new math, and the hook-vs-no-hook / U-vs-L-shape decision is
+# exactly that -- nothing here is inherited from RFT.lib/ColumnRFT.
+# ---------------------------------------------------------------------
+
+def test_ld_greater_than_offset_needs_a_hook():
+    # LD = 40 * 16 = 640 > offset 300 -> hook.
+    decision = bar_end_hook_decision(
+        offset_mm=300.0, db_mm=16.0, ld_multiplier=40.0)
+    assert decision.ld_mm == pytest.approx(640.0)
+    assert decision.needs_hook is True
+
+
+def test_offset_greater_than_ld_does_not_need_a_hook():
+    # LD = 10 * 16 = 160 < offset 300 -> no hook.
+    decision = bar_end_hook_decision(
+        offset_mm=300.0, db_mm=16.0, ld_multiplier=10.0)
+    assert decision.ld_mm == pytest.approx(160.0)
+    assert decision.needs_hook is False
+
+
+def test_ld_is_multiplier_times_db_not_swapped_or_added():
+    """Guards the exact Sec 5 formula LD = multiplier * db, independent
+    of the hook/no-hook boundary -- a mutation swapping multiplier/db or
+    turning '*' into '+' would still pass the two tests above by luck for
+    some inputs, so this checks the raw product directly.
+    """
+    decision = bar_end_hook_decision(
+        offset_mm=1.0, db_mm=12.0, ld_multiplier=5.0)
+    assert decision.ld_mm == pytest.approx(60.0)
+
+
+def test_ld_equal_to_offset_raises_rather_than_silently_pick_a_side():
+    """Spec Ref: Sec 5 only defines '>' in each direction -- REUSE_
+    GUIDELINES.md Sec 3 ("Explicit Refusals") requires a raise on the
+    boundary, not a guessed rounding.
+    """
+    with pytest.raises(HookDevelopmentLengthTieError):
+        bar_end_hook_decision(offset_mm=160.0, db_mm=16.0, ld_multiplier=10.0)
+
+
+def test_both_ends_needing_a_hook_is_u_shape():
+    plan = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    assert plan.start.needs_hook is True
+    assert plan.end.needs_hook is True
+    assert plan.shape == SHAPE_U
+
+
+def test_one_end_not_needing_a_hook_switches_the_whole_bar_to_l_shape():
+    # start: LD = 40*16 = 640 > 300 -> hook. end: LD = 10*16 = 160 < 300
+    # -> no hook. Sec 5: "switch that bar from U-shape to L-shape".
+    plan = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=40.0)
+    other_end_plan = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert plan.shape == SHAPE_U
+    assert other_end_plan.shape != SHAPE_U
+
+    mixed_plan_start = bar_end_hook_decision(300.0, 16.0, 40.0)
+    mixed_plan_end = bar_end_hook_decision(300.0, 16.0, 10.0)
+    assert mixed_plan_start.needs_hook is True
+    assert mixed_plan_end.needs_hook is False
+
+
+def test_bar_hook_plan_uses_the_l_shape_constant_not_a_bespoke_string():
+    plan = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=10.0)
+    assert plan.shape == SHAPE_L
+    assert plan.shape != SHAPE_U
+
+
+def test_neither_end_needing_a_hook_is_not_u_shape():
+    plan = bar_hook_plan(
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
+        ld_multiplier=1.0)
+    assert plan.start.needs_hook is False
+    assert plan.end.needs_hook is False
+    assert plan.shape == SHAPE_L

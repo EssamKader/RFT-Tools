@@ -11,7 +11,10 @@ import pytest
 
 from rft.core.footing_mesh import (
     DIRECTION_X,
+    SHAPE_L,
+    SHAPE_U,
     FootingDirectionTieError,
+    bar_hook_plan,
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
 )
@@ -28,7 +31,8 @@ def _inputs(**overrides):
         a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
         footing_thickness_mm=450.0, bottom_cover_mm=50.0,
         top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
-        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0)
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0)
     values.update(overrides)
     return FootingInputs(**values)
 
@@ -74,6 +78,43 @@ def test_the_plan_keeps_the_inputs_it_was_built_from():
     inputs = _inputs()
     plan = build_footing_plan(inputs)
     assert plan.inputs == inputs
+
+
+def test_the_plan_carries_bar_hooks_matching_bar_hook_plan():
+    """#199: the composing module must be the ONE place bar_hook_plan is
+    called from, same as the #198 fields above -- so its own output must
+    match calling bar_hook_plan directly with the same inputs.
+    """
+    inputs = _inputs(x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=40.0)
+    plan = build_footing_plan(inputs)
+
+    expected_x_hooks = bar_hook_plan(
+        inputs.x_offset_mm, inputs.x_offset_mm, inputs.mesh_bar_x_dia_mm,
+        inputs.ld_multiplier)
+    expected_y_hooks = bar_hook_plan(
+        inputs.y_offset_mm, inputs.y_offset_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.ld_multiplier)
+    assert plan.bottom_mesh.bar_x_hooks == expected_x_hooks
+    assert plan.bottom_mesh.bar_y_hooks == expected_y_hooks
+
+
+def test_the_plan_picks_up_a_u_shape_when_both_directions_still_need_hooks():
+    # LD_x = 40*16 = 640 > 300; LD_y = 40*12 = 480 > 150 -> both U.
+    plan = build_footing_plan(
+        _inputs(x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=40.0))
+    assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_U
+    assert plan.bottom_mesh.bar_y_hooks.shape == SHAPE_U
+
+
+def test_the_plan_switches_only_the_direction_whose_offset_wins_to_l_shape():
+    # One shared ld_multiplier (Sec 5), but different db/offset per
+    # direction can still split the outcome: LD_x = 15*16 = 240 < 300
+    # -> mesh_bar_x switches to L. LD_y = 15*12 = 180 > 150 -> mesh_bar_y
+    # stays U.
+    plan = build_footing_plan(
+        _inputs(x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=15.0))
+    assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_L
+    assert plan.bottom_mesh.bar_y_hooks.shape == SHAPE_U
 
 
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():
