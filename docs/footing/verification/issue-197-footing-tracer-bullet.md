@@ -74,9 +74,10 @@ TRANSACTION       = COMMITTED (KEPT WRITE)
 > **An isolated footing `FamilyInstance` (category `OST_StructuralFoundation`)
 > is a valid, direct host for `Rebar.CreateFromCurves` with no special
 > handling.** No `RebarHostData` setup, no cover-parameter pre-configuration,
-> and no analytical-model step were required to get a first bar placed. This
-> mirrors the ease with which #69's environment placed rebar conceptually on
-> a column — the host-acceptance behavior generalizes to this category too.
+> and no analytical-model step were required to get a first bar placed. **Note:
+> #69 never tested rebar placement on a column** (it was read-only, per its own
+> §4 quoted above) — this footing bullet is the first placement-API evidence
+> either element has, not a repeat of something #69 already showed.
 
 ## 2. P2 — Can a dowel-style bar protrude beyond the footing's own geometry, hosted on the footing?
 
@@ -159,7 +160,13 @@ check for anything placed outside a view's visible extent** — use a direct
   both require a real `RebarHookType` — untested here.
 - Cover parameters on the footing instance were not read or set. Whether
   `Rebar.CreateFromCurves` silently clamps to an unset/default cover on a
-  footing host (as #69 found Revit does for columns) is unconfirmed.
+  footing host is unconfirmed. **Correction of what's actually on record
+  elsewhere:** the clamping behavior itself ("Revit clamps ties to the
+  host's cover regardless of what is passed") is documented in
+  `ColumnRFT.extension/CONTEXT.md` (Amendment A2, #83) — not in #69, whose
+  own finding was narrower: one column instance had an unset (`-1`) top-face
+  cover parameter, not a demonstrated clamping behavior. Anyone chasing the
+  clamping claim should go to A2/#83, not to #69.
 - Only one footing was placed in isolation, with no column instance
   actually resting on it — the real footing-supports-column relationship
   (as opposed to a standalone footing) was not modeled or tested.
