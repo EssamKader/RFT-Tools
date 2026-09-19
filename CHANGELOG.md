@@ -28,6 +28,44 @@ Neither rc1 nor rc2 was confirmed on a host, so test this one instead of
 either. **Check the window title reads `v0.3.1-rc3` first**; if it does
 not, nothing else you observe is about this candidate.
 
+## [column/v0.1.1] - 2026-09-19
+
+**Section 6.3's tie alternation is now BUILT, not merely reported (R48,
+#195).**
+
+Until this build, `TieLevel.mirrored` was computed, printed in the report as
+an `M`, and read by nothing that placed anything. Every tie at every level
+came out identical, hook in the same corner all the way up the column --
+which is the one outcome §6.3 exists to prevent -- while the report asserted
+the opposite. The report is what an engineer checks the model against, so
+this was not a missing feature; it was a false statement.
+
+### What to look at when testing
+
+On an `M` level the closed loops now **start one corner later**, which puts
+the hook on the **adjacent** corner. Check a placed cage in a 3D view: the
+hook overlap should step around the tie from level to level, not stack in
+one corner.
+
+Two ties never alternate, by ruling: a **cross-tie** (R47 -- no corner to
+alternate to) and a **triangle** (R32 -- its closure stays at the apex).
+
+### The transform, and the one measured failing
+
+Implemented as a reflection first, on a misreading of #78. That probe proved
+a reflection for `MoveBarInSet`, a transform applied to a bar *in* a set,
+which carries the hook with it. Reflecting the input **curves** reverses the
+winding, and `RebarHookOrientation.Left` is defined against each curve's own
+tangent -- so the hook turned **outward**, landing 91 mm into cover and air
+on a live host. Rotating the start vertex leaves the winding alone.
+
+Measured on Revit 2024 build 24.3.40.26, column 421967, rolled back.
+
+### Verification
+
+1633 tests. **The alternation has been measured as geometry but not yet run
+through the tool end to end** -- that is what this build is for.
+
 ## [column/v0.1.0] - 2026-09-18
 
 **The first release of the Column RFT detailing tool, and the first
