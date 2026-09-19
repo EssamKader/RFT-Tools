@@ -1558,3 +1558,42 @@ where the two differ would settle it.
 
 13M's arc of 72.806 mm reproduces the 72.8 mm #161 read months earlier, on
 a different probe, for a different question.
+
+---
+
+## R47 — a CROSS-TIE does not alternate
+
+**Decided by the owner, 2026-09-19** (#192): *"cross ties are not in alter."*
+
+### The gap this closes
+
+Spec §6.3 alternates the hook corner of *"any closed tie"* from level to
+level. **A cross-tie has no corner** — it is one bar with a hook at each end —
+so "which corner does the hook sit at" has no meaning for it, and §6.3 says
+nothing else. The V2 cage's cross-ties were therefore placed with no
+alternation at all, which was not a decision anyone had made. Now it is one.
+
+### The rule
+
+A cross-tie keeps the same orientation at every level. Its two hooks stay on
+the ends they start on, and nothing is mirrored.
+
+Read with **R32** — a triangle does not alternate either, its closure staying
+at the apex — §6.3's alternation now applies to **closed rectangular loops
+only**, and both exceptions are stated rather than inherited from silence.
+
+### Consequence
+
+None for the placer: this is what it already does. The value of the ruling is
+that the behaviour is now *intended*, and `tests/test_column_ties.py` pins it,
+so a later change that starts alternating cross-ties fails with the reason
+rather than looking like an improvement.
+
+### What this ruling did NOT settle, and what it exposed
+
+§6.3's alternation is **reported but never built** — for closed loops too.
+`rft.core.column_report` prints an `M` on alternate levels under a note
+describing "one rebar set plus a per-bar transform", and
+`rft.revit.column_place_ties` applies no transform of any kind: every tie at
+every level is built identically. Filed as **#195**. R47 is about cross-ties
+only and does not bear on it.
