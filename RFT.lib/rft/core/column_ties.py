@@ -572,31 +572,36 @@ def _resolve_triangle_tie(subset, layout, tie_dia_mm, bar_dia_mm,
         reason="", vertices=vertices)
 
 
-def mirrored_vertices(vertices):
-    """Section 6.3's alternation, as the MEASURED transform (#78, R48).
+def alternated_vertices(vertices):
+    """Section 6.3's alternation: the SAME polygon, wound the SAME way,
+    started one corner later (R48, measured 2026-09-19).
 
-    PURE: ``(u, v)`` millimetre tuples in, the reflected polygon out.
+    PURE: ``(u, v)`` millimetre tuples in, the re-started polygon out.
 
-    #78 measured the move that puts the hook on an **adjacent** corner
-    rather than the diagonal one: a reflection whose mirror plane normal
-    is ``HandOrientation``, through the TIE's own centre. That flips ``u``
-    and leaves ``v`` alone, taking the hook corner SW -> SE.
+    The hook sits where the curve list closes -- ``curves[0]``'s start is
+    ``curves[-1]``'s end -- so moving the starting vertex one place around
+    the loop moves the hook to the ADJACENT corner, which is what the
+    owner ruled for on 2026-09-14. Nothing else about the tie changes: the
+    same corners, the same order, the same winding.
 
-    The tie's own centre, not the column's: a subset tie is not
-    necessarily centred on the column, and reflecting such a tie about
-    ``u = 0`` would MOVE it -- it would wrap different bars, which is a
-    different tie, not an alternated one. Reflecting about its own centre
-    leaves the polygon exactly where it was and only changes which corner
-    the winding starts at.
+    **A reflection is the wrong transform here, and it was measured
+    failing.** #78 proved a reflection gives an adjacent corner, but it
+    proved it for ``MoveBarInSet`` -- a transform applied to a bar IN a
+    set, which carries the hook with it. Reflecting the input CURVES is a
+    different thing: it reverses the winding, and
+    ``RebarHookOrientation.Left`` is defined against each curve's own
+    tangent, so the hook then turns OUTWARD. Built on a live host, the
+    reflected tie's hook tail landed at ``v = -351.4`` against a 260 mm
+    half-height -- 91 mm into cover and air, which is the exact defect #78
+    recorded for the wrong hook orientation.
 
-    A 180 degree rotation was rejected by the owner (2026-09-14): it gives
-    the diagonal corner, and section 6.3 asks for the adjacent one.
+    Rotating the start vertex leaves the winding alone, so the hook keeps
+    turning inward. Measured on the same host in the same run: both tails
+    inside the column, hook corner SW then SE.
     """
     if not vertices:
         return tuple()
-    us = [u for u, _v in vertices]
-    twice_centre = min(us) + max(us)
-    return tuple((twice_centre - u, v) for u, v in vertices)
+    return tuple(vertices[1:]) + tuple(vertices[:1])
 
 
 def resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm, bend_diameter_mm):

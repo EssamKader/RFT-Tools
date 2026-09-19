@@ -1609,17 +1609,39 @@ up the column — the one outcome §6.3 exists to prevent — while the report
 asserted the opposite. The report is what an engineer checks the model
 against, so this was not a missing feature; it was a false statement.
 
-### The transform, measured not invented
+### The transform: the start vertex moves one corner, the winding does not
 
-#78 measured it on a live host: a reflection whose mirror plane normal is
-`HandOrientation`, **through the tie's own centre**. It flips `u`, leaves
-`v`, and moves the hook corner SW → SE — the **adjacent** corner the owner
-ruled for on 2026-09-14. A 180° rotation was rejected then because it gives
-the diagonal.
+The hook sits where the curve list closes — `curves[0]`'s start is
+`curves[-1]`'s end — so starting the loop one corner later moves the hook to
+the **adjacent** corner, which is what the owner ruled for on 2026-09-14.
+Same corners, same order, same winding.
 
-**The tie's own centre, not the column's.** A subset tie need not be centred
-on the column, and reflecting such a tie about `u = 0` would move it — it
-would wrap different bars, which is a different tie, not an alternated one.
+### A reflection is the WRONG transform, and it was measured failing
+
+This was implemented as a reflection first, on the strength of #78. That was
+a misreading: **#78 proved a reflection for `MoveBarInSet`** — a transform
+applied to a bar *in a set*, which carries the hook with it. Reflecting the
+input **curves** is a different operation. It reverses the winding, and
+`RebarHookOrientation.Left` is defined against each curve's own tangent, so
+the hook then turns **outward**.
+
+Built on a live host (Revit 2024 build 24.3.40.26, column 421967, rolled
+back):
+
+| level | loop starts | hook tail | tail inside the column? |
+|---|---|---|---|
+| reflected | (119.1, −351.4) | (276.4, −194.1) | **NO** |
+| plain | (−119.1, −159.1) | (−84.1, −194.1) | yes |
+| rotated | (84.1, −194.1) | (119.1, −159.1) | yes |
+
+`v = −351.4` against a 260 mm half-height is 91 mm into cover and air — the
+**exact** figure #78 recorded for the wrong hook orientation. The rotation
+puts both tails inside the concrete and moves the hook SW → SE.
+
+Had this shipped as a reflection, `_assert_hook_tails_inside_host_extent`
+would have refused every mirrored level — loudly, not silently, which is the
+guard doing its job. It would still have been a feature that could not place
+a cage.
 
 ### Why this is simpler than #70 proposed
 

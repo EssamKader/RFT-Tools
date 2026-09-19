@@ -203,11 +203,12 @@ def tie_level_section(ladder):
                      % (level.index, _mm(level.z_mm), level.zone,
                         "M" if level.mirrored else ""))
     lines.append(
-        NOTE_PREFIX + "An M level is BUILT mirrored (R48): its closed "
-        "loops are reflected about the tie's own centre, which moves the "
-        "hook to the ADJACENT corner (#78). Each level is its own rebar "
-        "element, so the reflection is in the curves themselves -- there "
-        "is no per-bar transform for a later layout change to scramble.")
+        NOTE_PREFIX + "An M level is BUILT alternated (R48): its closed "
+        "loops start one corner later, which moves the hook to the "
+        "ADJACENT corner. The winding is unchanged, so the hook still "
+        "turns inward. Each level is its own rebar element, so this "
+        "lives in the curves themselves -- there is no per-bar transform "
+        "for a later layout change to scramble.")
     return ReportSection("Tie levels", lines)
 
 

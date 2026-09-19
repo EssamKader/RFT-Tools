@@ -383,16 +383,15 @@ def test_a_triangle_places_as_one_rebar_per_level():
 # R48 / #195: the alternation is BUILT, not merely reported
 
 
-def test_an_M_LEVEL_is_actually_built_mirrored():
+def test_an_M_LEVEL_starts_at_the_ADJACENT_corner():
     """The defect #195 recorded: `mirrored` was computed, printed in the
     report as an `M`, and read by nothing that built anything. Every tie
     at every level came out identical, hook in the same corner all the way
     up -- which is the one thing section 6.3 exists to prevent.
 
-    The reflection is #78's measured one (about the tie's own centre,
-    flipping u), so the mirrored level's loop STARTS at the adjacent
-    corner. Asserted on the curves handed to `CreateFromCurves`, not on
-    the flag.
+    The hook sits where the curve list closes, so an M level's loop must
+    START one corner later. Asserted on the curves handed to
+    `CreateFromCurves`, not on the flag.
     """
     layout = _layout()
     outer = _outer_tie(layout)
@@ -400,15 +399,43 @@ def test_an_M_LEVEL_is_actually_built_mirrored():
                 base_z_mm=3000.0, layout=layout)
 
     plain, mirrored = _place(plan)
-    plain_start = plain.args[7][0].GetEndPoint(0)
-    mirrored_start = mirrored.args[7][0].GetEndPoint(0)
+    plain_curves = plain.args[7]
+    mirrored_curves = mirrored.args[7]
 
-    assert plain_start.X != pytest.approx(mirrored_start.X), (
-        "the mirrored level starts at the same corner as the plain one, "
-        "so nothing alternates")
-    # The adjacent corner, not the diagonal: u flips, v is untouched.
-    assert plain_start.Y == pytest.approx(mirrored_start.Y)
-    assert plain_start.X == pytest.approx(-mirrored_start.X)
+    plain_start = plain_curves[0].GetEndPoint(0)
+    mirrored_start = mirrored_curves[0].GetEndPoint(0)
+    # One corner later: the M level starts where the plain level's SECOND
+    # segment started.
+    expected = plain_curves[1].GetEndPoint(0)
+    assert mirrored_start.X == pytest.approx(expected.X)
+    assert mirrored_start.Y == pytest.approx(expected.Y)
+    assert (mirrored_start.X, mirrored_start.Y) != (plain_start.X, plain_start.Y)
+
+
+def test_an_M_LEVEL_keeps_the_SAME_WINDING():
+    """The property a REFLECTION would break, and it was measured
+    breaking: reflected curves reverse the winding, and
+    `RebarHookOrientation.Left` is defined against each curve's own
+    tangent, so the hook turns OUTWARD -- the tail landed 91 mm outside
+    the concrete on a live host.
+    """
+    layout = _layout()
+    outer = _outer_tie(layout)
+    plan = _Plan(ties=[outer], ladder=_alternating_ladder([50.0, 150.0]),
+                base_z_mm=3000.0, layout=layout)
+
+    plain, mirrored = _place(plan)
+    plain_curves, mirrored_curves = plain.args[7], mirrored.args[7]
+
+    def step(curve):
+        a, b = curve.GetEndPoint(0), curve.GetEndPoint(1)
+        return (round(b.X - a.X, 9), round(b.Y - a.Y, 9))
+
+    plain_steps = [step(c) for c in plain_curves]
+    mirrored_steps = [step(c) for c in mirrored_curves]
+    # Same set of edge vectors, rotated by one -- not negated, which is
+    # what a reversed winding would give.
+    assert mirrored_steps == plain_steps[1:] + plain_steps[:1]
 
 
 def test_an_UNMIRRORED_ladder_still_builds_every_level_identically():

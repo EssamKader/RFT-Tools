@@ -59,8 +59,8 @@ from Autodesk.Revit.DB.Structure import (
 )
 
 from ..core.column_ties import (
-    KIND_CROSS_TIE, KIND_TRIANGLE, describe_subset, is_buildable,
-    mirrored_vertices,
+    KIND_CROSS_TIE, KIND_TRIANGLE, alternated_vertices,
+    describe_subset, is_buildable,
 )
 from .units import mm_to_internal
 
@@ -144,11 +144,13 @@ def _closed_loop_uv_segments_mm(tie, mirrored=False):
     """
     corners = tie.vertices
     if mirrored:
-        # R48/#195: section 6.3's alternation, BUILT. The reflection is
-        # #78's measured one -- about the tie's own centre, flipping u --
-        # which moves the hook-overlap corner to the ADJACENT corner. The
-        # polygon occupies the same space; only the winding's start moves.
-        corners = mirrored_vertices(corners)
+        # R48/#195: section 6.3's alternation, BUILT. The start vertex
+        # moves one place around the loop, which moves the hook-overlap
+        # corner to the ADJACENT corner. Winding untouched -- a
+        # REFLECTION would reverse it, and `Left` is defined against each
+        # curve's own tangent, so the hook would turn outward (measured:
+        # the tail landed 91 mm outside the concrete).
+        corners = alternated_vertices(corners)
     n = len(corners)
     return [(corners[i], corners[(i + 1) % n]) for i in range(n)]
 
