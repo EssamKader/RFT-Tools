@@ -18,7 +18,6 @@ from rft.core.footing_mesh import (
     DIRECTION_Y,
     SHAPE_L,
     SHAPE_U,
-    FootingDirectionTieError,
     HookDevelopmentLengthTieError,
     bar_end_hook_decision,
     bar_hook_plan,
@@ -102,12 +101,13 @@ def test_y_greater_than_x_is_primary_in_y():
     assert primary_reinforcement_direction(150.0, 300.0) == DIRECTION_Y
 
 
-def test_equal_offsets_raise_rather_than_silently_pick_one():
-    """Spec Ref: Sec 2/3 never defines X == Y -- REUSE_GUIDELINES.md Sec 3
-    ("Explicit Refusals") requires a raise here, not a guessed tie-break.
+def test_equal_offsets_default_to_x_per_ruling_r1():
+    """Spec Ref: Sec 2/3 never defines X == Y. Raised to the project owner
+    rather than guessed; docs/footing/spec-amendments.md R1 records the
+    ruling -- it does not matter which direction is Primary in the tie
+    case, so this defaults to DIRECTION_X rather than raising.
     """
-    with pytest.raises(FootingDirectionTieError):
-        primary_reinforcement_direction(200.0, 200.0)
+    assert primary_reinforcement_direction(200.0, 200.0) == DIRECTION_X
 
 
 def test_local_mesh_bar_endpoints_are_centred_and_span_the_full_length():

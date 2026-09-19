@@ -53,15 +53,15 @@ of `footing.GetTransform()` against the plan centroid and the family's own
 a/b axes — unverified, and a decision ticket of its own, not something to
 guess at inline.
 
-## Open spec gap: X == Y
+## Resolved spec gap: X == Y (R1)
 
 `specs/isolated-footing.md` Sec 2/3 states the Primary-direction rule only
-as "if X > Y => Primary Reinforcement in X direction". It does not say
-what happens when the two column-face offsets are exactly equal.
-`rft.core.footing_mesh.primary_reinforcement_direction` raises
-`FootingDirectionTieError` in that case rather than guessing a tie-break --
-see that function's own docstring. If a footing with X == Y needs
-detailing, this is a decision ticket, not something to resolve inline.
+as "if X > Y => Primary Reinforcement in X direction" and never said what
+happens when the two column-face offsets are exactly equal. Raised to
+Essam directly rather than guessed; ruling recorded as R1 in
+`docs/footing/spec-amendments.md`: it does not matter which direction is
+Primary in the tie case. `rft.core.footing_mesh.primary_reinforcement_
+direction` now defaults to `DIRECTION_X` when `x_offset_mm == y_offset_mm`.
 
 ## Open spec gap: LD == offset at a bar end
 

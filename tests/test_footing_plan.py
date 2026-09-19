@@ -13,7 +13,6 @@ from rft.core.footing_mesh import (
     DIRECTION_X,
     SHAPE_L,
     SHAPE_U,
-    FootingDirectionTieError,
     bar_hook_plan,
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
@@ -53,9 +52,10 @@ def test_the_plan_carries_the_primary_direction_from_the_given_offsets():
     assert plan.bottom_mesh.primary_direction == DIRECTION_X
 
 
-def test_the_plan_raises_the_same_tie_error_the_core_function_does():
-    with pytest.raises(FootingDirectionTieError):
-        build_footing_plan(_inputs(x_offset_mm=200.0, y_offset_mm=200.0))
+def test_the_plan_carries_the_same_tie_default_the_core_function_applies():
+    """R1: equal offsets default to DIRECTION_X, not a raise."""
+    plan = build_footing_plan(_inputs(x_offset_mm=200.0, y_offset_mm=200.0))
+    assert plan.bottom_mesh.primary_direction == DIRECTION_X
 
 
 def test_the_plan_carries_bar_endpoints_matching_local_mesh_bar_endpoints():

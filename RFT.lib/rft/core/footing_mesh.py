@@ -22,17 +22,6 @@ SHAPE_U = "U"
 SHAPE_L = "L"
 
 
-class FootingDirectionTieError(ValueError):
-    """X and Y column-face offsets are exactly equal.
-
-    Spec Ref: Sec 2/3 states the rule only as "if X > Y => Primary
-    Reinforcement in X direction". It does not say what happens when
-    X == Y, and that is a genuine gap in the LOCKED spec, not a case to
-    guess at -- REUSE_GUIDELINES.md Sec 3, "Explicit Refusals: do not
-    guess missing edge cases".
-    """
-
-
 #: Spec Ref: Sec 3 (Story 1). Z/Z2 are the straight lengths inside cover;
 #: N/N2 are the vertical hook legs of the first and second mat
 #: respectively; mesh_bar_x/mesh_bar_y are the two bars' overall lengths.
@@ -56,9 +45,10 @@ class HookDevelopmentLengthTieError(ValueError):
 
     Spec Ref: Sec 5 defines only "LD > offset" (hook) and "offset > LD"
     (no hook, switch to L-shape) -- it does not say what happens when
-    they are exactly equal. Same discipline as ``FootingDirectionTieError``
-    above: REUSE_GUIDELINES.md Sec 3 ("Explicit Refusals") requires a
-    raise here, not a guessed tie-break.
+    they are exactly equal. Same discipline the X == Y gap hit before
+    R1 resolved it (docs/footing/spec-amendments.md): REUSE_GUIDELINES.md
+    Sec 3 ("Explicit Refusals") requires a raise here, not a guessed
+    tie-break, until the project owner rules on this one too.
     """
 
 
@@ -108,17 +98,17 @@ def primary_reinforcement_direction(x_offset_mm, y_offset_mm):
     for both meshes"), even though only the bottom mesh exists yet (#199
     is what consumes this for hook decisions).
 
-    Raises ``FootingDirectionTieError`` when the two offsets are exactly
-    equal -- see that class's docstring.
+    ``docs/footing/spec-amendments.md`` R1: when X == Y, Primary defaults
+    to ``DIRECTION_X`` -- Essam's ruling, since the spec's own formulas
+    (Sec 4-Sec 10) never depend on WHICH direction is Primary when the two
+    offsets are equal, only on treating both meshes' Primary consistently
+    (Sec 2). This is a recorded decision, not a guess: the LOCKED spec
+    left it open and the project owner was asked directly rather than the
+    code picking one silently.
     """
-    if x_offset_mm > y_offset_mm:
-        return DIRECTION_X
     if y_offset_mm > x_offset_mm:
         return DIRECTION_Y
-    raise FootingDirectionTieError(
-        "X and Y column-face offsets are exactly equal (%r mm); "
-        "specs/isolated-footing.md Sec 2/3 does not define which "
-        "direction is Primary when X == Y" % (x_offset_mm,))
+    return DIRECTION_X
 
 
 def local_mesh_bar_endpoints(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
