@@ -1,0 +1,21 @@
+title: "Footing"
+tooltip: >-
+  Reinforcement for ONE rectangular isolated (pad) footing under one
+  rectangular column: bottom mesh, optional top mesh, column dowels, dowel
+  stirrups and the footing-perimeter tie bar.
+
+  THIS RELEASE (#198) places the bottom mesh's straight case only -- ONE
+  mesh_bar_x bar and ONE mesh_bar_y bar, centred on the footing, hosted
+  directly on the picked footing. No hooks, no array/spacing, no top mesh,
+  no dowels, no ties yet -- those are later tickets, following the same
+  tracer-bullet-first order the beam and column tools used.
+
+  See specs/isolated-footing.md and IsolatedFooting.extension/CONTEXT.md.
+author: Essam Kader
+
+# No modeless window in this release -- inputs are asked one at a time
+# with pyrevit.forms, matching the tracer-bullet scope. A persistent
+# engine is only load-bearing once a MODELESS window exists (see the
+# column tool's own bundle.yaml comment on this); this script blocks on
+# each forms call and returns, so it is not needed yet. Revisit this the
+# moment a modeless Review window is added, per the same rc2 lesson.

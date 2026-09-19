@@ -1,0 +1,5 @@
+# The PANEL names the ELEMENT. Footings get their own panel beside Beams
+# and Columns on the shared RFT-Tools tab, so the elements never crowd
+# into each other's buttons.
+title: Footings
+author: Essam Kader
