@@ -3,18 +3,29 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
-## Scope, as of #199
+## Scope, as of #200
 
-**In:** bottom mesh, straight case (no L-shape alternation) -- one
-`mesh_bar_x` bar and one `mesh_bar_y` bar, centred on the footing's plan
-centroid, placed hosted directly on a picked isolated footing
-`FamilyInstance`. The `rft.core.footing_plan.build_footing_plan` composing
-module (spec Sec 4) is the one object any future report/preview and the
-placer both read the bottom-mesh geometry from. As of #199, that plan also
-carries each bar's per-end hook/development-length decision and resulting
-U-/L-shape (`rft.core.footing_mesh.bar_hook_plan`, spec Sec 3 Story 2 /
-Sec 5) -- the decision only, not yet wired into the Revit placement
-adapter (see "Not yet in" below).
+**In:** bottom mesh, straight case -- one `mesh_bar_x` bar and one
+`mesh_bar_y` bar, centred on the footing's plan centroid, placed hosted
+directly on a picked isolated footing `FamilyInstance`. The
+`rft.core.footing_plan.build_footing_plan` composing module (spec Sec 4)
+is the one object any future report/preview and the placer both read the
+bottom-mesh geometry from. As of #199, that plan also carries each bar's
+per-end hook/development-length decision and resulting U-/L-shape
+(`rft.core.footing_mesh.bar_hook_plan`, spec Sec 3 Story 2 / Sec 5) -- the
+decision only, not yet wired into the Revit placement adapter (see "Not
+yet in" below). As of #200, `FootingInputs.bottom_mat_shape_mode` (`None`,
+`footing_mesh.MAT_SHAPE_U` or `footing_mesh.MAT_SHAPE_L_ALTERNATING`) lets
+that decision be overridden per mat with a direct user choice instead of
+#199's own LD-vs-offset comparison (`footing_mesh.bar_hook_plan_for_mat`,
+spec Sec 3 Story 3 / Sec 6) -- again the core decision only, not yet
+wired into the pushbutton UI or the Revit placement adapter (see "Not yet
+in" below). `bar_hook_plan_for_mat`'s `bar_index` parameter is generic
+(the L-Shape-Alternating even/odd rule is mutation-proven for indices
+0-3), but #198/#199 place only ONE representative bar per direction, so
+`build_footing_plan` calls it with `bar_index=0` for both `mesh_bar_x` and
+`mesh_bar_y` today -- a visible alternating pattern needs the bar-array
+ticket below first.
 
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 
@@ -25,8 +36,19 @@ adapter (see "Not yet in" below).
   body only asked for the core decision math, not host wiring -- zero API
   guessing (`REUSE_GUIDELINES.md` Sec 3) means this stays a placement
   adapter TODO, not something to guess a `RebarHookType` shape for here.
-- L-shape-alternating option (Story 3 / spec Sec 6).
-- Top mesh (Story 4 / spec Sec 7).
+  #200's override sits on top of the same un-wired decision and inherits
+  this gap unchanged.
+- Asking `bottom_mat_shape_mode` via the pushbutton UI
+  (`IsolatedFootingRFT.pushbutton/script.py` still builds `FootingInputs`
+  without it, so it defaults to `None` -- #199's own LD comparison keeps
+  deciding until a later ticket adds the `pyrevit.forms` prompt and wires
+  it through). #200's own ticket body named only
+  `RFT.lib/rft/core/footing_mesh.py` as the file to extend, matching
+  #199's precedent of shipping the core decision before the UI/adapter
+  wiring.
+- Top mesh (Story 4 / spec Sec 7) and its own `top_mat_shape_mode` --
+  Story 3 (Sec 6) is written to apply independently to whichever mats
+  exist, but there is only a bottom mat to apply it to today.
 - Full mesh bar count/spacing/quantity for either direction -- this
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the
