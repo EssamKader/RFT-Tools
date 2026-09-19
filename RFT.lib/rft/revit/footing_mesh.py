@@ -26,12 +26,48 @@ guessing; each call site does not need to guess again independently.
 Per this repo's hard rule, this module does not open, commit or roll back
 a transaction -- the caller owns the one transaction for the whole footing
 (so a failure here leaves the model exactly as it was).
+
+**Known limitation, found in review, not silently left in:** ``_footing_
+origin``/``_to_world_point`` translate footing-local mm coordinates into
+world XYZ using only the footing's bounding-box centre -- no rotation
+transform is applied. Issue #69 already documented this exact trap for
+columns: "``get_BoundingBox(null)`` is axis-aligned in model coordinates
+and degenerates to the correct answer only at rotations of 0/90/180/270
+deg". A footing rotated at any other angle would get its bars placed along
+world X/Y instead of its own a/b directions. Rather than repeat that
+silently, ``_footing_origin`` REFUSES (``FootingRotationUnsupportedError``)
+when the footing is not axis-aligned, per REUSE_GUIDELINES.md Sec 3's
+"Explicit Refusals" rule. Supporting a rotated footing needs a live-host
+check of ``footing.GetTransform()`` against the plan centroid and the
+family's own a/b axes -- unverified, and out of this ticket's scope.
 """
+
+import math
 
 from Autodesk.Revit.DB import Line, XYZ
 from Autodesk.Revit.DB.Structure import Rebar, RebarHookOrientation, RebarStyle
 
 from .units import mm_to_internal
+
+#: How close to an exact quarter turn counts as "axis-aligned" -- Revit
+#: rotation reads (per issue #69's column measurements) are exact doubles
+#: for an intentionally-set 0 deg, so a tight tolerance catches genuine
+#: rotation without false-refusing on floating-point noise.
+_AXIS_ALIGNED_TOLERANCE_RAD = 1e-6
+
+
+class FootingRotationUnsupportedError(NotImplementedError):
+    """Raised by ``_footing_origin`` when the footing host is not
+    axis-aligned (0/90/180/270 deg). See this module's own docstring,
+    "Known limitation", for why this refuses rather than guesses.
+    """
+
+
+def _is_axis_aligned(rotation_rad):
+    quarter_turn = math.pi / 2.0
+    remainder = rotation_rad % quarter_turn
+    return (remainder <= _AXIS_ALIGNED_TOLERANCE_RAD
+            or (quarter_turn - remainder) <= _AXIS_ALIGNED_TOLERANCE_RAD)
 
 
 def _footing_origin(footing):
@@ -40,7 +76,19 @@ def _footing_origin(footing):
     #197 Sec 2 measured a dowel's z-range against ("z = footing.Min.Z +
     ..."), and the same ``get_BoundingBox(None)`` call already used
     elsewhere in this repo for a structural host's vertical extent.
+
+    Raises ``FootingRotationUnsupportedError`` if the footing is rotated --
+    see this module's docstring, "Known limitation".
     """
+    location = getattr(footing, "Location", None)
+    rotation_rad = getattr(location, "Rotation", 0.0) if location is not None else 0.0
+    if not _is_axis_aligned(rotation_rad):
+        raise FootingRotationUnsupportedError(
+            "Footing is rotated %.6f rad; only axis-aligned footings "
+            "(0/90/180/270 deg) are supported -- see "
+            "rft.revit.footing_mesh's module docstring, "
+            "'Known limitation'." % rotation_rad)
+
     box = footing.get_BoundingBox(None)
     centre_x = (box.Min.X + box.Max.X) / 2.0
     centre_y = (box.Min.Y + box.Max.Y) / 2.0

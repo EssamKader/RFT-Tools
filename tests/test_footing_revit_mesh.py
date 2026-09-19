@@ -8,25 +8,36 @@ Spec Ref: docs/footing/verification/issue-197-footing-tracer-bullet.md
 Sec 1 (footing host, no cast/wrapper) and Sec 2 (norm = XYZ.BasisZ).
 """
 
+import math
+
 import pytest
 
 from fake_revit_api import FakeBoundingBox, FakeXYZ
 
 from rft.core.footing_plan import FootingInputs, build_footing_plan
-from rft.revit.footing_mesh import place_straight_bottom_mesh
+from rft.revit.footing_mesh import (
+    FootingRotationUnsupportedError,
+    place_straight_bottom_mesh,
+)
 from rft.revit.units import mm_to_internal
+
+
+class _FakeLocation(object):
+    def __init__(self, rotation_rad):
+        self.Rotation = rotation_rad
 
 
 class _FakeFootingHost(object):
     """Stand-in for the footing FamilyInstance -- only what this adapter
-    reads: ``get_BoundingBox(view)``. Not ``fake_revit_api.FakeColumn``
-    (that fixture is the column tool's own; this ticket's element
-    isolation rule is to build the footing's own stand-in rather than
-    widen or borrow a column-shaped one).
+    reads: ``get_BoundingBox(view)`` and ``Location.Rotation``. Not
+    ``fake_revit_api.FakeColumn`` (that fixture is the column tool's own;
+    this ticket's element isolation rule is to build the footing's own
+    stand-in rather than widen or borrow a column-shaped one).
     """
 
-    def __init__(self, min_xyz, max_xyz):
+    def __init__(self, min_xyz, max_xyz, rotation_rad=0.0):
         self._box = FakeBoundingBox(min_xyz, max_xyz)
+        self.Location = _FakeLocation(rotation_rad)
 
     def get_BoundingBox(self, _view):
         return self._box
@@ -125,3 +136,41 @@ def test_bar_y_sits_above_bar_x_by_the_mesh_bar_x_diameter(footing, plan):
 
     expected_gap_internal = mm_to_internal(16.0 / 2.0 + 12.0 / 2.0)
     assert (z_y - z_x) == pytest.approx(expected_gap_internal)
+
+
+@pytest.mark.parametrize("rotation_deg", [0.0, 90.0, 180.0, 270.0, 360.0])
+def test_axis_aligned_rotations_still_place_bars(rotation_deg, plan):
+    """Regression: the rotation guard must not false-refuse an
+    axis-aligned footing at any of the four quarter-turns (or a full
+    turn, which is numerically 0 mod 90deg).
+    """
+    footing = _FakeFootingHost(
+        FakeXYZ(0.0, 0.0, 0.0),
+        FakeXYZ(mm_to_internal(1800.0), mm_to_internal(1200.0),
+                mm_to_internal(450.0)),
+        rotation_rad=math.radians(rotation_deg))
+
+    bar_x, bar_y = place_straight_bottom_mesh(
+        object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+
+    assert bar_x.args[5] is footing
+    assert bar_y.args[5] is footing
+
+
+def test_a_rotated_footing_refuses_instead_of_placing_bars_wrong(plan):
+    """Spec has no rotation model, and _to_world_point has no rotation
+    transform -- a rotated footing must REFUSE (Explicit Refusals,
+    REUSE_GUIDELINES.md Sec 3), never silently place bars along world
+    X/Y instead of the footing's own a/b directions.
+    """
+    footing = _FakeFootingHost(
+        FakeXYZ(0.0, 0.0, 0.0),
+        FakeXYZ(mm_to_internal(1800.0), mm_to_internal(1200.0),
+                mm_to_internal(450.0)),
+        rotation_rad=math.radians(30.0))
+
+    with pytest.raises(FootingRotationUnsupportedError):
+        place_straight_bottom_mesh(
+            object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
+            _FakeBarType("12M"))
