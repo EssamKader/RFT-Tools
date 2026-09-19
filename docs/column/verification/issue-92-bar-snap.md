@@ -34,11 +34,13 @@ experiment could detect a snap at all. It reported no drift, which would
 have been read as "#92 no longer reproduces". **It reproduces.** The
 control was simply blind.
 
-**Consequence for #183:** that probe read an arrayed bent set's bar
-positions without regenerating, and reported exact 0 / 150 / 300 mm
-spacing. The bend rendering it measured stands — curve geometry is not a
-constraint — but its *spacing* numbers are subject to the same doubt and
-should be re-read after a regeneration before they are relied on.
+**Consequence for #183 — raised here, and since RESOLVED.** That probe
+read an arrayed bent set's positions without regenerating and reported
+exact 0 / 150 / 300 mm spacing, so its numbers were open to the same
+doubt. They were re-measured with a regeneration and are **unchanged**:
+3 curves on every bar and 0 / 150 / 300 mm before *and* after. See
+`issue-183-bent-across.md`. The doubt was correct to raise and did not
+survive checking.
 
 ## What the snap actually is
 

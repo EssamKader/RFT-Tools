@@ -109,7 +109,10 @@ experiment. Measured, with ``normal = Hand`` and the bend toward
   repeat is invisible from the set as a whole and a straight bar that
   looks placed is the worst outcome available here;
 - **the array is exact** -- 0.0 / 150.0 / 300.0 mm along the step axis,
-  so the second curve does not disturb ``SetLayoutAsNumberWithSpacing``;
+  so the second curve does not disturb ``SetLayoutAsNumberWithSpacing``.
+  Re-read AFTER a ``Document.Regenerate()`` once #92 showed a position is
+  not settled before one: unchanged, 3 curves and the same three
+  distances;
 - the control bending ALONG the step axis still **raised**, so the rig is
   sound and R44 is confirmed from a second direction;
 - the same holds with the axes exchanged, so it is a property of the
