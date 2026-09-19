@@ -78,6 +78,32 @@ table.
 on every bar, 0.0 / 150.0 / 300.0 mm. **The answer is a property of the
 geometry, not of Hand.**
 
+
+## Re-measured after a regeneration (2026-09-19)
+
+#92 established that **a bar's position is not settled until
+`Document.Regenerate()` runs** — constraints resolve there, and a read
+taken before it reports the coordinate that was *requested*. This page's
+original numbers were read before any regeneration, so they were open to
+that doubt.
+
+Re-measured on the same host, same configuration, reading twice in one
+sub-transaction:
+
+```
+BEFORE regen  bar 0/1/2: 3 curves, 0.00 / 150.00 / 300.00 mm
+AFTER  regen  bar 0/1/2: 3 curves, 0.00 / 150.00 / 300.00 mm
+```
+
+**Unchanged.** Every bar still carries its bend and the array still holds
+the requested pitch. The conclusions below stand as published.
+
+Why this one did not move while #92's did: that bar was placed at an
+interior point beside a tie's bend, where an unpinned handle had a rebar
+to bind to. This one runs on the column's own axis with no neighbour to
+snap to — which is a reason, not a guarantee, and is exactly why it was
+worth re-reading rather than assuming.
+
 ## Consequences
 
 1. **R44's rule is fully measured, not merely reasoned.** Its own
