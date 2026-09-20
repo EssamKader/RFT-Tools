@@ -100,9 +100,23 @@ def test_asymmetric_offsets_refuse_rather_than_silently_misplace_the_end_tie(
 
 
 def test_a_run_too_short_for_even_one_spacing_step_refuses():
-    # start=50, end=100 (thickness=150) -> clear_height=50, which is
-    # shorter than 2 * spacing (200) -- tie_levels' own zone model has no
-    # middle zone here, surfaced as the SAME DowelTieRunTooShortError this
-    # module raises for its own too-short check.
+    # thickness=90 -> start=50, end=40: the two fixed offsets cross before
+    # tie_levels is even reached, via dowel_tie_run_mm's own check.
     with pytest.raises(DowelTieRunTooShortError):
-        dowel_tie_ladder(150.0, tie_spacing_mm=100.0)
+        dowel_tie_ladder(90.0, tie_spacing_mm=100.0)
+
+
+def test_a_large_tie_spacing_relative_to_thickness_does_not_spuriously_refuse():
+    """Found and fixed in review: setting `tie_levels`' own `l0_mm` to
+    `tie_spacing_mm` (instead of the fixed 50mm offset) made ordinary,
+    physically valid inputs refuse purely because `2 * tie_spacing_mm`
+    happened to exceed the footing thickness -- nothing to do with
+    whether the actual 350mm run between the two fixed offsets can fit a
+    250mm spacing (it can, with one middle tie). This is a regression
+    test for that fix."""
+    ladder = dowel_tie_ladder(450.0, tie_spacing_mm=250.0)
+    assert ladder.levels[0].z_mm == pytest.approx(50.0)
+    assert ladder.levels[-1].z_mm == pytest.approx(400.0)
+    zs = [level.z_mm for level in ladder.levels]
+    for lower, upper in zip(zs, zs[1:]):
+        assert upper - lower <= 250.0 + 1.0e-6

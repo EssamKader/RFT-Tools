@@ -34,15 +34,31 @@ only a fixed start, a fixed end, and one user spacing throughout.
 Rather than writing a second, parallel level-ladder algorithm (the
 `docs/footing/reuse-audit.md`-mandated reuse target names this module
 explicitly), this treats the whole dowel run as tie_levels' own
-confinement-zone model with `l0_mm` set equal to the user's own tie
-spacing and `confinement_spacing_mm == middle_zone_spacing_mm ==
-tie_spacing_mm`. With the two spacings equal, `tie_levels`' bottom/top
-zones and its equal-division middle run all step at (or, only where an
-uneven remainder forces it, slightly under) `tie_spacing_mm` --
-`tie_levels`' own middle-zone division rounds DOWN to fit evenly, never
-up, so the result never exceeds the spacing the engineer typed. This is
-an engineering adaptation of the reused function to a spec that has no
-zones of its own, not a new spec-stated formula -- documented here, in
+confinement-zone model, but **found and fixed in review**: `l0_mm` is set
+to :data:`START_OFFSET_FROM_FOOTING_BOTTOM_MM` itself (50mm), NOT the
+user's own tie spacing. `tie_levels` refuses upfront whenever
+``2 * l0_mm >= clear_height_mm`` -- a real constraint for the COLUMN
+model, where `L0` is a confinement-zone length independent of the tie
+spacing within it, but a spurious one here if `l0_mm` were set to
+`tie_spacing_mm`: it would falsely reject an ordinary, physically valid
+footing/spacing combination (e.g. a 450mm-thick footing with a 250mm tie
+spacing) purely because `2 * tie_spacing_mm` happens to exceed the
+footing thickness, even though the actual usable run between the two
+fixed 50mm offsets (350mm here) has nothing to do with that comparison.
+Setting `l0_mm = START_OFFSET_FROM_FOOTING_BOTTOM_MM` makes `tie_levels`'
+own bottom/top zones each collapse to exactly the one anchor tie
+(50mm from each end) regardless of `tie_spacing_mm`, and its upfront
+precondition becomes ``2 * 50 >= footing_thickness_mm`` -- the SAME
+"footing too thin for the two fixed offsets" case
+:func:`dowel_tie_run_mm` already checks independently, not a spurious
+spacing-dependent one. `confinement_spacing_mm`/`middle_zone_spacing_mm`
+are still set to `tie_spacing_mm` -- they only govern the (now unreached,
+single-tie) confinement-zone stepping and the middle-zone equal
+division, and the middle-zone division alone is what determines the
+in-between ties: it rounds DOWN to fit evenly, never up, so the result
+never exceeds the spacing the engineer typed. This is an engineering
+adaptation of the reused function to a spec that has no zones of its
+own, not a new spec-stated formula -- documented here, in
 `docs/footing/reuse-audit.md`, and in `IsolatedFooting.extension/
 CONTEXT.md`'s Sec 9 note, and flagged to Essam as worth confirming before
 a live host run: a strict "every step exactly tie_spacing_mm, ragged last
@@ -120,8 +136,13 @@ def dowel_tie_ladder(footing_thickness_mm, tie_spacing_mm):
 
     Reuses `column_tie_levels.tie_levels` per this module's own docstring
     ("Reusing `tie_levels` for a footing that has no zones"): `l0_mm` is
-    set to `tie_spacing_mm` itself so the reused zone model degenerates to
-    one continuous run at the user's spacing.
+    set to :data:`START_OFFSET_FROM_FOOTING_BOTTOM_MM` (50mm), NOT
+    `tie_spacing_mm` -- **found and fixed in review**, see the module
+    docstring for why setting `l0_mm = tie_spacing_mm` would spuriously
+    refuse ordinary, physically valid footing/spacing combinations. With
+    `l0_mm` anchored to the fixed offset, `tie_levels`' zone model
+    degenerates to exactly one bottom anchor tie, one top anchor tie, and
+    an equally-divided middle run at (or under) the user's spacing.
 
     `tie_levels` already applies its own `first_tie_offset_mm` symmetrically
     at BOTH ends of `clear_height_mm` -- exactly Sec 9's own shape (a fixed
@@ -133,12 +154,15 @@ def dowel_tie_ladder(footing_thickness_mm, tie_spacing_mm):
     below refuses rather than silently mis-placing the end tie if the two
     module constants are ever changed to differ.
 
-    Raises whatever `column_tie_levels.tie_levels` itself raises (a run
-    shorter than `2 * tie_spacing_mm` has no middle zone in that
-    function's own model) via :class:`DowelTieRunTooShortError`, so every
-    refusal from this module carries the SAME exception type regardless
-    of which of the two checks (this function's own, or `tie_levels`')
-    actually fired.
+    With `l0_mm` anchored to the fixed offset, `tie_levels`' own upfront
+    precondition (``2 * l0_mm >= clear_height_mm``) becomes exactly the
+    SAME "footing too thin for the two fixed offsets" case
+    :func:`dowel_tie_run_mm` already raises :class:`DowelTieRunTooShortError`
+    for above -- so in practice `tie_levels` itself no longer raises for
+    any input this function reaches (that check already failed earlier, on
+    `dowel_tie_run_mm`'s own call). The `try`/`except` below is kept as a
+    defensive re-wrap, not because a distinct `tie_levels`-only failure
+    mode is expected today.
     """
     if tie_spacing_mm is None or tie_spacing_mm <= 0:
         raise ValueError(
@@ -157,7 +181,7 @@ def dowel_tie_ladder(footing_thickness_mm, tie_spacing_mm):
     try:
         ladder = tie_levels(
             clear_height_mm=footing_thickness_mm,
-            l0_mm=tie_spacing_mm,
+            l0_mm=START_OFFSET_FROM_FOOTING_BOTTOM_MM,
             confinement_spacing_mm=tie_spacing_mm,
             middle_zone_spacing_mm=tie_spacing_mm,
             first_tie_offset_mm=START_OFFSET_FROM_FOOTING_BOTTOM_MM)

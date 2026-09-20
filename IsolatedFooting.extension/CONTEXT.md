@@ -15,13 +15,20 @@ tool's identically-valued `column_layout.EDGE_OFFSET_MM`, per
 `dowel_tie_ladder` fills the run between them at the engineer's own tie
 spacing (no default, per Sec 9) by calling `rft.core.column_tie_levels.
 tie_levels` directly -- `clear_height_mm=footing_thickness_mm`,
-`first_tie_offset_mm=START_OFFSET_FROM_FOOTING_BOTTOM_MM`, and
-`l0_mm=confinement_spacing_mm=middle_zone_spacing_mm=tie_spacing_mm` so
-the column's own confinement-zone model (which the footing spec has no
-equivalent of) degenerates to one continuous run at the user's spacing.
-This only works because Sec 9 states the SAME 50mm value at both ends;
-`dowel_tie_ladder` raises `NotImplementedError` rather than silently
-mis-placing the end tie if the two constants are ever changed to differ.
+`first_tie_offset_mm=l0_mm=START_OFFSET_FROM_FOOTING_BOTTOM_MM`, and
+`confinement_spacing_mm=middle_zone_spacing_mm=tie_spacing_mm`, so the
+column's own confinement-zone model (which the footing spec has no
+equivalent of) degenerates to just the two anchor ties plus an
+equally-divided middle run at the user's spacing. **Found and fixed in
+review:** `l0_mm` must be the fixed 50mm offset, NOT `tie_spacing_mm` --
+setting it to the spacing made `tie_levels`' own upfront precondition
+(`2 * l0_mm >= clear_height_mm`) spuriously refuse ordinary, physically
+valid footing/spacing combinations (e.g. a 450mm-thick footing with a
+250mm tie spacing) for a reason that has nothing to do with the footing's
+actual run. This only works because Sec 9 states the SAME 50mm value at
+both ends; `dowel_tie_ladder` raises `NotImplementedError` rather than
+silently mis-placing the end tie if the two constants are ever changed to
+differ.
 `rft.core.footing_plan.FootingPlan.dowel_ties` is the one composing-module
 field a future placement adapter reads from -- `None` unless
 `FootingInputs.dowel_tie_dia_mm`/`dowel_tie_spacing_mm` are both supplied
