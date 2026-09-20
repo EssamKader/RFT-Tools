@@ -19,7 +19,13 @@ from rft.core.footing_mesh import (
     local_mesh_bar_endpoints,
     mesh_bar_lengths,
 )
-from rft.core.footing_plan import FootingInputs, build_footing_plan
+from rft.core.footing_plan import (
+    TOP_REINFORCEMENT_BTM_ONLY,
+    TOP_REINFORCEMENT_TOP_AND_BTM,
+    FootingInputs,
+    TopMeshPlan,
+    build_footing_plan,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FOOTING_SCRIPT = os.path.join(
@@ -158,6 +164,39 @@ def test_the_plan_switches_only_the_direction_whose_offset_wins_to_l_shape():
         _inputs(x_offset_mm=300.0, y_offset_mm=150.0, ld_multiplier=15.0))
     assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_L
     assert plan.bottom_mesh.bar_y_hooks.shape == SHAPE_U
+
+
+def test_the_plan_defaults_top_reinforcement_to_btm_only_with_no_top_mesh():
+    """#201: predates-#201 callers (this file's own ``_inputs`` helper,
+    and script.py) keep building a bottom-only plan unchanged."""
+    inputs = _inputs()
+    assert inputs.top_reinforcement == TOP_REINFORCEMENT_BTM_ONLY
+    plan = build_footing_plan(inputs)
+    assert plan.top_mesh is None
+
+
+def test_top_and_btm_toggles_a_second_mat_instance_on():
+    """#201's own test-volume rule: only confirm the toggle wires a
+    second mat instance on/off -- no new formula math is being tested
+    here, #198/#199/#200's own suites already cover the formulas this
+    reuses."""
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    plan = build_footing_plan(inputs)
+    assert isinstance(plan.top_mesh, TopMeshPlan)
+    assert plan.top_mesh.lengths == plan.bottom_mesh.lengths
+
+
+def test_top_mat_shape_mode_is_independent_of_the_bottom_mats():
+    """Sec 7: 'Independent of Story 3 ... set separately, never
+    coupled.' A bottom U override must not leak into an L-alternating
+    top mat."""
+    inputs = _inputs(
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        bottom_mat_shape_mode=MAT_SHAPE_U,
+        top_mat_shape_mode=MAT_SHAPE_L_ALTERNATING)
+    plan = build_footing_plan(inputs)
+    assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_U
+    assert plan.top_mesh.bar_x_hooks.shape == SHAPE_L
 
 
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():
