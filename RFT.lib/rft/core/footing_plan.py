@@ -23,6 +23,7 @@ top too).
 from collections import namedtuple
 
 from .footing_dowels import dowel_embedment, local_dowel_bar_geometry
+from .footing_dowel_ties import dowel_tie_ladder
 from .footing_mesh import (
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
@@ -70,6 +71,18 @@ from .footing_mesh import (
 #: plan unchanged -- same trailing-defaults pattern #200/#201 already
 #: established for ``bottom_mat_shape_mode``/``top_reinforcement``/
 #: ``top_mat_shape_mode``.
+#: #203 (Sec 3 Story 6, Sec 9): ``dowel_tie_dia_mm``/``dowel_tie_spacing_mm``
+#: are the tie's own direct user inputs -- Sec 9 states both have NO
+#: default, matching Sec 8's own ``dowel_bar_dia_mm``/``dowel_ld_multiplier``
+#: pattern immediately above. Both default to ``None`` (no dowel-tie
+#: ladder built) so every existing caller that predates #203 is unchanged.
+#: ``dowel_tie_dia_mm`` is carried on ``FootingInputs`` (not just the
+#: spacing) even though the core ladder math in this module never reads
+#: the diameter -- Sec 9 names diameter and spacing as one paired user
+#: input, and the diameter is what a future placement adapter needs to
+#: resolve a ``RebarBarType``, the same reasoning ``dowel_bar_dia_mm``
+#: already carries a value #202's own ladder-equivalent code never reads
+#: either.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -77,7 +90,8 @@ FootingInputs = namedtuple(
      "mesh_bar_x_dia_mm", "mesh_bar_y_dia_mm",
      "x_offset_mm", "y_offset_mm", "ld_multiplier",
      "bottom_mat_shape_mode", "top_reinforcement", "top_mat_shape_mode",
-     "dowel_bar_dia_mm", "dowel_ld_multiplier"],
+     "dowel_bar_dia_mm", "dowel_ld_multiplier",
+     "dowel_tie_dia_mm", "dowel_tie_spacing_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -90,7 +104,7 @@ TOP_REINFORCEMENT_BTM_ONLY = "BTM_ONLY"
 TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
 FootingInputs.__new__.__defaults__ = (
-    None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None)
+    None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -120,6 +134,14 @@ TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 #: for both).
 DowelPlan = namedtuple("DowelPlan", ["embedment", "geometry"])
 
+#: #203 (Sec 3 Story 6, Sec 9): ``ladder`` is a
+#: ``footing_dowel_ties.DowelTieLadder`` -- the starter/end-offset vertical
+#: ladder, spacing_mm as supplied. Per ``docs/footing/reuse-audit.md`` Sec 1
+#: ("Blocked, not guessed"), this plan carries the ladder ONLY -- no tie
+#: shape/loop geometry, since that needs a dowel-bar array this repo does
+#: not have yet (#202 places one representative dowel).
+DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm"])
+
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
 #: exists at all, not an empty/zeroed one) and a ``TopMeshPlan`` when
@@ -127,8 +149,12 @@ DowelPlan = namedtuple("DowelPlan", ["embedment", "geometry"])
 #: ``dowel`` is ``None`` when ``inputs.dowel_bar_dia_mm``/
 #: ``dowel_ld_multiplier`` were not supplied (#202 is opt-in, same
 #: trailing-default pattern as ``top_mesh``) and a ``DowelPlan`` otherwise.
+#: ``dowel_ties`` is ``None`` when ``inputs.dowel_tie_dia_mm``/
+#: ``dowel_tie_spacing_mm`` were not supplied (#203 is opt-in, same
+#: trailing-default pattern) and a ``DowelTiePlan`` otherwise.
 FootingPlan = namedtuple(
-    "FootingPlan", ["inputs", "bottom_mesh", "top_mesh", "dowel"])
+    "FootingPlan",
+    ["inputs", "bottom_mesh", "top_mesh", "dowel", "dowel_ties"])
 
 
 def _bottom_mat_endpoints(lengths, inputs):
@@ -230,6 +256,18 @@ def _build_dowel_plan(inputs):
     return DowelPlan(embedment=embedment, geometry=geometry)
 
 
+def _build_dowel_tie_plan(inputs):
+    """#203 (Sec 3 Story 6, Sec 9): the one place
+    ``footing_dowel_ties.dowel_tie_ladder`` is called from, so a future
+    placement adapter reads the SAME ``DowelTiePlan`` rather than calling
+    ``footing_dowel_ties`` independently (Sec 4's "one composing module"
+    rule, already applied above to the mesh mats and the dowel bar).
+    """
+    ladder = dowel_tie_ladder(
+        inputs.footing_thickness_mm, inputs.dowel_tie_spacing_mm)
+    return DowelTiePlan(ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm)
+
+
 def build_footing_plan(inputs):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
@@ -269,6 +307,11 @@ def build_footing_plan(inputs):
             and inputs.dowel_ld_multiplier is not None):
         dowel = _build_dowel_plan(inputs)
 
+    dowel_ties = None
+    if (inputs.dowel_tie_dia_mm is not None
+            and inputs.dowel_tie_spacing_mm is not None):
+        dowel_ties = _build_dowel_tie_plan(inputs)
+
     return FootingPlan(
         inputs=inputs, bottom_mesh=bottom_mesh, top_mesh=top_mesh,
-        dowel=dowel)
+        dowel=dowel, dowel_ties=dowel_ties)
