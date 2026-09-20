@@ -85,14 +85,17 @@ Essam directly rather than guessed; ruling recorded as R1 in
 Primary in the tie case. `rft.core.footing_mesh.primary_reinforcement_
 direction` now defaults to `DIRECTION_X` when `x_offset_mm == y_offset_mm`.
 
-## Open spec gap: LD == offset at a bar end
+## Resolved spec gap: LD == offset at a bar end (R2)
 
 `specs/isolated-footing.md` Sec 5 defines the per-end hook decision only
-as "LD > offset" (hook) and "offset > LD" (no hook, switch to L-shape). It
-does not say what happens when they are exactly equal.
-`rft.core.footing_mesh.bar_end_hook_decision` raises
-`HookDevelopmentLengthTieError` in that case rather than guessing which
-side of the boundary applies -- same discipline as the X == Y gap above.
+as "LD > offset" (hook) and "offset > LD" (no hook, switch to L-shape) and
+never said what happens when they are exactly equal. Raised to Essam
+directly rather than guessed; ruling recorded as R2 in
+`docs/footing/spec-amendments.md` -- **not** a silent default: the
+automatic comparison keeps raising `HookDevelopmentLengthTieError`, and
+the engineer gets the SAME explicit U-shape/L-shape-alternating choice
+#200 already built (`bar_hook_plan_for_mat` with an explicit
+`mat_shape_mode`) instead of leaving that mat on automatic.
 
 ## Reuse already decided (not re-derived here)
 

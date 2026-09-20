@@ -57,10 +57,15 @@ class HookDevelopmentLengthTieError(ValueError):
 
     Spec Ref: Sec 5 defines only "LD > offset" (hook) and "offset > LD"
     (no hook, switch to L-shape) -- it does not say what happens when
-    they are exactly equal. Same discipline the X == Y gap hit before
-    R1 resolved it (docs/footing/spec-amendments.md): REUSE_GUIDELINES.md
-    Sec 3 ("Explicit Refusals") requires a raise here, not a guessed
-    tie-break, until the project owner rules on this one too.
+    they are exactly equal. Per Essam's revised ruling (R2,
+    docs/footing/spec-amendments.md), this is not resolved by a silent
+    default: the automatic per-end comparison refuses, and the caller is
+    expected to give the engineer the SAME explicit choice #200 already
+    built for exactly this situation -- an explicit ``mat_shape_mode``
+    (``MAT_SHAPE_U`` or ``MAT_SHAPE_L_ALTERNATING``) via
+    ``bar_hook_plan_for_mat``, which never calls this comparison at all.
+    REUSE_GUIDELINES.md Sec 3 ("Explicit Refusals") requires a raise here,
+    not a guessed tie-break.
     """
 
 
@@ -167,16 +172,24 @@ def bar_end_hook_decision(offset_mm, db_mm, ld_multiplier):
     for both mesh_bar_x ends (with X) and mesh_bar_y ends (with Y), never
     duplicated per direction (this ticket's own instruction).
 
-    Raises ``HookDevelopmentLengthTieError`` when ``LD == offset`` -- see
-    that class's docstring.
+    ``docs/footing/spec-amendments.md`` R2 (revised): when ``LD ==
+    offset`` exactly, this raises ``HookDevelopmentLengthTieError``
+    rather than picking a side. Essam's ruling here is not a silent
+    default but a redirect: the engineer should get an explicit choice
+    between U-shape and L-shape-alternating for that mat, via the SAME
+    per-mat override #200 already built (``bar_hook_plan_for_mat`` with
+    ``mat_shape_mode`` set) -- not a new third option invented for this
+    boundary alone.
     """
     ld_mm = ld_multiplier * db_mm
     if ld_mm == offset_mm:
         raise HookDevelopmentLengthTieError(
             "Required development length equals the available straight "
             "offset exactly (LD=offset=%r mm); specs/isolated-footing.md "
-            "Sec 5 does not define this end's shape when they are equal"
-            % (offset_mm,))
+            "Sec 5 does not define this end's shape when they are equal. "
+            "Set an explicit mat_shape_mode (MAT_SHAPE_U or "
+            "MAT_SHAPE_L_ALTERNATING) for this mat instead of leaving it "
+            "on automatic." % (offset_mm,))
     return BarEndHook(ld_mm=ld_mm, needs_hook=ld_mm > offset_mm)
 
 
@@ -218,9 +231,8 @@ def bar_hook_plan_for_mat(bar_index, mat_shape_mode, start_offset_mm,
       Story 2's own LD-vs-offset comparison decides, exactly as #199
       already does. ``bar_index`` is unused in this branch.
     - ``MAT_SHAPE_U`` -- every bar hooked at both ends, unconditionally.
-      ``LD``/offset are never compared, so this never raises
-      ``HookDevelopmentLengthTieError`` -- the override makes that
-      comparison "unnecessary" per Sec 6, not merely pre-empted.
+      ``LD``/offset are never compared here at all -- the override makes
+      that comparison "unnecessary" per Sec 6, not merely pre-empted.
     - ``MAT_SHAPE_L_ALTERNATING`` -- every bar is L-shaped (one hook);
       "consecutive bars alternate which end is hooked" (Sec 6): the start
       end is hooked on even ``bar_index`` (0, 2, 4, ...) and the end end
