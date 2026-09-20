@@ -21,11 +21,13 @@ from rft.core.footing_mesh import (
     mesh_bar_lengths,
 )
 from rft.core.footing_dowels import dowel_embedment, local_dowel_bar_geometry
+from rft.core.footing_perimeter_tie import perimeter_tie_geometry
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
     DowelPlan,
     FootingInputs,
+    PerimeterTiePlan,
     TopMeshPlan,
     build_footing_plan,
 )
@@ -270,6 +272,38 @@ def test_supplying_dowel_inputs_builds_a_dowel_plan_matching_the_core_call():
     assert isinstance(plan.dowel, DowelPlan)
     assert plan.dowel.embedment == expected_embedment
     assert plan.dowel.geometry == expected_geometry
+
+
+def test_the_plan_defaults_perimeter_tie_fields_to_none_with_no_perimeter_tie_plan():
+    """#204: predates-#204 callers keep building a perimeter-tie-free plan
+    unchanged."""
+    inputs = _inputs()
+    assert inputs.perimeter_tie_dia_mm is None
+    assert inputs.perimeter_tie_spacing_mm is None
+    assert inputs.perimeter_tie_quantity is None
+    assert inputs.perimeter_tie_lap_mm is None
+    plan = build_footing_plan(inputs)
+    assert plan.perimeter_tie is None
+
+
+def test_supplying_perimeter_tie_inputs_builds_a_plan_matching_the_core_call():
+    """The composing module must be the ONE place
+    ``footing_perimeter_tie.perimeter_tie_geometry`` is called from -- so
+    its output must match calling it directly with the same inputs."""
+    inputs = _inputs(
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=3)
+    plan = build_footing_plan(inputs)
+
+    expected_geometry = perimeter_tie_geometry(
+        inputs.a_mm, inputs.b_mm, inputs.cover_mm,
+        inputs.perimeter_tie_lap_mm)
+
+    assert isinstance(plan.perimeter_tie, PerimeterTiePlan)
+    assert plan.perimeter_tie.geometry == expected_geometry
+    assert plan.perimeter_tie.dia_mm == pytest.approx(10.0)
+    assert plan.perimeter_tie.spacing_mm == pytest.approx(200.0)
+    assert plan.perimeter_tie.quantity == 3
 
 
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():
