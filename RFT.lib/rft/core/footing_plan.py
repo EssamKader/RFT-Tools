@@ -22,6 +22,7 @@ top too).
 
 from collections import namedtuple
 
+from .footing_dowels import dowel_embedment, local_dowel_bar_geometry
 from .footing_mesh import (
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
@@ -60,13 +61,23 @@ from .footing_mesh import (
 #: specific ``a``/``b``/cover/diameter, so the top mat is built from the
 #: SAME ``a_mm``..``ld_multiplier`` fields above -- only the shape-mode
 #: differs per mat.
+#: #202 (Sec 3 Story 5, Sec 8): ``dowel_bar_dia_mm``/``dowel_ld_multiplier``
+#: are the dowel's OWN diameter and LD multiplier -- distinct fields from
+#: ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm``/``ld_multiplier`` above,
+#: since Sec 8's ``LD = multiplier * db`` uses the dowel bar's own ``db``,
+#: never a mesh bar's. Both default to ``None`` (no dowel plan built) so
+#: every existing caller that predates #202 keeps building a mesh-only
+#: plan unchanged -- same trailing-defaults pattern #200/#201 already
+#: established for ``bottom_mat_shape_mode``/``top_reinforcement``/
+#: ``top_mat_shape_mode``.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
      "bottom_cover_mm", "top_cover_mm",
      "mesh_bar_x_dia_mm", "mesh_bar_y_dia_mm",
      "x_offset_mm", "y_offset_mm", "ld_multiplier",
-     "bottom_mat_shape_mode", "top_reinforcement", "top_mat_shape_mode"],
+     "bottom_mat_shape_mode", "top_reinforcement", "top_mat_shape_mode",
+     "dowel_bar_dia_mm", "dowel_ld_multiplier"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -79,7 +90,7 @@ TOP_REINFORCEMENT_BTM_ONLY = "BTM_ONLY"
 TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
 FootingInputs.__new__.__defaults__ = (
-    None, TOP_REINFORCEMENT_BTM_ONLY, None)
+    None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -101,11 +112,23 @@ BottomMeshPlan = namedtuple(
 #: shaped plan for what is not new math.
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 
+#: #202 (Sec 3 Story 5, Sec 8): ``embedment`` is a
+#: ``footing_dowels.DowelEmbedment`` (``a_dowel_mm``/``b_dowel_mm``/
+#: ``ld_mm``); ``geometry`` is a ``footing_dowels.DowelBarGeometry`` --
+#: the one representative dowel bar's footing-local bent-bar centreline,
+#: resting on top of the bottom mesh (see ``footing_dowels`` docstrings
+#: for both).
+DowelPlan = namedtuple("DowelPlan", ["embedment", "geometry"])
+
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
 #: exists at all, not an empty/zeroed one) and a ``TopMeshPlan`` when
 #: ``TOP_REINFORCEMENT_TOP_AND_BTM`` is chosen.
-FootingPlan = namedtuple("FootingPlan", ["inputs", "bottom_mesh", "top_mesh"])
+#: ``dowel`` is ``None`` when ``inputs.dowel_bar_dia_mm``/
+#: ``dowel_ld_multiplier`` were not supplied (#202 is opt-in, same
+#: trailing-default pattern as ``top_mesh``) and a ``DowelPlan`` otherwise.
+FootingPlan = namedtuple(
+    "FootingPlan", ["inputs", "bottom_mesh", "top_mesh", "dowel"])
 
 
 def _bottom_mat_endpoints(lengths, inputs):
@@ -184,6 +207,29 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
         bar_x_hooks=bar_x_hooks, bar_y_hooks=bar_y_hooks)
 
 
+def _build_dowel_plan(inputs):
+    """#202 (Sec 3 Story 5, Sec 8): the one place ``footing_dowels.
+    dowel_embedment``/``local_dowel_bar_geometry`` are called from, so a
+    future report/preview and the placement adapter both read the SAME
+    ``DowelPlan`` rather than each calling ``footing_dowels`` independently
+    (the same Sec 4 "one composing module" rule ``_build_mesh_mat_plan``
+    already follows for the mesh mats).
+
+    Reads mesh bar diameters and ``footing_thickness_mm``/
+    ``bottom_cover_mm`` straight off ``inputs`` -- the SAME fields
+    ``mesh_bar_lengths``/``local_mesh_bar_endpoints`` already read for the
+    bottom mat -- never a second, independently-named copy of them.
+    """
+    embedment = dowel_embedment(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
+    geometry = local_dowel_bar_geometry(
+        embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
+        inputs.mesh_bar_y_dia_mm)
+    return DowelPlan(embedment=embedment, geometry=geometry)
+
+
 def build_footing_plan(inputs):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
@@ -218,5 +264,11 @@ def build_footing_plan(inputs):
             "TOP_REINFORCEMENT_BTM_ONLY or TOP_REINFORCEMENT_TOP_AND_BTM"
             % (inputs.top_reinforcement,))
 
+    dowel = None
+    if (inputs.dowel_bar_dia_mm is not None
+            and inputs.dowel_ld_multiplier is not None):
+        dowel = _build_dowel_plan(inputs)
+
     return FootingPlan(
-        inputs=inputs, bottom_mesh=bottom_mesh, top_mesh=top_mesh)
+        inputs=inputs, bottom_mesh=bottom_mesh, top_mesh=top_mesh,
+        dowel=dowel)

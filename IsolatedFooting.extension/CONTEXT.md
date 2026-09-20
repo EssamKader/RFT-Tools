@@ -3,6 +3,52 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
+## Scope, as of #202
+
+**In (added by #202):** column dowel embedment/hook sizing and placement
+-- Story 5, spec Sec 8. `rft.core.footing_dowels.a_dowel` /
+`dowel_embedment` compute `a_dowel = footing_thickness - bottom_cover -
+mesh_bar_x_dia - mesh_bar_y_dia` and the `b_dowel`/`LD` comparison exactly
+as Sec 8 states (`LD <= a_dowel + b_dowel_default` keeps the 200mm
+default; `LD > a_dowel + b_dowel_default` sets `b_dowel = LD - a_dowel`),
+reading the mesh bar diameters straight off `FootingInputs` -- the SAME
+fields #198's mesh math already reads -- never a second, independently
+hardcoded copy. `local_dowel_bar_geometry` places the bend corner exactly
+on top of the bottom mesh (same Z-datum `footing_mesh.
+local_mesh_bar_endpoints` already uses for the top of `mesh_bar_y`) and
+the vertical leg's top exactly at the footing's own top face, per Sec 8's
+"resting on top of the bottom mesh" / the embedment length being measured
+inside the footing. `rft.core.footing_plan.FootingPlan.dowel` is the one
+composing-module field both a future report and
+`rft.revit.footing_dowels.place_dowel_bar` read from -- `None` unless
+`FootingInputs.dowel_bar_dia_mm`/`dowel_ld_multiplier` are both supplied
+(opt-in, same trailing-default pattern as `top_mesh`).
+`place_dowel_bar` places ONE representative dowel, centred on the
+footing's own plan centroid, as a single bent `Rebar` (two connected
+curves: the horizontal hook leg, then the vertical leg) -- the same
+tracer-bullet-vertical-slice precedent #198 set for the mesh bars, not
+yet an array or a stirrup/tie.
+
+**Placement direction left unspecified by the spec, flagged rather than
+guessed:** Sec 8 names only the dowel's two leg LENGTHS, never which plan
+axis/direction the horizontal hook leg runs along.
+`local_dowel_bar_geometry` places it along local +X arbitrarily -- this
+is an engineering placement choice this code is proposing, not one the
+spec states, the same category of gap #201's own top-mat-elevation note
+already flagged. Confirm the intended hook direction (e.g. toward the
+column's own Primary Reinforcement direction) with Essam before this runs
+against a live host.
+
+**Combining two already-proven facts into one NOT-yet-proven live
+combination:** `place_dowel_bar` passes TWO connected curves to a single
+`Rebar.CreateFromCurves` call on a FOOTING host. Issue #197's own tracer
+bullet only tried one straight curve on a footing host; the multi-curve
+bent-bar shape is proven live only on a COLUMN host
+(`column_place_bars.py`'s roof-termination path, #173/#183). See
+`rft/revit/footing_dowels.py`'s own "SHAPE UNVERIFIED" docstring note --
+this composition should be confirmed on a live footing host before it
+ships to a tag.
+
 ## Scope, as of #201
 
 **In:** bottom mesh, straight case -- one `mesh_bar_x` bar and one
@@ -86,7 +132,15 @@ host, the same way R1/R2 needed his ruling on their own gaps.
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the
   #198 ticket and is not invented here.
-- Column dowels, dowel ties, perimeter tie (Stories 5-7 / spec Sec 8-10).
+- Dowel array/quantity (only ONE representative dowel is placed, per
+  #202's own tracer-bullet scope, same convention as #198's mesh bars),
+  dowel stirrups/ties, and the footing-perimeter tie bar (Stories 6-7 /
+  spec Sec 9-10). #202 (Story 5 / Sec 8) itself is now built -- see
+  "Scope, as of #202" above.
+- Wiring #202's dowel inputs (`dowel_bar_dia_mm`/`dowel_ld_multiplier`)
+  into the pushbutton UI or into a combined single-transaction placement
+  that also places the bottom mesh -- `IsolatedFootingRFT.pushbutton/
+  script.py` still only asks for and places the bottom mat.
 - Any modeless Review window -- inputs are asked one at a time with
   `pyrevit.forms` for now.
 - Multi-footing / batch placement (F1, spec Sec 0) -- explicitly out of
