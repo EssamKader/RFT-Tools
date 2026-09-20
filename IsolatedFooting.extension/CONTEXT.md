@@ -3,6 +3,65 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
+## Scope, as of #204
+
+**In:** `perimeter_tie` geometry and splice -- Story 7, spec Sec 10.
+`rft.core.footing_perimeter_tie.perimeter_tie_geometry` computes
+`inner_a`/`inner_b` (`a`/`b` offset inward by `cover`),
+`perimeter_tie_length = 2*(inner_a+inner_b)`, the 12m-stock splice
+decision (`perimeter_tie_splice`: one continuous bar at or under
+`PERIMETER_TIE_STOCK_LENGTH_MM`, or two bars plus one `Ls` lap over it),
+and the closed rectangle's four footing-local plan corners
+(`local_perimeter_tie_corners_mm`, centred on the footing's own plan
+centroid, no Z). `rft.core.footing_plan.FootingPlan.perimeter_tie` is the
+one composing-module field a future placement adapter reads from --
+`None` unless `FootingInputs.perimeter_tie_dia_mm` is supplied (opt-in,
+same trailing-default pattern as `dowel`/`dowel_ties`).
+
+**Not reusing `rft.core.column_ties.resolve_tie`, and this is a genuinely
+different situation from `dowel_tie` (#203), not the same blocker
+restated:** `resolve_tie` needs named bar positions to grow a bounding
+box around; `perimeter_tie` wraps the footing's own plan perimeter, which
+needs only `a`/`b`/`cover` -- already carried by `FootingInputs` since
+#198, with no missing prerequisite. See `docs/footing/reuse-audit.md`
+Sec 4 for the full verdict table.
+
+**Explicitly NOT in #204, flagged as open questions for Essam, not
+guessed past (REUSE_GUIDELINES.md Sec 3):**
+
+1. **The vertical ladder / array.** Spec Sec 10 states diameter, spacing
+   and quantity are direct user inputs, and gives "one loop every 200mm
+   vertically" only as an EXAMPLE -- unlike Sec 9's `dowel_tie`, it gives
+   no starting-offset or array-position formula (no "50mm from the
+   bottom" equivalent) for where the first/only `perimeter_tie` loop
+   sits, or how `quantity` loops are spread between a start and end.
+   `FootingInputs.perimeter_tie_spacing_mm`/`perimeter_tie_quantity` are
+   carried on the composing module for a future ticket to consume once
+   Essam states that formula; no Z-ladder is computed here.
+2. **The splice's own per-bar cut lengths.** Sec 10 says a split loop is
+   "overlapped by lap length `Ls` at the joint" (singular), which this
+   ticket reads as the perimeter treated as one long unrolled length cut
+   once (not a true closed loop's two joints) -- consistent with "no
+   restricted splice zone... may be placed anywhere". `Ls` itself is a
+   direct user input (Sec 8, reused by name in Sec 10), so it is NOT the
+   open question. What Sec 10 does not state is how the total
+   ("length + one lap") divides into the TWO bars' own individual cut
+   lengths for a BOQ/cut-list -- `perimeter_tie_splice` reports the
+   bar-count decision and the total steel length only; see
+   `rft.core.footing_perimeter_tie`'s own docstring, "The splice's own
+   open question".
+3. **Revit placement.** No `rft.revit.footing_perimeter_tie` adapter is
+   built by this ticket -- it would need item 1's Z-elevations to build
+   curves from, and `docs/footing/verification/issue-197-footing-tracer-
+   bullet.md` Sec 4 lists closed-loop shapes as still unverified against
+   a live footing host (only straight, unhooked curves were tested).
+   Once items 1 is resolved, the placement adapter should follow
+   `rft.revit.column_place_ties`'s own `norm = XYZ.BasisZ` convention for
+   a closed loop lying in a horizontal plane (perpendicular to the loop's
+   own plane) -- NOT `rft.revit.footing_dowels`'s `XYZ.BasisY`, which is
+   specific to a bent bar's vertical bend plane; a `perimeter_tie` loop is
+   horizontal, geometrically the same case column ties already are.
+
 ## Scope, as of #203
 
 **In:** the `dowel_tie` vertical placement ladder -- Story 6, spec Sec 9.

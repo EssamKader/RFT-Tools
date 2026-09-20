@@ -24,6 +24,7 @@ from collections import namedtuple
 
 from .footing_dowels import dowel_embedment, local_dowel_bar_geometry
 from .footing_dowel_ties import dowel_tie_ladder
+from .footing_perimeter_tie import perimeter_tie_geometry
 from .footing_mesh import (
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
@@ -83,6 +84,21 @@ from .footing_mesh import (
 #: resolve a ``RebarBarType``, the same reasoning ``dowel_bar_dia_mm``
 #: already carries a value #202's own ladder-equivalent code never reads
 #: either.
+#: #204 (Sec 3 Story 7, Sec 10): ``perimeter_tie_dia_mm``/
+#: ``perimeter_tie_spacing_mm``/``perimeter_tie_quantity`` are direct user
+#: inputs Sec 10 names but this ticket's own core math never reads --
+#: they are carried here for the SAME reason ``dowel_tie_dia_mm`` is
+#: carried unread by #203's ladder math: a future placement adapter needs
+#: them (diameter to resolve a ``RebarBarType``, spacing/quantity for the
+#: vertical array this ticket explicitly does NOT build -- see
+#: ``rft.core.footing_perimeter_tie``'s own docstring, "Scope this ticket
+#: does NOT cover"). ``perimeter_tie_lap_mm`` is Sec 8/10's ``Ls`` -- a
+#: direct user input, no default, consumed by ``perimeter_tie_splice``
+#: only when ``perimeter_tie_length_mm`` exceeds the 12m stock length.
+#: All four default to ``None`` (opt-in, gated on ``perimeter_tie_dia_mm``
+#: being supplied) so every existing caller that predates #204 keeps
+#: building a plan with no ``perimeter_tie`` unchanged -- same trailing-
+#: defaults pattern #200-#203 already established.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -91,7 +107,9 @@ FootingInputs = namedtuple(
      "x_offset_mm", "y_offset_mm", "ld_multiplier",
      "bottom_mat_shape_mode", "top_reinforcement", "top_mat_shape_mode",
      "dowel_bar_dia_mm", "dowel_ld_multiplier",
-     "dowel_tie_dia_mm", "dowel_tie_spacing_mm"],
+     "dowel_tie_dia_mm", "dowel_tie_spacing_mm",
+     "perimeter_tie_dia_mm", "perimeter_tie_spacing_mm",
+     "perimeter_tie_quantity", "perimeter_tie_lap_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -104,7 +122,8 @@ TOP_REINFORCEMENT_BTM_ONLY = "BTM_ONLY"
 TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
 FootingInputs.__new__.__defaults__ = (
-    None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None)
+    None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
+    None, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -142,6 +161,16 @@ DowelPlan = namedtuple("DowelPlan", ["embedment", "geometry"])
 #: not have yet (#202 places one representative dowel).
 DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm"])
 
+#: #204 (Sec 3 Story 7, Sec 10): ``geometry`` is a
+#: ``footing_perimeter_tie.PerimeterTieGeometry`` (inner dimensions,
+#: length, splice decision, footing-local plan corners -- no Z, per that
+#: module's own "Scope this ticket does NOT cover" note). ``dia_mm``/
+#: ``spacing_mm``/``quantity`` are carried straight off ``inputs`` for a
+#: future placement adapter, unread by this ticket's own math -- same
+#: reasoning ``DowelTiePlan.tie_dia_mm`` is carried unread by #203.
+PerimeterTiePlan = namedtuple(
+    "PerimeterTiePlan", ["geometry", "dia_mm", "spacing_mm", "quantity"])
+
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
 #: exists at all, not an empty/zeroed one) and a ``TopMeshPlan`` when
@@ -152,9 +181,13 @@ DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm"])
 #: ``dowel_ties`` is ``None`` when ``inputs.dowel_tie_dia_mm``/
 #: ``dowel_tie_spacing_mm`` were not supplied (#203 is opt-in, same
 #: trailing-default pattern) and a ``DowelTiePlan`` otherwise.
+#: ``perimeter_tie`` is ``None`` when ``inputs.perimeter_tie_dia_mm`` was
+#: not supplied (#204 is opt-in, same trailing-default pattern) and a
+#: ``PerimeterTiePlan`` otherwise.
 FootingPlan = namedtuple(
     "FootingPlan",
-    ["inputs", "bottom_mesh", "top_mesh", "dowel", "dowel_ties"])
+    ["inputs", "bottom_mesh", "top_mesh", "dowel", "dowel_ties",
+     "perimeter_tie"])
 
 
 def _bottom_mat_endpoints(lengths, inputs):
@@ -268,6 +301,27 @@ def _build_dowel_tie_plan(inputs):
     return DowelTiePlan(ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm)
 
 
+def _build_perimeter_tie_plan(inputs):
+    """#204 (Sec 3 Story 7, Sec 10): the one place
+    ``footing_perimeter_tie.perimeter_tie_geometry`` is called from, so a
+    future placement adapter reads the SAME ``PerimeterTiePlan`` rather
+    than calling ``footing_perimeter_tie`` independently (Sec 4's "one
+    composing module" rule, already applied above to the mesh mats, the
+    dowel bar and the dowel ties).
+
+    Reads ``a_mm``/``b_mm``/``cover_mm`` straight off ``inputs`` -- the
+    SAME fields ``mesh_bar_lengths`` already reads for the bottom mat,
+    never a second, independently-named copy of them.
+    """
+    geometry = perimeter_tie_geometry(
+        inputs.a_mm, inputs.b_mm, inputs.cover_mm,
+        inputs.perimeter_tie_lap_mm)
+    return PerimeterTiePlan(
+        geometry=geometry, dia_mm=inputs.perimeter_tie_dia_mm,
+        spacing_mm=inputs.perimeter_tie_spacing_mm,
+        quantity=inputs.perimeter_tie_quantity)
+
+
 def build_footing_plan(inputs):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
@@ -312,6 +366,10 @@ def build_footing_plan(inputs):
             and inputs.dowel_tie_spacing_mm is not None):
         dowel_ties = _build_dowel_tie_plan(inputs)
 
+    perimeter_tie = None
+    if inputs.perimeter_tie_dia_mm is not None:
+        perimeter_tie = _build_perimeter_tie_plan(inputs)
+
     return FootingPlan(
         inputs=inputs, bottom_mesh=bottom_mesh, top_mesh=top_mesh,
-        dowel=dowel, dowel_ties=dowel_ties)
+        dowel=dowel, dowel_ties=dowel_ties, perimeter_tie=perimeter_tie)

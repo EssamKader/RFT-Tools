@@ -90,9 +90,36 @@ sys.modules gained: rft.core.column_layout, rft.core.column_ties,
 
 ---
 
-## 4. `perimeter_tie` (Story 7, spec §10) — reserved for #204
+## 4. `perimeter_tie` (Story 7, spec §10) — audited by #204
 
 Spec §1 states `perimeter_tie` reuses the same closed-loop geometry
-primitive as `dowel_tie`, not a new shape module. Not audited here — #204
-extends this file's §1 table when it starts, rather than re-deriving the
-`column_ties` verdicts from scratch.
+primitive as `dowel_tie` "conceptually" (a plain closed rectangle) — this
+audit finds that reuse is about the SHAPE, not about calling
+`column_ties.resolve_tie`'s own code path, and that unlike `dowel_tie`
+this ticket is **not** blocked the same way #203 was.
+
+| Module / member | Status | Reason |
+|---|---|---|
+| `rft.core.column_ties.resolve_tie` / `TieSubset` | ❌ Not reused (different situation from `dowel_tie`) | `resolve_tie` takes a `ColumnLayout`/`layout.bars` — named bar positions — and grows a bounding box around ≥2 of them. `perimeter_tie` wraps the footing's OWN plan perimeter (offset inward by `cover` from `a`/`b`), not a bar array — there are no bar positions to name. Calling `resolve_tie` here would mean inventing two fake bar positions purely to hand it a box it would then re-derive, which is less direct (and less honest) than building the same four-corner rectangle straight from `inner_a`/`inner_b` — see `rft.core.footing_perimeter_tie.local_perimeter_tie_corners_mm`, new footing-specific geometry math, hand-tested in `tests/test_footing_perimeter_tie.py` per this ticket's own "Test volume rule" (not duplicating `tests/test_column_ties.py`, since this is not that function). |
+| `rft.core.column_tie_levels` (vertical ladder, as `dowel_tie` reuses it) | ⚠️ Not reused — genuine gap, flagged, not guessed | Spec §10 gives no starting-offset/array-position formula for `perimeter_tie`'s vertical ladder analogous to §9's "50mm from the bottom" / "50mm below T.O.F." for `dowel_tie` — only that spacing and quantity are user inputs, with "every 200mm vertically" given as an EXAMPLE, not a rule. Building a ladder here would mean inventing where the first (or only) loop sits, which REUSE_GUIDELINES.md §3 forbids. See `IsolatedFooting.extension/CONTEXT.md`'s "Scope, as of #204" note — flagged to Essam as an open question, not filled in by analogy to `dowel_tie`. |
+| `rft.revit.column_place_ties.place_ties` | ❌ Not reused (this ticket) | Same reason as `resolve_tie` above (no `ColumnLayout` to place against), compounded by the missing vertical-ladder formula immediately above. No Revit placement adapter is built by #204 — see CONTEXT.md. |
+
+### `perimeter_tie` is NOT blocked the way `dowel_tie` was — and the geometry/splice math IS built now
+
+`docs/footing/reuse-audit.md` §1's two `dowel_tie` blockers (a dowel-bar
+array; a column cross-section dimension the spec's naming table never
+gives a symbol for) do not apply here: `perimeter_tie`'s rectangle needs
+only `a`/`b`/`cover`, all three already carried by `FootingInputs` since
+#198. This ticket therefore builds `rft.core.footing_perimeter_tie.
+perimeter_tie_geometry` — `inner_a`/`inner_b`, `perimeter_tie_length`, the
+12m-stock splice decision, and the closed rectangle's four footing-local
+plan corners — and wires it into `rft.core.footing_plan.FootingPlan.
+perimeter_tie` (opt-in, gated on `FootingInputs.perimeter_tie_dia_mm`).
+
+What #204 does defer, for the specific reasons in the table above: the
+vertical ladder (no spec formula) and the Revit placement adapter (which
+would need that ladder's Z-elevations to build curves from — and per
+`docs/footing/verification/issue-197-footing-tracer-bullet.md` §4, a
+closed-loop shape's host acceptance is itself still unverified against a
+live footing host). Both are recorded as open items, not silently
+skipped.
