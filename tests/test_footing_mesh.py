@@ -25,6 +25,7 @@ from rft.core.footing_mesh import (
     bar_hook_plan,
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
+    local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
 )
@@ -151,6 +152,30 @@ def test_mesh_bar_y_sits_exactly_one_mesh_bar_x_diameter_above_mesh_bar_x():
     z_y = bar_y.start.z_mm
     assert z_x == pytest.approx(50.0 + 16.0 / 2.0)
     assert z_y == pytest.approx(z_x + 16.0 / 2.0 + 12.0 / 2.0)
+
+
+def test_local_top_mesh_bar_endpoints_mirrors_the_bottom_mat_from_the_top_face():
+    """Found missing in review (PR #214): a naive reuse of
+    local_mesh_bar_endpoints for the top mat placed it at the bottom
+    mat's own elevation. This is the top-mat equivalent, measured from
+    the TOP face downward instead of from the bottom face upward.
+    """
+    lengths = mesh_bar_lengths(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0)
+    bar_x, bar_y = local_top_mesh_bar_endpoints(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0)
+
+    z_x = bar_x.start.z_mm
+    z_y = bar_y.start.z_mm
+    assert z_x == pytest.approx(450.0 - 50.0 - 16.0 / 2.0)
+    assert z_y == pytest.approx(z_x - 16.0 / 2.0 - 12.0 / 2.0)
+    # Plan-view (x/y) geometry is identical to the bottom mat -- only Z
+    # differs. Same lengths, same centring.
+    assert bar_x.start.x_mm == pytest.approx(-lengths.mesh_bar_x_mm / 2.0)
+    assert bar_y.start.y_mm == pytest.approx(-lengths.mesh_bar_y_mm / 2.0)
 
 
 # ---------------------------------------------------------------------

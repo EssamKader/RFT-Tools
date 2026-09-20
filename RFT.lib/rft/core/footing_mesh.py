@@ -158,6 +158,41 @@ def local_mesh_bar_endpoints(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
     return bar_x, bar_y
 
 
+def local_top_mesh_bar_endpoints(lengths, top_cover_mm, footing_thickness_mm,
+                                  mesh_bar_x_dia_mm, mesh_bar_y_dia_mm):
+    """The top mat's two straight bars' centreline endpoints, footing-local
+    mm -- found missing in review (PR #214): #201 originally reused
+    ``local_mesh_bar_endpoints`` unchanged for the top mat, which measures
+    Z from ``bottom_cover_mm`` regardless of which mat is being built, so
+    the "top mat" landed at the exact same elevation as the bottom mat
+    instead of near the top face.
+
+    **Engineering assumption, not yet confirmed by Essam** (spec Sec 7
+    names a TOP+BTM toggle but never gives an explicit top-mat vertical
+    formula the way Sec 4's N/N2 do for the bottom mat): this mirrors
+    ``local_mesh_bar_endpoints`` exactly, measured from the TOP face
+    downward instead of from the bottom face upward -- ``mesh_bar_x``
+    nearest the top face (by the same "mesh_bar_y stacked ... unconditional"
+    pairing rule, just mirrored to the top mat's own reference face),
+    ``mesh_bar_y`` one ``mesh_bar_x`` diameter further into the footing.
+    Flag this to Essam before it ships to a live host -- it is a detailing
+    rule this code is proposing, not one the spec states outright.
+    """
+    half_x = lengths.mesh_bar_x_mm / 2.0
+    half_y = lengths.mesh_bar_y_mm / 2.0
+    z_x_mm = footing_thickness_mm - top_cover_mm - mesh_bar_x_dia_mm / 2.0
+    z_y_mm = (footing_thickness_mm - top_cover_mm
+              - mesh_bar_x_dia_mm - mesh_bar_y_dia_mm / 2.0)
+
+    bar_x = BarEndpoints(
+        start=LocalPoint(-half_x, 0.0, z_x_mm),
+        end=LocalPoint(half_x, 0.0, z_x_mm))
+    bar_y = BarEndpoints(
+        start=LocalPoint(0.0, -half_y, z_y_mm),
+        end=LocalPoint(0.0, half_y, z_y_mm))
+    return bar_x, bar_y
+
+
 def bar_end_hook_decision(offset_mm, db_mm, ld_multiplier):
     """One bar end's hook/development-length decision.
 

@@ -3,7 +3,7 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
-## Scope, as of #200
+## Scope, as of #201
 
 **In:** bottom mesh, straight case -- one `mesh_bar_x` bar and one
 `mesh_bar_y` bar, centred on the footing's plan centroid, placed hosted
@@ -27,8 +27,44 @@ in" below). `bar_hook_plan_for_mat`'s `bar_index` parameter is generic
 `mesh_bar_y` today -- a visible alternating pattern needs the bar-array
 ticket below first.
 
+As of #201, `FootingInputs.top_reinforcement` (`footing_plan.
+TOP_REINFORCEMENT_BTM_ONLY`, the default, or `footing_plan.
+TOP_REINFORCEMENT_TOP_AND_BTM`) is the direct user toggle for Story 4
+(spec Sec 7) -- never inferred from `footing_thickness_mm`. When TOP +
+BTM is chosen, `build_footing_plan` returns a `FootingPlan.top_mesh`
+(`footing_plan.TopMeshPlan`, field-for-field identical to
+`BottomMeshPlan`) built by the exact same `mesh_bar_lengths` /
+`primary_reinforcement_direction` / `bar_hook_plan_for_mat` sequence as
+the bottom mat (`footing_plan._build_mesh_mat_plan`, the one shared
+per-mat helper both mats call), parametrized by the top mat's own
+`FootingInputs.top_mat_shape_mode` -- independent of
+`bottom_mat_shape_mode`, per Sec 7's "set separately, never coupled."
+`top_mesh` is `None` (not an empty/zeroed plan) when BTM-only is chosen.
+This is the composing-module decision only; the pushbutton UI and the
+Revit placement adapter still only ask for and place the bottom mat (see
+"Not yet in" below).
+
+**Found and fixed in review (PR #214):** the endpoints step is NOT the
+same function for both mats. The first version of this ticket reused
+`local_mesh_bar_endpoints` (measured from `bottom_cover_mm` upward)
+unchanged for the top mat, which placed the "top mat" at the exact same
+elevation as the bottom mat. Fixed with a new
+`footing_mesh.local_top_mesh_bar_endpoints`, measured from `top_cover_mm`
+/ `footing_thickness_mm` downward instead. **This mirrored formula is an
+engineering assumption proposed in code, not a formula the spec states
+outright** (spec Sec 7 names the TOP+BTM toggle but gives no explicit
+top-mat vertical formula the way Sec 4's N/N2 do for the bottom mat) --
+flag it to Essam for confirmation before it is ever run against a live
+host, the same way R1/R2 needed his ruling on their own gaps.
+
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 
+- Wiring #201's `top_mesh` into the pushbutton UI (asking
+  `top_reinforcement`/`top_mat_shape_mode` via `pyrevit.forms`) or into a
+  Revit placement adapter that places the top mat's bars -- same
+  core-before-UI/adapter precedent #199/#200 already set. `rft.revit.
+  footing_mesh.place_straight_bottom_mesh` only knows how to place the
+  bottom mat's two representative bars today.
 - Wiring #199's hook decision into `rft.revit.footing_mesh.place_straight_
   bottom_mesh` -- placing an actual Revit hook (`RebarHookType`, hook
   orientation) on a bar end. Issue #197's own tracer-bullet write-up lists
@@ -46,9 +82,6 @@ ticket below first.
   `RFT.lib/rft/core/footing_mesh.py` as the file to extend, matching
   #199's precedent of shipping the core decision before the UI/adapter
   wiring.
-- Top mesh (Story 4 / spec Sec 7) and its own `top_mat_shape_mode` --
-  Story 3 (Sec 6) is written to apply independently to whichever mats
-  exist, but there is only a bottom mat to apply it to today.
 - Full mesh bar count/spacing/quantity for either direction -- this
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the
