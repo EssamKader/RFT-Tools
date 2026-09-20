@@ -188,9 +188,11 @@ def test_ld_is_multiplier_times_db_not_swapped_or_added():
 
 
 def test_ld_equal_to_offset_raises_rather_than_silently_pick_a_side():
-    """Spec Ref: Sec 5 only defines '>' in each direction -- REUSE_
-    GUIDELINES.md Sec 3 ("Explicit Refusals") requires a raise on the
-    boundary, not a guessed rounding.
+    """Spec Ref: Sec 5 only defines '>' in each direction. Raised to the
+    project owner rather than guessed; docs/footing/spec-amendments.md
+    R2 (revised) records the ruling -- the automatic comparison refuses,
+    and the engineer gets an explicit U-shape/L-shape-alternating choice
+    for that mat via #200's bar_hook_plan_for_mat instead.
     """
     with pytest.raises(HookDevelopmentLengthTieError):
         bar_end_hook_decision(offset_mm=160.0, db_mm=16.0, ld_multiplier=10.0)
@@ -276,14 +278,15 @@ def test_mat_shape_u_hooks_both_ends_unconditionally():
     assert plan.shape == SHAPE_U
 
 
-def test_mat_shape_u_override_never_raises_the_199_tie_error():
+def test_mat_shape_u_override_wins_even_where_bar_end_hook_decision_would_say_no():
     """Sec 6: the override makes Story 2's comparison "unnecessary", not
-    merely pre-empted -- so even the exact LD == offset tie that
-    bar_end_hook_decision raises on (#199) must NOT raise here.
+    merely pre-empted -- an offset where LD < offset (bar_end_hook_
+    decision alone would leave this end unhooked) must still come out
+    hooked once MAT_SHAPE_U is set.
     """
     plan = bar_hook_plan_for_mat(
         bar_index=0, mat_shape_mode=MAT_SHAPE_U,
-        start_offset_mm=160.0, end_offset_mm=160.0, db_mm=16.0,
+        start_offset_mm=300.0, end_offset_mm=300.0, db_mm=16.0,
         ld_multiplier=10.0)
     assert plan.start.needs_hook is True
     assert plan.end.needs_hook is True
