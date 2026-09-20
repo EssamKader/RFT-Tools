@@ -20,9 +20,11 @@ from rft.core.footing_mesh import (
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
 )
+from rft.core.footing_dowels import dowel_embedment, local_dowel_bar_geometry
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
+    DowelPlan,
     FootingInputs,
     TopMeshPlan,
     build_footing_plan,
@@ -238,6 +240,36 @@ def test_top_mat_shape_mode_is_independent_of_the_bottom_mats():
     plan = build_footing_plan(inputs)
     assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_U
     assert plan.top_mesh.bar_x_hooks.shape == SHAPE_L
+
+
+def test_the_plan_defaults_dowel_fields_to_none_with_no_dowel_plan():
+    """#202: predates-#202 callers (this file's own ``_inputs`` helper,
+    and script.py) keep building a dowel-free plan unchanged."""
+    inputs = _inputs()
+    assert inputs.dowel_bar_dia_mm is None
+    assert inputs.dowel_ld_multiplier is None
+    plan = build_footing_plan(inputs)
+    assert plan.dowel is None
+
+
+def test_supplying_dowel_inputs_builds_a_dowel_plan_matching_the_core_call():
+    """The composing module must be the ONE place ``footing_dowels.
+    dowel_embedment``/``local_dowel_bar_geometry`` are called from -- so
+    its output must match calling them directly with the same inputs."""
+    inputs = _inputs(dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0)
+    plan = build_footing_plan(inputs)
+
+    expected_embedment = dowel_embedment(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
+    expected_geometry = local_dowel_bar_geometry(
+        expected_embedment, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+
+    assert isinstance(plan.dowel, DowelPlan)
+    assert plan.dowel.embedment == expected_embedment
+    assert plan.dowel.geometry == expected_geometry
 
 
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():
