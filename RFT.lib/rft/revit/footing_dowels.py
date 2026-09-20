@@ -41,6 +41,21 @@ against a live footing host. Flag before this runs on a live host, the
 same way #197 Sec 4 flags hook types and closed-loop shapes as its own
 "still unverified" items.
 
+**Found and fixed in review:** the ``norm`` argument for a bent bar is NOT
+the same value as the straight mesh bars' ``XYZ.BasisZ``.
+``column_place_bars.py``'s own #183 measurement (see that module's "SHAPE
+MEASURED" section) established that ``normal`` must be PERPENDICULAR to
+the bend's own plane for the bend to actually be carried by the created
+``Rebar`` -- that is the whole reason #183 called it out as one of
+``normal``'s two roles. This dowel's bend plane is the local X-Z plane
+(the hook leg runs along local X, the vertical leg along local Z, both at
+constant Y=0), so the perpendicular axis is Y, not Z -- ``XYZ.BasisZ``
+would lie IN the bend plane instead of perpendicular to it. Fixed to
+``XYZ.BasisY``. Still unverified against a live host (this ticket's own
+scope, per the SHAPE UNVERIFIED note above), but now consistent with the
+one live measurement this repo has for a bent bar's ``normal``, rather
+than silently reusing the straight-bar value.
+
 Per this repo's hard rule, this module does not open, commit or roll back
 a transaction -- the caller owns the one transaction for the whole footing
 (so a failure here leaves the model exactly as it was).
@@ -98,7 +113,11 @@ def place_dowel_bar(document, footing, dowel_plan, bar_type):
         None,  # startHook -- shape is built from curves, not a hook type
         None,  # endHook
         footing,
-        XYZ.BasisZ,  # norm -- confirmed by issue #197's own tracer bullet
+        # norm -- perpendicular to the bend's own local X-Z plane, per
+        # column_place_bars.py's #183 measurement (see this module's own
+        # "Found and fixed in review" note above), NOT #197's XYZ.BasisZ,
+        # which was only ever measured for a single straight curve.
+        XYZ.BasisY,
         curves,
         RebarHookOrientation.Left,
         RebarHookOrientation.Left,

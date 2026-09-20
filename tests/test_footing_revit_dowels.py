@@ -93,11 +93,16 @@ def test_the_dowel_bar_carries_two_connected_curves_not_a_hook_type(
     assert hook_end.Z == pytest.approx(vertical_start.Z)
 
 
-def test_the_norm_argument_is_XYZ_basis_z(footing, plan):
+def test_the_norm_argument_is_perpendicular_to_the_bend_plane(footing, plan):
+    """The dowel's bend plane is local X-Z (hook leg along X, vertical leg
+    along Z, both at Y=0). Per column_place_bars.py's own #183 measurement,
+    a bent bar's `normal` must be PERPENDICULAR to its bend plane, so this
+    is BasisY -- NOT the straight mesh bars' BasisZ, which lies IN this
+    bend plane instead of perpendicular to it."""
     bar = place_dowel_bar(
         object(), footing, plan.dowel, _FakeBarType("25M"))
     norm = bar.args[6]
-    assert (norm.X, norm.Y, norm.Z) == (0.0, 0.0, 1.0)
+    assert (norm.X, norm.Y, norm.Z) == (0.0, 1.0, 0.0)
 
 
 def test_the_vertical_leg_top_reaches_the_footing_top_face(footing, plan):
