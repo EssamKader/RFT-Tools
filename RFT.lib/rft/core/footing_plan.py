@@ -119,8 +119,8 @@ def _bottom_mat_endpoints(lengths, inputs):
 def _top_mat_endpoints(lengths, inputs):
     """Top mat Z-elevation, measured from ``top_cover_mm`` / footing
     thickness downward -- see ``local_top_mesh_bar_endpoints``'s own
-    docstring for why this differs from the bottom mat and the engineering
-    assumption it carries, unconfirmed as of #201's review fix."""
+    docstring (R3, docs/footing/spec-amendments.md) for why this differs
+    from the bottom mat; confirmed correct by Essam."""
     return local_top_mesh_bar_endpoints(
         lengths, inputs.top_cover_mm, inputs.footing_thickness_mm,
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)

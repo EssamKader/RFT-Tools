@@ -67,3 +67,34 @@ already exists and already bypasses this comparison entirely, so nothing
 new was built to satisfy the revised ruling — only the automatic
 (`mat_shape_mode=None`) path's refusal message was updated to point the
 engineer at the override that already answers the question.
+
+---
+
+## R3 — Top mat vertical convention: mirrors the bottom mat from the top face
+
+**Spec Ref:** `specs/isolated-footing.md` §7 (Story 4). The spec names the
+BTM-only / TOP+BTM toggle but gives no explicit top-mat vertical-position
+formula, unlike §4's `N`/`N2` for the bottom mat's own two-layer stack.
+
+**Found by:** ticket #201's Phase 8 review (PR #214) — the first version
+of that ticket reused `local_mesh_bar_endpoints` (measured from
+`bottom_cover_mm` upward) unchanged for the top mat, which placed the
+"top mat" at the exact same elevation as the bottom mat. Fixed with a new
+`footing_mesh.local_top_mesh_bar_endpoints`, proposed as a mirrored
+convention rather than assumed silently, and raised to the project owner
+for confirmation before it could be treated as decided.
+
+**Ruling (Essam, 2026-09-20):** confirmed correct — "yes this is right."
+The top mat's first bar layer sits just below the top cover; its second
+layer is stacked one bar-diameter further down into the footing,
+mirroring exactly how the bottom mat's two layers stack upward from the
+bottom cover. `footing_mesh.local_top_mesh_bar_endpoints` implements this
+as confirmed, not merely proposed, as of this ruling.
+
+**Why this doesn't need to touch anything else:** the mesh-length,
+direction and hook-decision formulas (`mesh_bar_lengths`,
+`primary_reinforcement_direction`, `bar_hook_plan_for_mat`) are already
+identical for both mats per spec §4-§6, which cite no bottom/top
+distinction — only the Z-elevation step (`_bottom_mat_endpoints` /
+`_top_mat_endpoints` in `footing_plan.py`) ever needed to differ, and it
+already does.
