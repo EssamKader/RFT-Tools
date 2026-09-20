@@ -44,18 +44,17 @@ This is the composing-module decision only; the pushbutton UI and the
 Revit placement adapter still only ask for and place the bottom mat (see
 "Not yet in" below).
 
-**Found and fixed in review (PR #214):** the endpoints step is NOT the
-same function for both mats. The first version of this ticket reused
-`local_mesh_bar_endpoints` (measured from `bottom_cover_mm` upward)
-unchanged for the top mat, which placed the "top mat" at the exact same
-elevation as the bottom mat. Fixed with a new
+**Found and fixed in review (PR #214), confirmed as R3:** the endpoints
+step is NOT the same function for both mats. The first version of this
+ticket reused `local_mesh_bar_endpoints` (measured from `bottom_cover_mm`
+upward) unchanged for the top mat, which placed the "top mat" at the
+exact same elevation as the bottom mat. Fixed with a new
 `footing_mesh.local_top_mesh_bar_endpoints`, measured from `top_cover_mm`
-/ `footing_thickness_mm` downward instead. **This mirrored formula is an
-engineering assumption proposed in code, not a formula the spec states
-outright** (spec Sec 7 names the TOP+BTM toggle but gives no explicit
-top-mat vertical formula the way Sec 4's N/N2 do for the bottom mat) --
-flag it to Essam for confirmation before it is ever run against a live
-host, the same way R1/R2 needed his ruling on their own gaps.
+/ `footing_thickness_mm` downward instead. This mirrored convention (spec
+Sec 7 names the TOP+BTM toggle but gives no explicit top-mat vertical
+formula the way Sec 4's N/N2 do for the bottom mat) was proposed in code
+and then confirmed correct by Essam — recorded as **R3** in
+`docs/footing/spec-amendments.md`, same discipline as R1/R2.
 
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 

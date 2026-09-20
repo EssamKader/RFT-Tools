@@ -167,16 +167,14 @@ def local_top_mesh_bar_endpoints(lengths, top_cover_mm, footing_thickness_mm,
     the "top mat" landed at the exact same elevation as the bottom mat
     instead of near the top face.
 
-    **Engineering assumption, not yet confirmed by Essam** (spec Sec 7
-    names a TOP+BTM toggle but never gives an explicit top-mat vertical
-    formula the way Sec 4's N/N2 do for the bottom mat): this mirrors
+    ``docs/footing/spec-amendments.md`` R3: spec Sec 7 names a TOP+BTM
+    toggle but never gives an explicit top-mat vertical formula the way
+    Sec 4's N/N2 do for the bottom mat -- this mirrors
     ``local_mesh_bar_endpoints`` exactly, measured from the TOP face
-    downward instead of from the bottom face upward -- ``mesh_bar_x``
-    nearest the top face (by the same "mesh_bar_y stacked ... unconditional"
-    pairing rule, just mirrored to the top mat's own reference face),
-    ``mesh_bar_y`` one ``mesh_bar_x`` diameter further into the footing.
-    Flag this to Essam before it ships to a live host -- it is a detailing
-    rule this code is proposing, not one the spec states outright.
+    downward instead of from the bottom face upward (``mesh_bar_x``
+    nearest the top face, ``mesh_bar_y`` one ``mesh_bar_x`` diameter
+    further into the footing), and Essam confirmed this convention is
+    correct ("yes this is right") before it shipped, not assumed silently.
     """
     half_x = lengths.mesh_bar_x_mm / 2.0
     half_y = lengths.mesh_bar_y_mm / 2.0
