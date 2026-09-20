@@ -3,6 +3,48 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
+## Scope, as of #203
+
+**In:** the `dowel_tie` vertical placement ladder -- Story 6, spec Sec 9.
+`rft.core.footing_dowel_ties.dowel_tie_run_mm` computes the fixed
+starter/end datum (`START_OFFSET_FROM_FOOTING_BOTTOM_MM = 50.0` from the
+footing's own bottom face, `END_OFFSET_BELOW_TOF_MM = 50.0` below Top of
+Footing -- its own constants, deliberately NOT shared with the column
+tool's identically-valued `column_layout.EDGE_OFFSET_MM`, per
+`docs/column/reuse-audit.md` Sec 1's "two rules that coincide" ruling).
+`dowel_tie_ladder` fills the run between them at the engineer's own tie
+spacing (no default, per Sec 9) by calling `rft.core.column_tie_levels.
+tie_levels` directly -- `clear_height_mm=footing_thickness_mm`,
+`first_tie_offset_mm=START_OFFSET_FROM_FOOTING_BOTTOM_MM`, and
+`l0_mm=confinement_spacing_mm=middle_zone_spacing_mm=tie_spacing_mm` so
+the column's own confinement-zone model (which the footing spec has no
+equivalent of) degenerates to one continuous run at the user's spacing.
+This only works because Sec 9 states the SAME 50mm value at both ends;
+`dowel_tie_ladder` raises `NotImplementedError` rather than silently
+mis-placing the end tie if the two constants are ever changed to differ.
+`rft.core.footing_plan.FootingPlan.dowel_ties` is the one composing-module
+field a future placement adapter reads from -- `None` unless
+`FootingInputs.dowel_tie_dia_mm`/`dowel_tie_spacing_mm` are both supplied
+(opt-in, same trailing-default pattern as `dowel`/`top_mesh`).
+
+**Explicitly NOT in #203, per `docs/footing/reuse-audit.md` Sec 1
+("Blocked, not guessed"):** the `dowel_tie`'s own closed-loop SHAPE and its
+Revit placement. `rft.core.column_ties.resolve_tie` needs at least two
+named dowel-bar positions to build a rectangle from, and #202 places
+exactly ONE representative dowel bar -- there is no bar array yet to wrap
+a tie around. A real tie rectangle also needs the column's own
+cross-section width/depth in the b-direction, which
+`specs/isolated-footing.md` Sec 2/3's naming table never gives a symbol
+for and `FootingInputs` does not carry today. Building either now would
+mean guessing an array and a dimension the spec doesn't supply --
+REUSE_GUIDELINES.md Sec 3's "Explicit Refusals" rule, applied here as a
+documented scope boundary rather than a raised exception, since the
+missing prerequisites are architectural (no data to guess with) rather
+than a single ambiguous input value. See `docs/footing/reuse-audit.md`
+Sec 1 for the full reasoning and the exact reuse calls (`resolve_tie`,
+`rft.revit.column_place_ties.place_ties`) the follow-on ticket should make
+once a dowel-bar array and a column cross-section field exist.
+
 ## Scope, as of #202
 
 **In (added by #202):** column dowel embedment/hook sizing and placement
@@ -132,13 +174,19 @@ and then confirmed correct by Essam — recorded as **R3** in
   placement mechanics; array/spacing is not named by any formula in the
   #198 ticket and is not invented here.
 - Dowel array/quantity (only ONE representative dowel is placed, per
-  #202's own tracer-bullet scope, same convention as #198's mesh bars),
-  dowel stirrups/ties, and the footing-perimeter tie bar (Stories 6-7 /
-  spec Sec 9-10). #202 (Story 5 / Sec 8) itself is now built -- see
-  "Scope, as of #202" above.
-- Wiring #202's dowel inputs (`dowel_bar_dia_mm`/`dowel_ld_multiplier`)
-  into the pushbutton UI or into a combined single-transaction placement
-  that also places the bottom mesh -- `IsolatedFootingRFT.pushbutton/
+  #202's own tracer-bullet scope, same convention as #198's mesh bars)
+  and the footing-perimeter tie bar (Story 7 / spec Sec 10). #202
+  (Story 5 / Sec 8) and #203's vertical `dowel_tie` ladder (Story 6 /
+  Sec 9) are now built -- see "Scope, as of #202"/"Scope, as of #203"
+  above.
+- `dowel_tie`'s own closed-loop shape and Revit placement (Story 6 / Sec
+  9, the rest of what #203 did not build) -- blocked on a dowel-bar array
+  and a column cross-section field that don't exist yet; see "Scope, as
+  of #203" above and `docs/footing/reuse-audit.md` Sec 1.
+- Wiring #202's dowel inputs (`dowel_bar_dia_mm`/`dowel_ld_multiplier`) or
+  #203's dowel-tie inputs (`dowel_tie_dia_mm`/`dowel_tie_spacing_mm`) into
+  the pushbutton UI or into a combined single-transaction placement that
+  also places the bottom mesh -- `IsolatedFootingRFT.pushbutton/
   script.py` still only asks for and places the bottom mat.
 - Any modeless Review window -- inputs are asked one at a time with
   `pyrevit.forms` for now.
@@ -190,11 +238,14 @@ the engineer gets the SAME explicit U-shape/L-shape-alternating choice
 - `rft.revit.bar_types.bar_type_options` / `bar_type_diameter_mm` -- the
   already-verified `RebarBarType` enumeration and diameter read-back.
   Reused as-is; nothing footing-specific was added to that module.
-- `dowel_tie` (spec Sec 9) and `perimeter_tie` (spec Sec 10) will reuse
-  ColumnRFT's tie/stirrup geometry (`RFT.lib/rft/core/column_ties.py` +
-  `column_tie_levels.py`, `RFT.lib/rft/revit/column_place_ties.py`) --
-  spec Sec 1's decided reuse, not exercised by #198. See
-  `docs/footing/reuse-audit.md` once #203 creates it.
+- `dowel_tie` (spec Sec 9) reuses `column_tie_levels.tie_levels` for its
+  vertical ladder, exercised as of #203 -- see `docs/footing/
+  reuse-audit.md`. Its own closed-loop shape (`column_ties.resolve_tie`)
+  and `column_place_ties.py`'s placement pattern remain reuse targets not
+  yet exercised, blocked on a dowel-bar array and a column cross-section
+  field that don't exist yet (see "Scope, as of #203" above). `perimeter_
+  tie` (spec Sec 10) is unstarted -- #204's own ticket, per spec Sec 1's
+  decided reuse.
 
 ## Verification status
 
