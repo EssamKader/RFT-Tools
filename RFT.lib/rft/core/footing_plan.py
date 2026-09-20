@@ -25,6 +25,7 @@ from collections import namedtuple
 from .footing_mesh import (
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
+    local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
 )
@@ -107,11 +108,30 @@ TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 FootingPlan = namedtuple("FootingPlan", ["inputs", "bottom_mesh", "top_mesh"])
 
 
-def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode):
+def _bottom_mat_endpoints(lengths, inputs):
+    """Bottom mat Z-elevation, measured from ``bottom_cover_mm`` upward --
+    unchanged since #198."""
+    return local_mesh_bar_endpoints(
+        lengths, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
+        inputs.mesh_bar_y_dia_mm)
+
+
+def _top_mat_endpoints(lengths, inputs):
+    """Top mat Z-elevation, measured from ``top_cover_mm`` / footing
+    thickness downward -- see ``local_top_mesh_bar_endpoints``'s own
+    docstring for why this differs from the bottom mat and the engineering
+    assumption it carries, unconfirmed as of #201's review fix."""
+    return local_top_mesh_bar_endpoints(
+        lengths, inputs.top_cover_mm, inputs.footing_thickness_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+
+
+def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
     """The one shared per-mat call sequence both the bottom and (#201) top
     mat go through: ``mesh_bar_lengths``, ``primary_reinforcement_
-    direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``,
-    parametrized only by which mat's ``mat_shape_mode`` to honour.
+    direction``, an endpoints function and ``bar_hook_plan_for_mat``,
+    parametrized by which mat's ``mat_shape_mode`` to honour and which
+    ``endpoints_fn`` computes that mat's own Z-elevation.
 
     Spec Ref: Sec 4 (one composing module) and the #201 ticket body itself
     ("the top mat reuses the SAME mesh-length formulas ... and the SAME
@@ -121,6 +141,14 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode):
     top call the identical sequence instead of it being written out twice
     and silently diverging (the beam tool's ``ZONE_LAYOUT_FLAGS`` bug this
     rule exists to avoid repeating).
+
+    **Found in review (PR #214):** ``endpoints_fn`` exists because the
+    bottom and top mats do NOT share the same Z-elevation formula --
+    ``local_mesh_bar_endpoints`` measures from ``bottom_cover_mm``, which
+    is only correct for the bottom mat. The lengths/direction/hook-plan
+    calls above ARE genuinely identical for both mats (per spec Sec 4-6
+    formulas, which cite no bottom/top distinction), so only the
+    endpoints step is parametrized, not the whole sequence.
     """
     lengths = mesh_bar_lengths(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
@@ -128,9 +156,7 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode):
         inputs.top_cover_mm, inputs.mesh_bar_x_dia_mm)
     direction = primary_reinforcement_direction(
         inputs.x_offset_mm, inputs.y_offset_mm)
-    bar_x_endpoints, bar_y_endpoints = local_mesh_bar_endpoints(
-        lengths, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
-        inputs.mesh_bar_y_dia_mm)
+    bar_x_endpoints, bar_y_endpoints = endpoints_fn(lengths, inputs)
     # Spec Ref: Sec 2/3 -- a = 2*X + Cw is symmetric, so both ends of
     # mesh_bar_x share the same X offset (and both ends of mesh_bar_y the
     # same Y offset); bar_hook_plan_for_mat itself takes independent
@@ -177,13 +203,15 @@ def build_footing_plan(inputs):
     per Sec 7's "set separately, never coupled").
     """
     bottom_mesh = _build_mesh_mat_plan(
-        BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode)
+        BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode,
+        _bottom_mat_endpoints)
 
     if inputs.top_reinforcement == TOP_REINFORCEMENT_BTM_ONLY:
         top_mesh = None
     elif inputs.top_reinforcement == TOP_REINFORCEMENT_TOP_AND_BTM:
         top_mesh = _build_mesh_mat_plan(
-            TopMeshPlan, inputs, inputs.top_mat_shape_mode)
+            TopMeshPlan, inputs, inputs.top_mat_shape_mode,
+            _top_mat_endpoints)
     else:
         raise ValueError(
             "Unknown top_reinforcement %r; expected "

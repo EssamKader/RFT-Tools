@@ -17,6 +17,7 @@ from rft.core.footing_mesh import (
     SHAPE_U,
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
+    local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
 )
 from rft.core.footing_plan import (
@@ -184,6 +185,46 @@ def test_top_and_btm_toggles_a_second_mat_instance_on():
     plan = build_footing_plan(inputs)
     assert isinstance(plan.top_mesh, TopMeshPlan)
     assert plan.top_mesh.lengths == plan.bottom_mesh.lengths
+
+
+def test_the_top_mat_sits_near_the_top_face_not_on_top_of_the_bottom_mat():
+    """Found missing in review (PR #214): the top mat must NOT reuse the
+    bottom mat's Z-elevation. footing_thickness=450, top_cover=50,
+    mesh_bar_x_dia=16, mesh_bar_y_dia=12 -> top z_x = 450-50-8 = 392,
+    top z_y = 450-50-16-6 = 378 (mirrored local_top_mesh_bar_endpoints,
+    measured down from the top face) -- neither equal to the bottom mat's
+    z_x=58/z_y=72 (measured up from the bottom face).
+    """
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    plan = build_footing_plan(inputs)
+
+    bottom_z_x = plan.bottom_mesh.bar_x_endpoints.start.z_mm
+    bottom_z_y = plan.bottom_mesh.bar_y_endpoints.start.z_mm
+    top_z_x = plan.top_mesh.bar_x_endpoints.start.z_mm
+    top_z_y = plan.top_mesh.bar_y_endpoints.start.z_mm
+
+    assert bottom_z_x == pytest.approx(58.0)
+    assert bottom_z_y == pytest.approx(72.0)
+    assert top_z_x == pytest.approx(392.0)
+    assert top_z_y == pytest.approx(378.0)
+    assert top_z_x != pytest.approx(bottom_z_x)
+    assert top_z_y != pytest.approx(bottom_z_y)
+
+
+def test_top_mat_endpoints_match_local_top_mesh_bar_endpoints_directly():
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    plan = build_footing_plan(inputs)
+
+    lengths = mesh_bar_lengths(
+        inputs.a_mm, inputs.b_mm, inputs.cover_mm,
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.top_cover_mm, inputs.mesh_bar_x_dia_mm)
+    expected_x, expected_y = local_top_mesh_bar_endpoints(
+        lengths, inputs.top_cover_mm, inputs.footing_thickness_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+
+    assert plan.top_mesh.bar_x_endpoints == expected_x
+    assert plan.top_mesh.bar_y_endpoints == expected_y
 
 
 def test_top_mat_shape_mode_is_independent_of_the_bottom_mats():

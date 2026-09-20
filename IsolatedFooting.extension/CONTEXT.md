@@ -34,16 +34,28 @@ TOP_REINFORCEMENT_TOP_AND_BTM`) is the direct user toggle for Story 4
 BTM is chosen, `build_footing_plan` returns a `FootingPlan.top_mesh`
 (`footing_plan.TopMeshPlan`, field-for-field identical to
 `BottomMeshPlan`) built by the exact same `mesh_bar_lengths` /
-`primary_reinforcement_direction` / `local_mesh_bar_endpoints` /
-`bar_hook_plan_for_mat` sequence as the bottom mat
-(`footing_plan._build_mesh_mat_plan`, the one shared per-mat helper both
-mats call), parametrized by the top mat's own
+`primary_reinforcement_direction` / `bar_hook_plan_for_mat` sequence as
+the bottom mat (`footing_plan._build_mesh_mat_plan`, the one shared
+per-mat helper both mats call), parametrized by the top mat's own
 `FootingInputs.top_mat_shape_mode` -- independent of
 `bottom_mat_shape_mode`, per Sec 7's "set separately, never coupled."
 `top_mesh` is `None` (not an empty/zeroed plan) when BTM-only is chosen.
 This is the composing-module decision only; the pushbutton UI and the
 Revit placement adapter still only ask for and place the bottom mat (see
 "Not yet in" below).
+
+**Found and fixed in review (PR #214):** the endpoints step is NOT the
+same function for both mats. The first version of this ticket reused
+`local_mesh_bar_endpoints` (measured from `bottom_cover_mm` upward)
+unchanged for the top mat, which placed the "top mat" at the exact same
+elevation as the bottom mat. Fixed with a new
+`footing_mesh.local_top_mesh_bar_endpoints`, measured from `top_cover_mm`
+/ `footing_thickness_mm` downward instead. **This mirrored formula is an
+engineering assumption proposed in code, not a formula the spec states
+outright** (spec Sec 7 names the TOP+BTM toggle but gives no explicit
+top-mat vertical formula the way Sec 4's N/N2 do for the bottom mat) --
+flag it to Essam for confirmation before it is ever run against a live
+host, the same way R1/R2 needed his ruling on their own gaps.
 
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 
