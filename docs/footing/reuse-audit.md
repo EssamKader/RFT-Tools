@@ -61,7 +61,7 @@ than an independently invented count/spacing input.
 
 | Module / member | Status | Reason |
 |---|---|---|
-| `rft.core.column_layout.perimeter_bar_positions` | ✅ Reused as-is | #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3) calls it directly with the footing's own dowel inputs (`b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm, tie_dia_mm=dowel_tie_dia_mm, bar_dia_mm=dowel_bar_dia_mm, count_b_face=dowel_count_b_face, count_h_face=dowel_count_h_face`) — the same function, same signature, no footing-specific fork. `Cw_mm`/`Cd_mm`/`Ccover_mm` are plain arguments to `footing_plan.build_footing_plan` (not `FootingInputs` fields), per the addendum spec Sec 4 — they are read live off the auto-detected column by a later ticket's (#221) adapter, keeping `rft.core.footing_plan` unit-testable with a plain `(Cw_mm, Cd_mm, Ccover_mm)` tuple. `RFT.lib/rft/core/footing_plan.FootingPlan.dowel` is now a `DowelArrayPlan` (`embedment` + `bars`, one `footing_dowels.DowelBarGeometry` per position, corner dowels de-duplicated), each bar's geometry built from the EXISTING #202 `dowel_embedment`/`local_dowel_bar_geometry` math translated to its own `(u, v)` — no per-bar sizing re-derived. |
+| `rft.core.column_layout.perimeter_bar_positions` | ✅ Reused as-is | #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3) calls it directly with the footing's own dowel inputs (`b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm, tie_dia_mm=dowel_tie_dia_mm, bar_dia_mm=dowel_bar_dia_mm, count_b_face=dowel_count_b_face, count_h_face=dowel_count_h_face`) — the same function, same signature, no footing-specific fork. `Cw_mm`/`Cd_mm`/`Ccover_mm` are bundled into one `footing_plan.ColumnSection` namedtuple, passed as a single `column_section` argument to `footing_plan.build_footing_plan` (not `FootingInputs` fields, and not three bare positional floats — PR #225 review found three same-typed floats at two call sites invite a silent width/depth swap), per the addendum spec Sec 4 — they are read live off the auto-detected column by a later ticket's (#221) adapter, keeping `rft.core.footing_plan` unit-testable with a plain `ColumnSection`. `RFT.lib/rft/core/footing_plan.FootingPlan.dowel` is now a `DowelArrayPlan` (`embedment` + `bars`, one `footing_dowels.DowelBarGeometry` per position, corner dowels de-duplicated), each bar's geometry built from the EXISTING #202 `dowel_embedment`/`local_dowel_bar_geometry` math, translated sideways to its own `(u, v)` by the new `footing_dowels.translate_dowel_bar_geometry` (no per-bar sizing re-derived). A real array is only built when `column_section` AND ALL THREE of `dowel_count_b_face`/`dowel_count_h_face`/`dowel_tie_dia_mm` are supplied (the last one found missing from the gate in review, PR #225 — `perimeter_bar_positions` itself still requires `tie_dia_mm`, and #203's own field is independently opt-in); `perimeter_bar_positions`' own `ValueError` (section too small for a dowel at cover+tie+half-bar) is caught and re-raised as `footing_plan.DowelArrayLayoutError`, the same wrap-a-reused-function's-refusal pattern `footing_dowel_ties.DowelTieRunTooShortError` already established. |
 
 Item 1 ("a dowel-bar array") is closed. Item 2 (the tie rectangle's own
 plan dimensions — `Cw`/`Cd`) is closed by R7 (`docs/footing/spec-
@@ -71,6 +71,19 @@ ticket. `dowel_tie`'s own closed-loop shape/placement (`resolve_tie`/
 `place_ties`, the ⚠️ rows above) remains the follow-on ticket
 `docs/footing/HANDOVER-2026-09-24.md` item 6 names — now unblocked by
 both items being resolved, but not built by #222.
+
+**Assumption carried forward, not silently forgotten (PR #225 review):**
+`perimeter_bar_positions`' own `(u, v)` is used directly as this footing's
+local `(x, y)` with NO rotation transform applied for a column whose own
+axes are not parallel to the footing's own a/b axes.
+`column_host.read_orientation` exists precisely because ColumnRFT found
+this can differ (#69) — #222 is pure core with no orientation input
+available to it at all (per the addendum spec Sec 4, only plain numbers
+cross into `rft.core`), so this is correctly out of THIS ticket's scope,
+but is recorded here so whichever future ticket (#221's live read, or
+#223's placement adapter) has access to the column's actual orientation
+does not ship the array assuming it is always axis-aligned with the
+footing.
 
 ---
 
