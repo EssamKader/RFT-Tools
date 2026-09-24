@@ -79,6 +79,37 @@ def test_dowel_array_section_names_the_real_bar_count():
     assert len(plan.dowel.bars) > 1  # a real array, not the 1-bar fallback
 
 
+def _overshooting_plan():
+    """Issue #230's own hand-computed reproduction -- see
+    test_footing_plan.py's ``_small_edge_offset_inputs`` for the numeric
+    write-up."""
+    inputs = FootingInputs(
+        a_mm=1000.0, b_mm=700.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=15.9,
+        mesh_bar_y_dia_mm=15.9, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, dowel_bar_dia_mm=15.9, dowel_ld_multiplier=40.0,
+        dowel_tie_dia_mm=8.0, dowel_count_b_face=3, dowel_count_h_face=3)
+    column_section = DowelColumnSection(
+        Cw_mm=400.0, Cd_mm=400.0, Ccover_mm=40.0)
+    return build_footing_plan(inputs, column_section=column_section)
+
+
+def test_dowel_array_section_warns_when_a_hook_overshoots_the_footing_edge():
+    plan = _overshooting_plan()
+    assert plan.dowel.overshoot_bar_indices  # the fixture must overshoot
+    lines = "\n".join(dowel_array_section(plan).lines)
+    assert "WARNING" in lines
+    assert str(len(plan.dowel.overshoot_bar_indices)) in lines
+
+
+def test_dowel_array_section_has_no_warning_when_nothing_overshoots():
+    plan = _plan()
+    assert plan.dowel.overshoot_bar_indices == []
+    lines = "\n".join(dowel_array_section(plan).lines)
+    assert "WARNING" not in lines
+
+
 def test_not_yet_placed_section_names_the_three_unwired_pieces():
     lines = "\n".join(not_yet_placed_section().lines)
     assert "Top mesh" in lines
