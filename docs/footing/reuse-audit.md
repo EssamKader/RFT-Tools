@@ -124,3 +124,44 @@ but per `docs/footing/verification/issue-197-footing-tracer-bullet.md`
 §4, a closed-loop shape's host acceptance is itself still unverified
 against a live footing host. Recorded as an open item, not silently
 skipped.
+
+---
+
+## 5. Column auto-detection ray-cast (Story 1, `specs/isolated-footing-dowel-array.md` §3) — audited by #220
+
+| Module / member | Status | Reason |
+|---|---|---|
+| `rft.revit.column_host.find_search_view` / `find_support_face_z_mm` | ⚠️ Technique reused, not the function | Same verdict the addendum's own §1 already states: the `ReferenceIntersector` ray-cast through a behaviourally-chosen `View3D` is the proven mechanism (#69/#107). The DIRECTION — a footing casting a ray upward to find an unknown column, instead of a column casting a ray at a known support — is new code, calling into the new shared `rft.revit.ray_search` module (see below) rather than into `column_host` itself. `column_host.py` is imported by nothing new here. |
+| `rft.revit.ray_search` (new, extracted PR #224 review, finding 3) | ✅ New shared module, used as-is | The self-test-then-refuse view search and the inset-from-a-known-extent math `column_host.py` and `footing_host.py` both needed were duplicated verbatim in this PR's first version. Extracted into `RFT.lib/rft/revit/ray_search.py`, which `footing_host.py` now calls. **`column_host.py` was deliberately NOT migrated onto it** — editing a column-tool module is out of a footing ticket's scope per this repo's own element-isolation rule (`CONTEXT.md`: "never edit a beam or column module"). `column_host.find_search_view`/`find_support_face_z_mm` therefore still carry their own, now-duplicate, copy of the same logic. **Recommended follow-up, not done here:** a ticket scoped for the column tool to migrate `column_host.py` onto `rft.revit.ray_search`, removing that remaining duplication from the column side. |
+| `rft.revit.column_host.read_section_mm` / `read_orientation` | ❌ Not called by this ticket | Named by Story 1's own text as the NEXT ticket's job ("#11 calls `column_host.read_section_mm`/`read_orientation` against whatever element this ticket returns") — out of #220's scope by the ticket's own wording, not a gap. |
+
+### Design decision made without live-host access — verified by the orchestrator's own tracer bullet
+
+`column_host.find_search_view` self-tests a candidate view by firing a ray,
+filtered to the SAME category it searches with later
+(`OST_StructuralColumns`), at the element already known to exist (the
+column itself). Story 1 has no known column yet — that is what is being
+searched for — so `footing_host.find_search_view` mirrors the self-test
+onto the FOOTING instead: fire a ray filtered to
+`OST_StructuralFoundation` at the footing, then trust the same view,
+unquestioned, for a SEPARATE `OST_StructuralColumns`-filtered search
+upward. This is the same *shape* of trust `column_host` already carries
+(a column-filtered self-test view is reused, unquestioned, for a
+`SUPPORT_CATEGORIES` multicategory search in `find_support_face_z_mm`),
+but the SPECIFIC claim "a view that sees foundations also sees columns"
+had never been measured live the way #69/#107 measured the column/support
+case.
+
+**✅ Verified on a live host, 2026-09-24** — see
+`docs/footing/verification/issue-220-footing-column-autodetect.md`. The
+module's exact logic was reproduced in C# against the live
+`ColumnRFT.Trail.rvt` document (read-only, no transaction opened) across
+all 3 `OST_StructuralFoundation` instances present: the `{3D}` view
+self-tested successfully against `OST_StructuralFoundation` for every
+footing (`Analytical Model` saw none, matching `column_host`'s own
+`{3D}`/`Analytical Model` split exactly), and that SAME view then
+correctly found the one real column genuinely sitting on a footing in
+that model, with the two footings that have no column above them
+correctly producing "no column found" — independently confirmed as true
+negatives via a bounding-box check, not assumed from a null result. The
+flagged assumption is confirmed, not merely plausible.
