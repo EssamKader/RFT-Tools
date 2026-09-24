@@ -231,28 +231,20 @@ and then confirmed correct by Essam — recorded as **R3** in
   Revit placement adapter that places the top mat's bars -- same
   core-before-UI/adapter precedent #199/#200 already set. `rft.revit.
   footing_mesh.place_straight_bottom_mesh` only knows how to place the
-  bottom mat's two representative bars today.
-- Wiring #199's hook decision into `rft.revit.footing_mesh.place_straight_
-  bottom_mesh` -- placing an actual Revit hook (`RebarHookType`, hook
-  orientation) on a bar end. Issue #197's own tracer-bullet write-up lists
-  "hook types" under its Sec 4 "Still unverified" and #199's own ticket
-  body only asked for the core decision math, not host wiring -- zero API
-  guessing (`REUSE_GUIDELINES.md` Sec 3) means this stays a placement
-  adapter TODO, not something to guess a `RebarHookType` shape for here.
-  #200's override sits on top of the same un-wired decision and inherits
-  this gap unchanged.
-- Asking `bottom_mat_shape_mode` via the pushbutton UI
-  (`IsolatedFootingRFT.pushbutton/script.py` still builds `FootingInputs`
-  without it, so it defaults to `None` -- #199's own LD comparison keeps
-  deciding until a later ticket adds the `pyrevit.forms` prompt and wires
-  it through). #200's own ticket body named only
-  `RFT.lib/rft/core/footing_mesh.py` as the file to extend, matching
-  #199's precedent of shipping the core decision before the UI/adapter
-  wiring.
+  bottom mat's two representative bars today. #229 deliberately did NOT
+  extend this to the top mat -- its own hook direction (up, toward the
+  bottom mat, or down, toward the top face?) is not stated anywhere in
+  the spec, and guessing it now with no placement adapter to verify
+  against would be exactly the guessing `REUSE_GUIDELINES.md` Sec 3
+  refuses.
 - Full mesh bar count/spacing/quantity for either direction -- this
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the
-  #198 ticket and is not invented here.
+  #198 ticket and is not invented here. #229 fixed that one bar's own
+  SHAPE (U/L hook geometry); it deliberately left the array itself
+  (many parallel bars) as its own separate, unbuilt follow-up (#229's
+  own ticket body says so) -- mirroring the dowel array's own two-step
+  history (#202's single bar, then #222/#223's real array).
 - The footing-perimeter tie bar (Story 7 / spec Sec 10) is still not
   wired into the pushbutton script or placed. `dowel_tie`'s own
   closed-loop shape and Revit placement (Story 6 / Sec 9, the rest of
@@ -289,6 +281,32 @@ Batch), shared across the whole batch when one is run -- see
 `docs/footing/reuse-audit.md` §6-§10 and `docs/footing/verification/
 issue-22{0,2,3,6}-*.md` / `issue-228-footing-dimension-read.md` for the
 live-host proof.
+
+**Now DONE, no longer a gap (2026-09-24, #229):** found by Essam on a live
+host, testing #205's window for the first time -- the bottom mesh placed
+as one plain straight line spanning `mesh_bar_x_mm`/`mesh_bar_y_mm` (the
+FULL length, which already folds two hook legs `N`/`N2` into one number
+per Sec 4's own formula), ignoring #199/#200's own hook-vs-no-hook
+decision entirely, and the Review report never said U or L. Traced to:
+#199/#200 (PRs #210/#212) only ever built the DECISION
+(`bar_hook_plan_for_mat`) in `rft/core/footing_mesh.py`/`footing_plan.py`
+-- nothing consumed it. Fixed: `footing_mesh.bottom_mesh_bar_geometry`
+(new) builds the bar's REAL bent centreline -- a straight run spanning
+`Z`/`Z2` alone, with a vertical leg of length `N`/`N2` added at each
+hooked END (Sec 3 Story 1's "a U in elevation", Sec 5's "bend the bar
+up") -- consumed by `build_footing_plan` (populates
+`BottomMeshPlan.bar_x_geometry`/`bar_y_geometry`) and
+`rft.revit.footing_mesh.place_straight_bottom_mesh` (places the actual
+2-4-point connected curve chain, `norm = XYZ.BasisY` for `mesh_bar_x`
+(bends in the X-Z plane) / `XYZ.BasisX` for `mesh_bar_y` (bends in the
+Y-Z plane) -- fixed per axis, not per bar, since the hook direction
+itself never varies by position, unlike the dowel array's R10).
+`FootingWindow.xaml`'s Mesh & Dowels tab now asks `bottom_mat_shape_cb`
+(Auto / U-Shape / L-Shape-alternating), wired into both the single-footing
+path and the batch (`footing_batch.BatchInputs.bottom_mat_shape_mode`,
+new). `footing_report.mesh_section` now states each bar's actual shape
+and which end(s) are hooked. See `docs/footing/verification/
+issue-229-mesh-hook-geometry.md` for the live-host proof.
 
 **#205's own scope decision, recorded here (not a separate ruling --
 a reuse/scope note, per REUSE_GUIDELINES.md §3):** the ticket's own text

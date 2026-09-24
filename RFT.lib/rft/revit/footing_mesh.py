@@ -106,22 +106,30 @@ def _to_world_point(origin_x, origin_y, origin_z, local_point):
     )
 
 
-def _bar_curve(origin_x, origin_y, origin_z, endpoints):
-    start = _to_world_point(origin_x, origin_y, origin_z, endpoints.start)
-    end = _to_world_point(origin_x, origin_y, origin_z, endpoints.end)
-    return Line.CreateBound(start, end)
+def _bent_bar_curves(origin_x, origin_y, origin_z, geometry):
+    """#229: one mesh bar's REAL bent centreline
+    (``rft.core.footing_mesh.MeshBarGeometry.points``, 2-4 connected
+    footing-local points) -> a chain of connected world ``Line``s, the
+    same "list of connected curves into ONE ``Rebar.CreateFromCurves``
+    call" shape ``rft.revit.footing_dowels._dowel_curves`` already uses
+    for the dowel array's own bent bars.
+    """
+    points = [_to_world_point(origin_x, origin_y, origin_z, point)
+              for point in geometry.points]
+    return [Line.CreateBound(points[i], points[i + 1])
+            for i in range(len(points) - 1)]
 
 
-def _place_one_bar(document, footing, curve, bar_type):
+def _place_one_bar(document, footing, curves, norm, bar_type):
     return Rebar.CreateFromCurves(
         document,
         RebarStyle.Standard,
         bar_type,
-        None,  # startHook -- straight case, no hooks (that is #199)
+        None,  # startHook -- shape is built from curves, not a hook type
         None,  # endHook
         footing,
-        XYZ.BasisZ,  # norm -- confirmed by issue #197's own tracer bullet
-        [curve],
+        norm,
+        curves,
         RebarHookOrientation.Left,
         RebarHookOrientation.Left,
         True,
@@ -131,27 +139,40 @@ def _place_one_bar(document, footing, curve, bar_type):
 
 def place_straight_bottom_mesh(document, footing, bottom_mesh,
                                 bar_x_type, bar_y_type):
-    """Places ONE ``mesh_bar_x`` bar and ONE ``mesh_bar_y`` bar (straight
-    case, centred on the footing's own plan centroid), hosted directly on
-    ``footing`` -- the tracer-bullet vertical slice (spec Sec 11 item 2).
+    """Places ONE ``mesh_bar_x`` bar and ONE ``mesh_bar_y`` bar (each the
+    real bent U/L shape #229 built, centred on the footing's own plan
+    centroid), hosted directly on ``footing`` -- the tracer-bullet
+    vertical slice (spec Sec 11 item 2), now carrying #199/#200's hook
+    decision instead of ignoring it.
 
-    No hook, no array, no spacing/quantity: this proves the placement
-    mechanics end to end for a single representative bar per direction:
-    full mesh spacing/quantity is later ticket scope, not named by this
-    one's formulas.
+    No array, no spacing/quantity: this proves the placement mechanics
+    end to end for a single representative bar per direction; full mesh
+    spacing/quantity is separate, later ticket scope (#229's own scope
+    note), not named by this one's formulas.
+
+    ``norm`` differs per axis, not per bar (unlike the dowel array's R10,
+    where it varies per bar's own outward direction): ``mesh_bar_x``
+    bends in the X-Z plane (its straight run is along local X, its hook
+    legs along Z), so its bend-plane-perpendicular ``norm`` is
+    ``XYZ.BasisY``; ``mesh_bar_y`` bends in the Y-Z plane, so its ``norm``
+    is ``XYZ.BasisX`` -- the same #183 measurement (``norm`` must be
+    perpendicular to the bend's own plane), fixed per axis here because
+    the hook direction itself is fixed (always straight up, never
+    per-position).
 
     ``bottom_mesh`` is a ``rft.core.footing_plan.BottomMeshPlan`` -- the
     caller must build it via ``rft.core.footing_plan.build_footing_plan``,
     never by calling ``rft.core.footing_mesh`` directly (the one composing
-    module rule, docs/token-efficient-expansion.md Sec 7).
+    module rule, docs/token-efficient-expansion.md Sec 7) -- that is also
+    the only place ``bar_x_geometry``/``bar_y_geometry`` get populated.
 
     Returns ``(bar_x, bar_y)``, the two created ``Rebar`` elements.
     """
     origin_x, origin_y, origin_z = _footing_origin(footing)
-    curve_x = _bar_curve(origin_x, origin_y, origin_z,
-                          bottom_mesh.bar_x_endpoints)
-    curve_y = _bar_curve(origin_x, origin_y, origin_z,
-                          bottom_mesh.bar_y_endpoints)
-    bar_x = _place_one_bar(document, footing, curve_x, bar_x_type)
-    bar_y = _place_one_bar(document, footing, curve_y, bar_y_type)
+    curves_x = _bent_bar_curves(
+        origin_x, origin_y, origin_z, bottom_mesh.bar_x_geometry)
+    curves_y = _bent_bar_curves(
+        origin_x, origin_y, origin_z, bottom_mesh.bar_y_geometry)
+    bar_x = _place_one_bar(document, footing, curves_x, XYZ.BasisY, bar_x_type)
+    bar_y = _place_one_bar(document, footing, curves_y, XYZ.BasisX, bar_y_type)
     return bar_x, bar_y

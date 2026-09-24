@@ -60,6 +60,17 @@ def test_mesh_section_names_both_bar_lengths():
     assert "mesh_bar_x" in lines and "mesh_bar_y" in lines
 
 
+def test_mesh_section_states_each_bars_hook_shape():
+    """#229: the Review page must say U or L -- #199/#200 always computed
+    this, but nothing reported it before now (Essam's own live-host
+    finding, 2026-09-24)."""
+    plan = _plan()
+    lines = "\n".join(mesh_section(plan).lines)
+    assert plan.bottom_mesh.bar_x_hooks.shape in lines
+    assert plan.bottom_mesh.bar_y_hooks.shape in lines
+    assert "hooked" in lines
+
+
 def test_dowel_array_section_names_the_real_bar_count():
     plan = _plan()
     section = dowel_array_section(plan)
