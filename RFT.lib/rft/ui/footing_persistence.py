@@ -42,7 +42,9 @@ SETTINGS_SLOT = "IsolatedFootingRFT_inputs"
 # Bumped whenever the field set or a stored value's MEANING changes.
 # #232 (R11): bumped to 2 -- mesh_bar_x_spacing_tb/mesh_bar_y_spacing_tb
 # joined TEXT_FIELDS below, per this module's own rule.
-SETTINGS_VERSION = 2
+# #242: bumped to 3 -- dowel_tie_spacing_tb joined TEXT_FIELDS and
+# dowel_tie_hook_type joined TYPE_FIELDS below.
+SETTINGS_VERSION = 3
 
 # Free-text inputs (TextBox contents, stored verbatim as typed) -- the
 # window's own parsers (rft.ui.inputs) already turn text into values and
@@ -57,6 +59,7 @@ TEXT_FIELDS = (
     "dowel_count_h_face_tb",
     "mesh_bar_x_spacing_tb",
     "mesh_bar_y_spacing_tb",
+    "dowel_tie_spacing_tb",
 )
 
 # No plain-choice ComboBoxes in this window (every picker is a Revit
@@ -73,6 +76,7 @@ TYPE_FIELDS = (
     "mesh_bar_y_type",
     "dowel_bar_type",
     "dowel_tie_bar_type",
+    "dowel_tie_hook_type",
 )
 
 # Footing/column-scoped, read from the model every run, never remembered

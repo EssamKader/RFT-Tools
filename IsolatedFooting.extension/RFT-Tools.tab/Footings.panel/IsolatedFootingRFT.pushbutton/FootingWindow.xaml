@@ -362,7 +362,7 @@
                                      x:Name="dowel_ld_multiplier_tb" Text="40"/>
 
                             <TextBlock Grid.Row="2" Grid.Column="0"
-                                       Text="Dowel tie bar type (array spacing only)"
+                                       Text="Dowel tie bar type"
                                        Style="{StaticResource InputLabel}"/>
                             <ComboBox Grid.Row="2" Grid.Column="1"
                                       x:Name="dowel_tie_bar_type_cb"/>
@@ -386,9 +386,34 @@
                                      x:Name="dowel_splice_length_tb" Text="600"/>
                         </Grid>
 
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Dowel tie (#203/#242) -- closed loop wrapping the dowel array"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Tie spacing, mm (Sec 9, no default)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="dowel_tie_spacing_tb" Text="150"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Tie hook type (Stirrup/Tie family)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="dowel_tie_hook_type_cb"/>
+                        </Grid>
+
                         <TextBlock Style="{StaticResource ReadOutSource}"
                                    Margin="0,10,0,0"
-                                   Text="Dowel-tie closed loops and the perimeter-tie bar are not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for them here."/>
+                                   Text="The perimeter-tie bar is not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for it here."/>
 
                         <Button x:Name="build_report_btn" Margin="0,12,0,0"
                                 HorizontalAlignment="Left" Padding="12,5,12,5"

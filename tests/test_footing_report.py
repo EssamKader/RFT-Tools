@@ -18,6 +18,7 @@ from rft.core.footing_report import (
     batch_replacement_section,
     column_section_section,
     dowel_array_section,
+    dowel_tie_section,
     footing_geometry_section,
     mesh_section,
     not_yet_placed_section,
@@ -175,12 +176,41 @@ def test_dowel_array_section_states_the_splice_length_and_top_elevation():
     assert "1050.0 mm" in lines  # 450 + 600
 
 
-def test_not_yet_placed_section_names_the_two_unwired_pieces():
-    """#233 (R13): top mesh is now wired to placement, so this section
-    must stop naming it -- only dowel-tie/perimeter-tie remain."""
+def test_dowel_tie_section_states_the_ladder_when_no_loop_is_built():
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0, top_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0,
+        y_offset_mm=150.0, ld_multiplier=40.0,
+        dowel_tie_dia_mm=10.0, dowel_tie_spacing_mm=100.0)
+    plan = build_footing_plan(inputs)
+    lines = "\n".join(dowel_tie_section(plan).lines)
+    assert "No closed loop" in lines
+    assert "100.0 mm" in lines
+
+
+def test_dowel_tie_section_states_the_loop_corners_when_one_is_built():
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0, top_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0,
+        y_offset_mm=150.0, ld_multiplier=40.0,
+        dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
+        dowel_tie_dia_mm=10.0, dowel_tie_spacing_mm=100.0,
+        dowel_count_b_face=3, dowel_count_h_face=3)
+    plan = build_footing_plan(
+        inputs, column_section=_column_section(),
+        dowel_tie_bend_diameter_mm=60.0)
+    lines = "\n".join(dowel_tie_section(plan).lines)
+    assert "Closed loop wraps all" in lines
+
+
+def test_not_yet_placed_section_names_the_one_remaining_unwired_piece():
+    """#233 (R13): top mesh is now wired to placement; #242 wires the
+    dowel_tie closed loop too -- only perimeter-tie remains."""
     lines = "\n".join(not_yet_placed_section().lines)
     assert "Top mesh" not in lines
-    assert "dowel-tie" in lines.lower()
+    assert "dowel-tie" not in lines.lower()
     assert "perimeter-tie" in lines.lower()
 
 
