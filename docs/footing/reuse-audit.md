@@ -184,7 +184,7 @@ skipped.
 |---|---|---|
 | `rft.revit.column_host.find_search_view` / `find_support_face_z_mm` | ⚠️ Technique reused, not the function | Same verdict the addendum's own §1 already states: the `ReferenceIntersector` ray-cast through a behaviourally-chosen `View3D` is the proven mechanism (#69/#107). The DIRECTION — a footing casting a ray upward to find an unknown column, instead of a column casting a ray at a known support — is new code, calling into the new shared `rft.revit.ray_search` module (see below) rather than into `column_host` itself. `column_host.py` is imported by nothing new here. |
 | `rft.revit.ray_search` (new, extracted PR #224 review, finding 3) | ✅ New shared module, used as-is | The self-test-then-refuse view search and the inset-from-a-known-extent math `column_host.py` and `footing_host.py` both needed were duplicated verbatim in this PR's first version. Extracted into `RFT.lib/rft/revit/ray_search.py`, which `footing_host.py` now calls. **`column_host.py` was deliberately NOT migrated onto it** — editing a column-tool module is out of a footing ticket's scope per this repo's own element-isolation rule (`CONTEXT.md`: "never edit a beam or column module"). `column_host.find_search_view`/`find_support_face_z_mm` therefore still carry their own, now-duplicate, copy of the same logic. **Recommended follow-up, not done here:** a ticket scoped for the column tool to migrate `column_host.py` onto `rft.revit.ray_search`, removing that remaining duplication from the column side. |
-| `rft.revit.column_host.read_section_mm` / `read_orientation` | ❌ Not called by this ticket | Named by Story 1's own text as the NEXT ticket's job ("#11 calls `column_host.read_section_mm`/`read_orientation` against whatever element this ticket returns") — out of #220's scope by the ticket's own wording, not a gap. |
+| `rft.revit.column_host.read_section_mm` / `read_orientation` | ❌ Not called by this ticket | Named by Story 1's own text as the NEXT ticket's job ("#11 calls `column_host.read_section_mm`/`read_orientation` against whatever element this ticket returns") — out of #220's scope by the ticket's own wording, not a gap. Called by #221, below (§6). |
 
 ### Design decision made without live-host access — verified by the orchestrator's own tracer bullet
 
@@ -216,3 +216,12 @@ that model, with the two footings that have no column above them
 correctly producing "no column found" — independently confirmed as true
 negatives via a bounding-box check, not assumed from a null result. The
 flagged assumption is confirmed, not merely plausible.
+
+## 6. Column section/cover, read live (Story 2, `specs/isolated-footing-dowel-array.md` §3) — audited by #221
+
+| Module / member | Status | Reason |
+|---|---|---|
+| `rft.revit.column_host.read_section_mm` / `read_orientation` / `read_cover_mm` | ✅ Reused as-is, no fork | All three called unchanged against #220's `find_column_above` return, from a new `rft.revit.footing_host.read_dowel_column_section_mm`. No new refusal wording written — R7's own ruling ("surface that refusal message as-is") — and no new tracer bullet needed: all three are already live-host-verified for ColumnRFT (issue #87/#69), and this ticket calls them the same way, against the same element type, that verification already covers. |
+| `rft.core.footing_plan.DowelColumnSection` | ✅ Reused as-is | The adapter-boundary shape #222/#227 already defined (`Cw_mm`/`Cd_mm`/`Ccover_mm`) — this ticket populates it from a live read instead of a caller-supplied literal, adding no new type. |
+
+`read_orientation`'s `(hand, facing)` return is not part of `DowelColumnSection` — it is called for its refusal only (a flipped column must stop this call before any rebar placement), then discarded. `Cw_mm`/`Cd_mm` map straight from `section.b_mm`/`section.h_mm`: #69 already proved `b` lies along `HandOrientation` and `h` along `FacingOrientation` regardless of the column's rotation, so no re-derivation happens here — only the refusal that guards the mapping.

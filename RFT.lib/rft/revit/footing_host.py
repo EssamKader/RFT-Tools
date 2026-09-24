@@ -74,6 +74,8 @@ ticket's scope.
 
 from Autodesk.Revit import DB
 
+from . import column_host
+from ..core.footing_plan import DowelColumnSection
 from .ray_search import (
     RAY_CLEARANCE_INTERNAL,
     RaySearchError,
@@ -200,3 +202,33 @@ def find_column_above(doc, footing):
     _require(isinstance(column, DB.FamilyInstance),
              "No column is attached to this footing.")
     return column
+
+
+def read_dowel_column_section_mm(column):
+    """The plain-number ``DowelColumnSection`` #221 wires into
+    ``footing_plan.build_footing_plan`` -- ``find_column_above``'s own
+    return, live-read.
+
+    Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 2. Ruling
+    Ref: docs/footing/spec-amendments.md R7 (incl. the same-day cover
+    extension).
+
+    Reuses ``column_host.read_section_mm``/``read_orientation``/
+    ``read_cover_mm`` AS-IS -- no fork, no new refusal wording, since all
+    three already carry correct messages from ColumnRFT (issue #87/#69).
+    ``read_orientation`` runs for its refusal ONLY: a flipped column must
+    stop this call before any rebar placement, but its ``(hand, facing)``
+    vectors are not part of ``DowelColumnSection`` and are discarded once
+    that check has passed -- `b` already lies along ``HandOrientation`` and
+    `h` along ``FacingOrientation`` regardless (#69), so ``Cw_mm``/``Cd_mm``
+    map straight onto ``section.b_mm``/``section.h_mm`` with no re-deriving.
+
+    Any of the three refusals (non-rectangular section, flipped column,
+    cover unset) propagates unchanged -- this function adds none of its
+    own.
+    """
+    column_host.read_orientation(column)
+    section = column_host.read_section_mm(column)
+    cover_mm, _cover_name = column_host.read_cover_mm(column)
+    return DowelColumnSection(
+        Cw_mm=section.b_mm, Cd_mm=section.h_mm, Ccover_mm=cover_mm)

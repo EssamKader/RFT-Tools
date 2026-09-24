@@ -27,20 +27,27 @@ import pytest
 
 from fake_revit_api import (
     FakeBoundingBox,
+    FakeBuiltInParameter,
     FakeColumn,
     FakeDocument,
+    FakeElementId,
+    FakeElementIdParameter,
     FakeFilteredElementCollector,
+    FakeRebarCoverType,
     FakeReferenceIntersector,
     FakeReferenceWithContext,
     FakeView3D,
     FakeXYZ,
 )
 
+from rft.core.footing_plan import DowelColumnSection
+from rft.revit.column_host import ColumnHostError
 from rft.revit.footing_host import (
     FootingHostError,
     find_column_above,
     find_search_view,
     footing_bounding_box_internal,
+    read_dowel_column_section_mm,
 )
 
 FT = 304.8
@@ -226,3 +233,56 @@ def test_no_view_can_see_the_footing_is_a_FootingHostError_not_a_bare_RaySearchE
     message = str(caught.value)
     assert "the selected footing" in message
     assert "Analytical Model" in message and "{3D}" in message
+
+
+# --------------------------------------------------------------------- #
+# read_dowel_column_section_mm (#221) -- thin wiring only. The three
+# reused functions' own MECHANICS (b/h-from-type-parameters, the
+# flip/cover refusals) are already tested where ColumnRFT built them, in
+# test_column_mock_adapter.py -- per this ticket's own "Test volume rule",
+# not repeated here. This only proves the call site: it returns the right
+# (Cw_mm, Cd_mm, Ccover_mm) tuple, and each of the three refusals still
+# reaches the caller unchanged.
+
+COVER_ID = 112574
+
+
+def _column_above(**kwargs):
+    cover = FakeRebarCoverType(mm(40.0), name="Interior (framing, columns)",
+                               id_value=COVER_ID)
+    document = FakeDocument({COVER_ID: cover})
+    parameters = {
+        FakeBuiltInParameter.CLEAR_COVER_OTHER:
+            FakeElementIdParameter(FakeElementId(COVER_ID)),
+    }
+    parameters.update(kwargs.pop("parameters", {}))
+    return FakeColumn(document=document, parameters=parameters, **kwargs)
+
+
+def test_returns_the_dowel_column_section_from_the_live_reads():
+    """Cw/Cd map straight onto the type's b/h (#69: b along
+    HandOrientation, h along FacingOrientation) -- FakeColumn's own default
+    section is 450 x 600.
+    """
+    section = read_dowel_column_section_mm(_column_above())
+    assert section == DowelColumnSection(
+        Cw_mm=pytest.approx(450.0), Cd_mm=pytest.approx(600.0),
+        Ccover_mm=pytest.approx(40.0))
+
+
+def test_a_flipped_column_refuses_with_column_hosts_own_message():
+    """R7's own ruling: propagate the existing refusal as-is, write none
+    of its own.
+    """
+    with pytest.raises(ColumnHostError) as caught:
+        read_dowel_column_section_mm(_column_above(mirrored=True))
+    assert "mirrored" in str(caught.value)
+
+
+def test_an_unset_cover_refuses_with_column_hosts_own_message():
+    with pytest.raises(ColumnHostError) as caught:
+        read_dowel_column_section_mm(_column_above(parameters={
+            FakeBuiltInParameter.CLEAR_COVER_OTHER:
+                FakeElementIdParameter(None),
+        }))
+    assert "Rebar Cover - Other Faces" in str(caught.value)
