@@ -12,16 +12,24 @@ the SAME functions the report and the placement both read
 
 ## Scope -- what this window does NOT expose, and why
 
-Dowel-tie closed loops (#203) and the perimeter-tie bar (#204) have core
-math (`footing_dowel_ties`/`footing_perimeter_tie`) but no Revit
-placement adapter yet (`IsolatedFooting.extension/CONTEXT.md`'s own "Not
-yet in" list) -- adding input fields for them here would let an engineer
-configure something this tool cannot place. This window wires what
-#198-#233 actually PLACE (bottom mesh, the top mesh, the dowel array,
-single or batch); it does not implement new placement logic for the
-rest, which stays out of scope per REUSE_GUIDELINES.md Sec 3 ("Zero API
-Guessing") the same way every other undelivered piece in this tool has
-been treated all session.
+The perimeter-tie bar (#204) has core math (`footing_perimeter_tie`) but
+no Revit placement adapter yet (`IsolatedFooting.extension/CONTEXT.md`'s
+own "Not yet in" list) -- adding input fields for it here would let an
+engineer configure something this tool cannot place. This window wires
+what #198-#242 actually PLACE (bottom mesh, the top mesh, the dowel
+array, the dowel_tie closed loop, single or batch); it does not
+implement new placement logic for the rest, which stays out of scope per
+REUSE_GUIDELINES.md Sec 3 ("Zero API Guessing") the same way every other
+undelivered piece in this tool has been treated all session.
+
+#242: `dowel_tie`'s own closed-loop shape and Revit placement are now
+wired -- `dowel_tie_spacing_tb`/`dowel_tie_hook_type_cb` on the Mesh &
+Dowels tab, threaded into `FootingInputs`/`BatchInputs`, and placed by
+`rft.revit.footing_dowel_ties.place_dowel_ties` in the SAME transaction
+as the bottom mesh/dowels -- only when the resulting plan actually
+carries a loop (`plan.dowel_ties.loop is not None`, i.e. a real dowel
+array plus a live-read tie bend diameter, per `rft.core.footing_plan.
+DowelTiePlan`'s own docstring).
 
 #233 (R13, docs/footing/spec-amendments.md): the top mat (Sec 3 Story 4,
 Sec 7) is now wired -- `top_reinforcement_cb`/`top_mat_shape_cb` on the
@@ -58,8 +66,12 @@ from rft.core.footing_plan import (
 )
 from rft.core import footing_report
 from rft.revit import footing_batch
-from rft.revit.bar_types import bar_type_diameter_mm, bar_type_options
+from rft.revit.bar_types import (
+    bar_type_bend_diameter_mm, bar_type_diameter_mm, bar_type_options,
+    hook_type_options, list_stirrup_hook_types,
+)
 from rft.revit.column_host import ColumnHostError
+from rft.revit.footing_dowel_ties import place_dowel_ties
 from rft.revit.footing_dowels import place_dowel_bars
 from rft.revit.footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
@@ -108,6 +120,7 @@ class FootingWindow(forms.WPFWindow):
         self._batch_inputs = None
         self._bar_types = {}
         self._bar_type_options = []
+        self._hook_type_options = []
         self._api_call_in_flight = False
 
         # Wired HERE, not with a Click="..." attribute in the XAML -- a
@@ -238,6 +251,12 @@ class FootingWindow(forms.WPFWindow):
         ColumnRFT's main/tie split, this tool filters no role out of
         ``bar_type_options``'s own list, so every combo indexes the same
         list (``_selected_bar_type_object`` needs no per-combo dispatch).
+
+        #242: the tie hook-type picker is a SEPARATE list/combo, filtered
+        to the Stirrup/Tie family (`bar_types.list_stirrup_hook_types`) --
+        a hook type is not a bar type, and offering an unfiltered hook
+        list would invite the exact opaque ``InternalException``
+        ``list_stirrup_hook_types``'s own docstring names (A45).
         """
         options = bar_type_options(revit.doc, internal_to_mm)
         for combo in (self.mesh_bar_x_type_cb, self.mesh_bar_y_type_cb,
@@ -246,6 +265,13 @@ class FootingWindow(forms.WPFWindow):
             for label, _bar_type in options:
                 combo.Items.Add(label)
         self._bar_type_options = options
+
+        hook_options = hook_type_options(list_stirrup_hook_types(revit.doc))
+        self.dowel_tie_hook_type_cb.Items.Clear()
+        for label, _hook_type in hook_options:
+            self.dowel_tie_hook_type_cb.Items.Add(label)
+        self._hook_type_options = hook_options
+
         self._restore_bar_type_selections()
 
     def _selected_bottom_mat_shape_mode(self):
@@ -294,6 +320,15 @@ class FootingWindow(forms.WPFWindow):
             return None
         return self._bar_type_options[index][1]
 
+    def _selected_hook_type_object(self, combo):
+        """The actual ``RebarHookType`` behind the tie hook-type combo --
+        mirrors ``_selected_bar_type_object`` for the SEPARATE, family-
+        filtered hook-type list (#242)."""
+        index = combo.SelectedIndex
+        if index < 0 or index >= len(self._hook_type_options):
+            return None
+        return self._hook_type_options[index][1]
+
     # ---------------------------------------------------- mesh & dowels
     def on_build_report_click(self, sender, args):
         """Parses every shared input, builds ``FootingInputs`` from them
@@ -324,6 +359,8 @@ class FootingWindow(forms.WPFWindow):
             dowel_splice_length_mm = parse_optional_positive_float(
                 self.dowel_splice_length_tb.Text,
                 "Splice length Ls (dowel)")
+            dowel_tie_spacing_mm = parse_positive_float(
+                self.dowel_tie_spacing_tb.Text, "Dowel tie spacing")
         except ValueError as ex:
             self._refuse_on_tab(self.mesh_dowels_status_tb, str(ex))
             return
@@ -343,10 +380,17 @@ class FootingWindow(forms.WPFWindow):
             self.dowel_bar_type_cb)
         dowel_tie_bar_type = self._selected_bar_type_object(
             self.dowel_tie_bar_type_cb)
+        dowel_tie_hook_type = self._selected_hook_type_object(
+            self.dowel_tie_hook_type_cb)
         if None in (mesh_bar_x_type, mesh_bar_y_type, dowel_bar_type,
                     dowel_tie_bar_type):
             self._refuse_on_tab(self.mesh_dowels_status_tb,
                                 "Every bar type must be selected.")
+            return
+        if dowel_tie_hook_type is None:
+            self._refuse_on_tab(
+                self.mesh_dowels_status_tb,
+                "A dowel tie hook type must be selected (#242).")
             return
 
         mesh_bar_x_dia_mm = bar_type_diameter_mm(
@@ -356,6 +400,12 @@ class FootingWindow(forms.WPFWindow):
         dowel_bar_dia_mm = bar_type_diameter_mm(
             dowel_bar_type, internal_to_mm)
         dowel_tie_dia_mm = bar_type_diameter_mm(
+            dowel_tie_bar_type, internal_to_mm)
+        # #242: read live, passed alongside `inputs` -- the SAME "read
+        # live, pass in as a plain argument" shape `column_section`
+        # already established (see `footing_plan.build_footing_plan`'s
+        # own docstring).
+        dowel_tie_bend_diameter_mm = bar_type_bend_diameter_mm(
             dowel_tie_bar_type, internal_to_mm)
 
         geometry = self.geometry
@@ -373,6 +423,7 @@ class FootingWindow(forms.WPFWindow):
             dowel_bar_dia_mm=dowel_bar_dia_mm,
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,
+            dowel_tie_spacing_mm=dowel_tie_spacing_mm,
             dowel_count_b_face=dowel_count_b_face,
             dowel_count_h_face=dowel_count_h_face,
             mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
@@ -383,7 +434,8 @@ class FootingWindow(forms.WPFWindow):
 
         try:
             plan = build_footing_plan(
-                inputs, column_section=self.column_section)
+                inputs, column_section=self.column_section,
+                dowel_tie_bend_diameter_mm=dowel_tie_bend_diameter_mm)
         except ValueError as ex:
             self._refuse_on_tab(self.mesh_dowels_status_tb, str(ex))
             return
@@ -395,6 +447,7 @@ class FootingWindow(forms.WPFWindow):
             "mesh_bar_y_type": mesh_bar_y_type,
             "dowel_bar_type": dowel_bar_type,
             "dowel_tie_bar_type": dowel_tie_bar_type,
+            "dowel_tie_hook_type": dowel_tie_hook_type,
         }
         # Spec Ref: specs/isolated-footing-batch.md Sec 1 -- the shared
         # inputs a batch states once, carried as one object so
@@ -406,6 +459,8 @@ class FootingWindow(forms.WPFWindow):
             bar_x_type=mesh_bar_x_type, bar_y_type=mesh_bar_y_type,
             dowel_bar_type=dowel_bar_type,
             dowel_tie_bar_type=dowel_tie_bar_type,
+            dowel_tie_hook_type=dowel_tie_hook_type,
+            dowel_tie_spacing_mm=dowel_tie_spacing_mm,
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_count_b_face=dowel_count_b_face,
             dowel_count_h_face=dowel_count_h_face,
@@ -423,6 +478,8 @@ class FootingWindow(forms.WPFWindow):
         if plan.top_mesh is not None:
             sections.append(footing_report.top_mesh_section(plan))
         sections.append(footing_report.dowel_array_section(plan))
+        if plan.dowel_ties is not None:
+            sections.append(footing_report.dowel_tie_section(plan))
         sections.append(footing_report.not_yet_placed_section())
         self.report_tb.Text = footing_report.render(sections)
         self.review_tab.IsEnabled = True
@@ -464,6 +521,18 @@ class FootingWindow(forms.WPFWindow):
                 top_bar_x, top_bar_y = place_straight_top_mesh(
                     doc, self.footing, self.plan.top_mesh,
                     bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])
+            # #242: the dowel_tie closed loop, same transaction, same
+            # footing host as the bottom mesh/dowels -- only when the
+            # plan actually carries a loop (a real dowel array plus a
+            # live-read tie bend diameter; see DowelTiePlan's own
+            # docstring).
+            dowel_ties = []
+            if (self.plan.dowel_ties is not None
+                    and self.plan.dowel_ties.loop is not None):
+                dowel_ties = place_dowel_ties(
+                    doc, self.footing, self.plan.dowel_ties,
+                    bar_types["dowel_tie_bar_type"],
+                    bar_types["dowel_tie_hook_type"])
         except Exception as ex:
             transaction.RollBack()
             message = "Placement FAILED and was rolled back -- {}: {}".format(
@@ -477,10 +546,14 @@ class FootingWindow(forms.WPFWindow):
         top_mesh_message = ""
         if top_bar_x is not None:
             top_mesh_message = " Placed the top mat's mesh_bar_x/mesh_bar_y."
+        dowel_tie_message = ""
+        if dowel_ties:
+            dowel_tie_message = " Placed %d dowel_tie(s)." % len(dowel_ties)
         message = (
             "Placed %d mesh_bar_x bar(s), %d mesh_bar_y bar(s), and %d "
-            "dowel bar(s).%s" % (
-                len(bars_x), len(bars_y), len(dowel_bars), top_mesh_message))
+            "dowel bar(s).%s%s" % (
+                len(bars_x), len(bars_y), len(dowel_bars), top_mesh_message,
+                dowel_tie_message))
         self.review_status_tb.Text = message
         self.status_tb.Text = message
         forms.alert(message, title="Isolated Footing RFT")
@@ -522,7 +595,9 @@ class FootingWindow(forms.WPFWindow):
             result = footing_batch.apply_batch(
                 doc, batch_plan, self._bar_types["mesh_bar_x_type"],
                 self._bar_types["mesh_bar_y_type"],
-                self._bar_types["dowel_bar_type"])
+                self._bar_types["dowel_bar_type"],
+                dowel_tie_bar_type=self._bar_types["dowel_tie_bar_type"],
+                dowel_tie_hook_type=self._bar_types["dowel_tie_hook_type"])
         except footing_batch.FootingBatchError as ex:
             self._refuse_on_tab(self.review_status_tb, str(ex))
             forms.alert(str(ex), title="Batch refused")
@@ -567,6 +642,15 @@ class FootingWindow(forms.WPFWindow):
             "dowel_tie_bar_type": self.dowel_tie_bar_type_cb,
         }
         for field_name in ui_persistence.TYPE_FIELDS:
+            if field_name == "dowel_tie_hook_type":
+                # #242: a SEPARATE, family-filtered options list
+                # (`_hook_type_options`), not `_bar_type_options` --
+                # `_selected_bar_type_object` would index the wrong list.
+                hook_type = self._selected_hook_type_object(
+                    self.dowel_tie_hook_type_cb)
+                if hook_type is not None:
+                    ids[field_name] = hook_type.UniqueId
+                continue
             combo = combo_by_field.get(field_name)
             bar_type = (self._selected_bar_type_object(combo)
                        if combo is not None else None)
@@ -607,6 +691,15 @@ class FootingWindow(forms.WPFWindow):
             "dowel_tie_bar_type": self.dowel_tie_bar_type_cb,
         }
         for field_name, unique_id in unique_ids.items():
+            if field_name == "dowel_tie_hook_type":
+                # #242: matched against `_hook_type_options`, the SAME
+                # separate list `_persistable_type_ids` reads it from.
+                for index, (_label, hook_type) in enumerate(
+                        self._hook_type_options):
+                    if hook_type.UniqueId == unique_id:
+                        self.dowel_tie_hook_type_cb.SelectedIndex = index
+                        break
+                continue
             combo = combo_by_field.get(field_name)
             if combo is None:
                 continue

@@ -30,7 +30,7 @@ from .footing_dowels import (
     local_dowel_bar_geometry,
     positioned_dowel_bar_geometry,
 )
-from .footing_dowel_ties import dowel_tie_ladder
+from .footing_dowel_ties import dowel_tie_ladder, dowel_tie_loop_mm
 from .footing_perimeter_tie import (
     perimeter_tie_bar_lengths_mm,
     perimeter_tie_geometry,
@@ -308,11 +308,22 @@ DowelArrayPlan = namedtuple(
 
 #: #203 (Sec 3 Story 6, Sec 9): ``ladder`` is a
 #: ``footing_dowel_ties.DowelTieLadder`` -- the starter/end-offset vertical
-#: ladder, spacing_mm as supplied. Per ``docs/footing/reuse-audit.md`` Sec 1
-#: ("Blocked, not guessed"), this plan carries the ladder ONLY -- no tie
-#: shape/loop geometry, since that needs a dowel-bar array this repo does
-#: not have yet (#202 places one representative dowel).
-DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm"])
+#: ladder, spacing_mm as supplied.
+#: #242: ``loop`` is a ``footing_dowel_ties.DowelTieLoop`` -- the closed-
+#: loop rectangle wrapping the WHOLE dowel array, footing-local plan
+#: corners, no Z (the ladder's own ``levels`` supply that). ``None`` when
+#: no real dowel array exists yet (``dowel`` is ``None``, or its own
+#: ``bars`` still holds the single-representative-bar fallback -- see
+#: ``footing_dowel_ties.dowel_tie_loop_mm``'s own refusal for fewer than
+#: 2 bars) or when the tie bar type's own bend diameter was not supplied
+#: (``dowel_tie_bend_diameter_mm`` -- read live off the ``RebarBarType``
+#: at the Revit layer, passed into ``build_footing_plan`` alongside
+#: ``inputs``, never stored on ``FootingInputs``, the same "read live,
+#: pass in as a plain argument" shape ``column_section`` already
+#: established). The LADDER is unaffected either way -- every caller that
+#: predates #242 (tie diameter/spacing supplied, no array/bend diameter
+#: yet) keeps building the SAME ladder-only plan, unchanged.
+DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm", "loop"])
 
 #: #204 (Sec 3 Story 7, Sec 10): ``geometry`` is a
 #: ``footing_perimeter_tie.PerimeterTieGeometry`` (inner dimensions,
@@ -581,16 +592,36 @@ def _build_dowel_plan(inputs, column_section):
                           overshoot_bar_indices=overshoot_bar_indices)
 
 
-def _build_dowel_tie_plan(inputs):
-    """#203 (Sec 3 Story 6, Sec 9): the one place
-    ``footing_dowel_ties.dowel_tie_ladder`` is called from, so a future
-    placement adapter reads the SAME ``DowelTiePlan`` rather than calling
-    ``footing_dowel_ties`` independently (Sec 4's "one composing module"
-    rule, already applied above to the mesh mats and the dowel bar).
+def _build_dowel_tie_plan(inputs, dowel_plan, dowel_tie_bend_diameter_mm):
+    """#203 (Sec 3 Story 6, Sec 9), extended by #242: the one place
+    ``footing_dowel_ties.dowel_tie_ladder``/``dowel_tie_loop_mm`` are
+    called from, so a future placement adapter reads the SAME
+    ``DowelTiePlan`` rather than calling ``footing_dowel_ties``
+    independently (Sec 4's "one composing module" rule, already applied
+    above to the mesh mats and the dowel bar).
+
+    ``dowel_plan`` is the SAME ``DowelArrayPlan`` (or ``None``)
+    ``build_footing_plan`` already built -- never re-derived here, since
+    a `dowel_tie` wraps THAT array, not a second one. ``loop`` stays
+    ``None`` (ladder-only, #203's own original scope) unless a real array
+    exists (``dowel_plan`` is not ``None`` and carries at least 2 bars --
+    see ``footing_dowel_ties.dowel_tie_loop_mm``'s own refusal) AND
+    ``dowel_tie_bend_diameter_mm``/``inputs.dowel_bar_dia_mm`` are both
+    supplied.
     """
     ladder = dowel_tie_ladder(
         inputs.footing_thickness_mm, inputs.dowel_tie_spacing_mm)
-    return DowelTiePlan(ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm)
+
+    loop = None
+    if (dowel_plan is not None and len(dowel_plan.bars) >= 2
+            and dowel_tie_bend_diameter_mm is not None
+            and inputs.dowel_bar_dia_mm is not None):
+        loop = dowel_tie_loop_mm(
+            dowel_plan.bars, inputs.dowel_tie_dia_mm,
+            inputs.dowel_bar_dia_mm, dowel_tie_bend_diameter_mm)
+
+    return DowelTiePlan(
+        ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm, loop=loop)
 
 
 def _build_perimeter_tie_plan(inputs):
@@ -632,11 +663,22 @@ def _build_perimeter_tie_plan(inputs):
         bar_lengths=bar_lengths)
 
 
-def build_footing_plan(inputs, column_section=None):
+def build_footing_plan(inputs, column_section=None,
+                       dowel_tie_bend_diameter_mm=None):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
     are called from, for both the bottom mat and (#201) the optional top
     mat.
+
+    #242: ``dowel_tie_bend_diameter_mm`` is the SAME "read live, pass in
+    as a plain argument alongside ``inputs``" shape ``column_section``
+    already established -- the selected ``dowel_tie`` ``RebarBarType``'s
+    own ``StirrupTieBendDiameter`` (mm), read by the caller
+    (``rft.revit.bar_types.bar_type_bend_diameter_mm``) and needed only to
+    build the `dowel_tie` loop's own A1 buildability check
+    (``footing_dowel_ties.dowel_tie_loop_mm``). Defaults to ``None`` so
+    every caller that predates #242 (ladder-only ``dowel_ties``) is
+    unchanged.
 
     Spec Ref: Sec 4. Both a future report/preview and the placer must call
     THIS function and read the ``FootingPlan`` it returns, never the
@@ -723,7 +765,8 @@ def build_footing_plan(inputs, column_section=None):
     dowel_ties = None
     if (inputs.dowel_tie_dia_mm is not None
             and inputs.dowel_tie_spacing_mm is not None):
-        dowel_ties = _build_dowel_tie_plan(inputs)
+        dowel_ties = _build_dowel_tie_plan(
+            inputs, dowel, dowel_tie_bend_diameter_mm)
 
     perimeter_tie = None
     if inputs.perimeter_tie_dia_mm is not None:

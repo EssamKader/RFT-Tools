@@ -52,8 +52,9 @@ from ..core.footing_batch import BatchExisting, Exclusion, group_hosts
 from ..core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY, FootingInputs, build_footing_plan,
 )
-from .bar_types import bar_type_diameter_mm
+from .bar_types import bar_type_bend_diameter_mm, bar_type_diameter_mm
 from .column_host import ColumnHostError
+from .footing_dowel_ties import place_dowel_ties
 from .footing_dowels import place_dowel_bars
 from .footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
@@ -109,6 +110,15 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: ``FootingInputs`` itself uses) and ``top_mat_shape_mode`` defaults to
 #: ``None`` -- every caller that predates this ticket keeps building a
 #: batch with no top mat, unchanged.
+#: #242: ``dowel_tie_hook_type``/``dowel_tie_spacing_mm`` are the SAME
+#: direct tie hook-type selection/spacing input the single-footing path
+#: now asks for, carried here too so a batch run builds and places the
+#: SAME `dowel_tie` closed loop for every footing in the group rather
+#: than silently reverting every one back to ladder-only (no loop).
+#: Append-only, both default to ``None`` -- every caller that predates
+#: #242 keeps building a batch with no `dowel_tie` loop, unchanged (the
+#: SAME graceful "opt-in, else DowelTiePlan.loop stays None" degrade
+#: `build_footing_plan` itself already applies).
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
@@ -116,9 +126,10 @@ BatchInputs = namedtuple(
      "dowel_bar_type", "dowel_tie_bar_type", "dowel_ld_multiplier",
      "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode",
      "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
-     "dowel_splice_length_mm", "top_reinforcement", "top_mat_shape_mode"])
+     "dowel_splice_length_mm", "top_reinforcement", "top_mat_shape_mode",
+     "dowel_tie_hook_type", "dowel_tie_spacing_mm"])
 BatchInputs.__new__.__defaults__ = (
-    None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None)
+    None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None)
 
 
 class FootingBatchError(Exception):
@@ -174,10 +185,16 @@ class FootingPlacementResult(object):
     representative ``Rebar`` element per direction (no array yet -- see
     ``TopMeshPlan``'s own docstring), or ``None`` when no top mat was
     requested for this footing (every caller that predates this ticket).
+
+    #242: ``dowel_ties`` is the LIST of closed-loop ``Rebar`` elements
+    placed for this footing's own `dowel_tie` ladder -- empty when this
+    footing's own plan carries no loop (``plan.dowel_ties`` is ``None``
+    or its ``loop`` is, the same graceful degrade the single-footing path
+    already applies), never ``None``, so a caller can always ``len()``.
     """
 
     def __init__(self, bars_x, bars_y, dowel_bars, replaced_count, foreign,
-                top_bar_x=None, top_bar_y=None):
+                top_bar_x=None, top_bar_y=None, dowel_ties=None):
         self.bars_x = bars_x
         self.bars_y = bars_y
         self.dowel_bars = dowel_bars
@@ -185,6 +202,7 @@ class FootingPlacementResult(object):
         self.foreign = foreign
         self.top_bar_x = top_bar_x
         self.top_bar_y = top_bar_y
+        self.dowel_ties = dowel_ties if dowel_ties is not None else []
 
 
 class BatchPlacementResult(object):
@@ -280,6 +298,19 @@ def plan_candidates(doc, host_footing, inputs):
         inputs.dowel_bar_type, internal_to_mm)
     dowel_tie_dia_mm = bar_type_diameter_mm(
         inputs.dowel_tie_bar_type, internal_to_mm)
+    # #242: read live, passed alongside footing_inputs -- the SAME "read
+    # live, pass in as a plain argument" shape column_section already
+    # established (build_footing_plan's own docstring). Only read when a
+    # dowel_tie is actually being requested (spacing supplied too) --
+    # every caller that predates #242 (no dowel_tie_spacing_mm) leaves
+    # this None, so a bar-type fake/type with no readable
+    # StirrupTieBendDiameter never has to answer a question this run
+    # never asked.
+    dowel_tie_bend_diameter_mm = None
+    if (inputs.dowel_tie_bar_type is not None
+            and inputs.dowel_tie_spacing_mm is not None):
+        dowel_tie_bend_diameter_mm = bar_type_bend_diameter_mm(
+            inputs.dowel_tie_bar_type, internal_to_mm)
 
     candidates = []
     for element, geometry, column_section in reads:
@@ -297,6 +328,7 @@ def plan_candidates(doc, host_footing, inputs):
             dowel_bar_dia_mm=dowel_bar_dia_mm,
             dowel_ld_multiplier=inputs.dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,
+            dowel_tie_spacing_mm=inputs.dowel_tie_spacing_mm,
             dowel_count_b_face=inputs.dowel_count_b_face,
             dowel_count_h_face=inputs.dowel_count_h_face,
             mesh_bar_x_spacing_mm=inputs.mesh_bar_x_spacing_mm,
@@ -306,7 +338,8 @@ def plan_candidates(doc, host_footing, inputs):
             top_mat_shape_mode=inputs.top_mat_shape_mode)
         try:
             plan = build_footing_plan(
-                footing_inputs, column_section=column_section)
+                footing_inputs, column_section=column_section,
+                dowel_tie_bend_diameter_mm=dowel_tie_bend_diameter_mm)
         except ValueError as refusal:
             exclusions.append(Exclusion(
                 element_id=element.Id.IntegerValue, reason=str(refusal)))
@@ -344,12 +377,19 @@ def read_existing(doc, batch_plan):
     return rows
 
 
-def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
+def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
+                dowel_tie_bar_type=None, dowel_tie_hook_type=None):
     """Spec Sec 5: ONE transaction for the whole batch, all-or-nothing.
     If every candidate was excluded, the run refuses as a whole rather
     than opening an empty transaction -- checked before ``Transaction``
     is ever constructed, the same "refuse before opening" shape
     ``column_batch.apply_batch`` already uses.
+
+    #242: ``dowel_tie_bar_type``/``dowel_tie_hook_type`` default to
+    ``None`` so every caller that predates this ticket keeps placing no
+    `dowel_tie` loop, unchanged -- each candidate's own loop is placed
+    only when BOTH are supplied AND that candidate's own plan carries one
+    (``candidate.plan.dowel_ties.loop is not None``).
     """
     if not batch_plan.candidates:
         raise FootingBatchError(
@@ -392,9 +432,21 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
                 top_bar_x, top_bar_y = place_straight_top_mesh(
                     doc, candidate.element, candidate.plan.top_mesh,
                     bar_x_type, bar_y_type)
+            # #242: the dowel_tie closed loop, same transaction, same
+            # footing host -- only when both bar/hook types were supplied
+            # AND this candidate's own plan carries a loop.
+            dowel_ties = []
+            if (dowel_tie_bar_type is not None
+                    and dowel_tie_hook_type is not None
+                    and candidate.plan.dowel_ties is not None
+                    and candidate.plan.dowel_ties.loop is not None):
+                dowel_ties = place_dowel_ties(
+                    doc, candidate.element, candidate.plan.dowel_ties,
+                    dowel_tie_bar_type, dowel_tie_hook_type)
 
             host_id = candidate.element.Id.IntegerValue
-            all_rebar = list(bars_x) + list(bars_y) + list(dowel_bars)
+            all_rebar = (list(bars_x) + list(bars_y) + list(dowel_bars)
+                        + list(dowel_ties))
             if top_bar_x is not None:
                 all_rebar.append(top_bar_x)
             if top_bar_y is not None:
@@ -405,7 +457,8 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
             per_footing.append((host_id, FootingPlacementResult(
                 bars_x=bars_x, bars_y=bars_y, dowel_bars=dowel_bars,
                 replaced_count=len(ours), foreign=foreign,
-                top_bar_x=top_bar_x, top_bar_y=top_bar_y)))
+                top_bar_x=top_bar_x, top_bar_y=top_bar_y,
+                dowel_ties=dowel_ties)))
     except Exception:
         transaction.RollBack()
         raise

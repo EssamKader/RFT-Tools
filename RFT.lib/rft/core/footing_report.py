@@ -187,21 +187,52 @@ def dowel_array_section(plan):
                          lines)
 
 
+def dowel_tie_section(plan):
+    """#242: the `dowel_tie` closed-loop ladder -- the starter/end Z
+    datum, spacing, and whether a real loop was built (a real dowel array
+    plus a live-read tie bend diameter) or the plan stays ladder-only
+    (see `rft.core.footing_plan.DowelTiePlan`'s own docstring for exactly
+    which inputs are missing when it does)."""
+    dowel_ties = plan.dowel_ties
+    ladder = dowel_ties.ladder
+    lines = [
+        "Tie diameter = %s, spacing = %s" % (
+            _mm(dowel_ties.tie_dia_mm), _mm(ladder.spacing_mm)),
+        "Starter tie at %s from the bottom of the footing, end tie at "
+        "%s (Sec 9: 50mm below T.O.F.)" % (
+            _mm(ladder.run.start_z_mm), _mm(ladder.run.end_z_mm)),
+        "%d tie level(s) in this ladder" % len(ladder.levels),
+    ]
+    if dowel_ties.loop is not None:
+        corners = ", ".join(
+            "(%.1f, %.1f)" % (corner.x_mm, corner.y_mm)
+            for corner in dowel_ties.loop.corners)
+        lines.append(
+            "Closed loop wraps all %d dowel bars -- footing-local plan "
+            "corners: %s" % (len(plan.dowel.bars), corners))
+    else:
+        lines.append(
+            "No closed loop built yet -- needs a real dowel array (a "
+            "live column section plus dowel_count_b_face/dowel_count_"
+            "h_face/dowel_tie_dia_mm) and the tie bar type's own bend "
+            "diameter (read live once a tie bar type is selected).")
+    return ReportSection("Dowel tie (#203/#242)", lines)
+
+
 def not_yet_placed_section():
     """R6-R10, #198-#228, #229 and #232 built and placed the bottom mesh
     (now with its real hook shape AND, when spacing is given, its full
     array -- R11) and the dowel array; #233 (R13) does the same for the
-    top mat (one representative bar per direction, no array yet).
-    dowel_tie's closed-loop shape (#203) and the perimeter_tie bar (#204)
-    still have core math but no Revit placement adapter
+    top mat (one representative bar per direction, no array yet); #242
+    does the same for the `dowel_tie` closed loop. The perimeter_tie bar
+    (#204) still has core math but no Revit placement adapter
     (`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
     stated here rather than exposed as an input this window cannot act
     on."""
     lines = [
-        "Dowel-tie closed loops and the perimeter-tie bar are not yet "
-        "wired to placement -- see IsolatedFooting.extension/CONTEXT.md. "
-        "This window does not ask for their inputs, since there is "
-        "nothing yet for them to place.",
+        "The perimeter-tie bar is not yet wired to placement -- see "
+        "IsolatedFooting.extension/CONTEXT.md. This window does not ask "
+        "for its inputs, since there is nothing yet for it to place.",
     ]
     return ReportSection("Not yet placed by this tool", lines)
 

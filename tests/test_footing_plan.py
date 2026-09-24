@@ -776,6 +776,52 @@ def test_a_perimeter_tie_ladder_that_exceeds_the_footing_refuses():
             perimeter_tie_quantity=3))
 
 
+def test_the_plan_defaults_dowel_ties_loop_to_none_with_no_bend_diameter():
+    """#242: predates-#242 callers (dowel_tie_dia_mm/dowel_tie_spacing_mm
+    supplied, but no dowel_tie_bend_diameter_mm) keep building a
+    ladder-only DowelTiePlan unchanged."""
+    inputs, column_section = _array_inputs()
+    inputs = inputs._replace(dowel_tie_spacing_mm=100.0)
+    plan = build_footing_plan(inputs, column_section=column_section)
+
+    assert plan.dowel_ties is not None
+    assert plan.dowel_ties.loop is None
+
+
+def test_supplying_a_bend_diameter_over_a_real_array_builds_the_loop_matching_the_core_call():
+    """The composing module must be the ONE place ``footing_dowel_ties.
+    dowel_tie_loop_mm`` is called from -- so its output must match calling
+    it directly with the SAME dowel bars/inputs (Sec 4's own rule)."""
+    from rft.core.footing_dowel_ties import dowel_tie_loop_mm
+
+    inputs, column_section = _array_inputs()
+    inputs = inputs._replace(dowel_tie_spacing_mm=100.0)
+    plan = build_footing_plan(
+        inputs, column_section=column_section,
+        dowel_tie_bend_diameter_mm=60.0)
+
+    assert plan.dowel_ties.loop is not None
+    expected_loop = dowel_tie_loop_mm(
+        plan.dowel.bars, inputs.dowel_tie_dia_mm, inputs.dowel_bar_dia_mm,
+        60.0)
+    assert plan.dowel_ties.loop == expected_loop
+
+
+def test_a_single_representative_dowel_bar_keeps_the_loop_none_even_with_a_bend_diameter():
+    """No real array (no column_section/count fields) -- ``dowel.bars``
+    still holds the single-representative-bar fallback, which
+    ``dowel_tie_loop_mm`` itself refuses (fewer than 2 bars). The plan
+    must not raise -- it degrades to ``loop=None``, the SAME graceful
+    fallback every other opt-in field in this plan already uses."""
+    inputs = _inputs(
+        dowel_bar_dia_mm=16.0, dowel_ld_multiplier=40.0,
+        dowel_tie_dia_mm=8.0, dowel_tie_spacing_mm=100.0)
+    plan = build_footing_plan(inputs, dowel_tie_bend_diameter_mm=60.0)
+
+    assert len(plan.dowel.bars) == 1
+    assert plan.dowel_ties.loop is None
+
+
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():
     """docs/token-efficient-expansion.md Sec 7: the placer must call
     ``footing_plan.build_footing_plan``, never ``rft.core.footing_mesh``

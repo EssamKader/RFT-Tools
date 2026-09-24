@@ -23,6 +23,43 @@ loop around it would mean inventing a bar array the spec's own tracer-
 bullet order has not reached yet. See that audit for the full reasoning.
 This is a REUSE_GUIDELINES.md Sec 3 "Explicit Refusal", not an oversight.
 
+## The closed-loop rectangle (#242) -- built now that a real array exists
+
+Per `docs/footing/reuse-audit.md` Sec 1: both prerequisites this module's
+own earlier docstring named as blockers are resolved -- a real dowel-bar
+array exists (#222/#223) and the column's own Cw/Cd are read live
+(#220/#221). `dowel_tie_loop_mm` below builds the rectangle that WRAPS
+that array, reusing `rft.core.column_ties.resolve_tie`/
+`outer_perimeter_subset` AS-IS for the geometry (bounding box of the
+enclosed bars' centrelines, grown by half a bar plus half a tie) --
+per the ticket's own reuse plan, not re-derived here.
+
+`resolve_tie` takes a `layout` whose `.bars` are objects with `.index`/
+`.u_mm`/`.v_mm` (`rft.core.column_layout.Bar`'s own shape). `rft.core.
+footing_plan.DowelArrayPlan.bars` is a list of `footing_dowels.
+DowelBarGeometry` (`bottom_hook`/`vertical`), which carries no such
+shape directly -- so `_ArrayLayout`/`_ArrayBarPosition` below are a thin,
+LOCAL translation (per the ticket's own instruction: "a local translation
+is fine", not a reshape of `DowelArrayPlan` itself). Each bar's own plan
+position is read from `bar.vertical.start` (`footing_dowels.
+positioned_dowel_bar_geometry`'s own docstring: the bend corner, at the
+bar's own `(u_mm, v_mm)`, before the hook or the vertical leg's own
+travel) -- the one point every dowel bar's geometry already carries that
+IS its own plan position, never re-derived from the hook or the vertical
+leg's end.
+
+`resolve_tie` always wraps the WHOLE array (`outer_perimeter_subset`) --
+there is no engineer-chosen subset here, unlike a column's own inner
+ties (R17): a `dowel_tie` is one loop enclosing every dowel, per spec
+Sec 9's own "the closed loop wraps the whole dowel array" reading (there
+is no other tie topology named for it). If that whole-array rectangle's
+narrow dimension is too small to bend (A1), `resolve_tie` degrades to a
+`KIND_CROSS_TIE` rather than raising -- correct for an ENGINEER-CHOSEN
+subset of two bars, but not a sensible detail for a loop that is supposed
+to enclose the entire array, so :func:`dowel_tie_loop_mm` refuses
+(`DowelTieNotBuildableError`) rather than silently placing a cross-tie
+between two arbitrary array corners.
+
 ## Reusing `column_tie_levels.tie_levels` for a footing that has no zones
 
 `rft.core.column_tie_levels.tie_levels` builds a ladder against the
@@ -52,6 +89,7 @@ and would need a different (much smaller) piece of code.
 
 from collections import namedtuple
 
+from .column_ties import KIND_CLOSED_LOOP, outer_perimeter_subset, resolve_tie
 from .column_tie_levels import tie_levels
 
 #: Spec Ref: Sec 9 -- "50mm from the bottom of the footing." Deliberately
@@ -171,3 +209,102 @@ def dowel_tie_ladder(footing_thickness_mm, tie_spacing_mm):
 
     return DowelTieLadder(
         run=run, levels=ladder.levels, spacing_mm=tie_spacing_mm)
+
+
+#: One dowel bar's plan position, in `column_layout.Bar`'s own shape
+#: (`.index`/`.u_mm`/`.v_mm`) -- a LOCAL translation of `footing_plan.
+#: DowelArrayPlan.bars`, not a reshape of that type itself (see this
+#: module's own "The closed-loop rectangle" docstring section).
+_ArrayBarPosition = namedtuple("_ArrayBarPosition", ["index", "u_mm", "v_mm"])
+
+#: `resolve_tie`'s own `layout` argument needs only `.bars` -- this is the
+#: whole of `column_layout.ColumnLayout`'s shape that function reads.
+_ArrayLayout = namedtuple("_ArrayLayout", ["bars"])
+
+#: The closed loop's own footing-local plan corners, mm, centred on the
+#: footing's own plan centroid (x=y=0) -- the same frame `footing_dowels.
+#: DowelBarGeometry`'s own `(u_mm, v_mm)` already uses. `corners` is
+#: `resolve_tie`'s own `vertices` (already wound/closed per that module's
+#: own rules), read as `(x_mm, y_mm)` pairs rather than `(u, v)` tuples,
+#: matching `footing_perimeter_tie.PerimeterTieCorner`'s own naming
+#: convention for a footing-local plan point.
+DowelTieCorner = namedtuple("DowelTieCorner", ["x_mm", "y_mm"])
+DowelTieLoop = namedtuple("DowelTieLoop", ["corners"])
+
+
+class DowelTieArrayTooSmallError(ValueError):
+    """Fewer than 2 dowel bars were supplied to wrap a loop around.
+
+    `resolve_tie`'s own `subset_indices` already refuses a subset naming
+    fewer than 2 bars ("a tie must touch at least 2 bars") -- this module
+    raises its OWN, footing-domain exception for the same fact rather
+    than letting that bare `ValueError` leak through unlabelled, the same
+    wrapping discipline `footing_plan.DowelArrayLayoutError` already
+    established for a reused function's own refusal (PR #225 review).
+
+    This is the SAME situation `docs/footing/reuse-audit.md` Sec 1
+    originally named as "Blocked, not guessed" for a caller with no real
+    array (`footing_plan.DowelArrayPlan`'s own one-representative-bar
+    fallback) -- not a new gap, just this ticket's own refusal for it.
+    """
+
+
+class DowelTieNotBuildableError(ValueError):
+    """The whole-array rectangle's narrow dimension is too small to bend
+    (A1) -- `resolve_tie` would degrade to a cross-tie, which is not a
+    sensible detail for a loop meant to enclose the ENTIRE dowel array
+    (see this module's own "The closed-loop rectangle" docstring
+    section). Refused rather than silently placed as a two-bar cross-tie
+    between two arbitrary corners of the array.
+    """
+
+
+def dowel_tie_loop_mm(dowel_bars, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
+    """#242 (Sec 3 Story 6, Sec 9): the closed-loop rectangle wrapping
+    every bar in `dowel_bars` (a list of `footing_dowels.DowelBarGeometry`,
+    e.g. `footing_plan.DowelArrayPlan.bars`) -- the bounding box of every
+    bar's own plan position (`bar.vertical.start`), grown by half a bar
+    plus half a tie, exactly as `rft.core.column_ties.resolve_tie` already
+    computes for a column's own outer perimeter tie. Reused AS-IS for the
+    geometry (see this module's own "The closed-loop rectangle" docstring
+    section) -- no new rectangle math is written here.
+
+    `bend_diameter_mm` is the tie bar TYPE's own `StirrupTieBendDiameter`
+    (mm) -- read live off the selected `RebarBarType` at the Revit layer
+    (`rft.revit.bar_types.bar_type_bend_diameter_mm`), passed in here as a
+    plain number so this module stays Revit-free (REUSE_GUIDELINES.md
+    Sec 1), the SAME "read live, pass in as a plain argument alongside
+    inputs" shape `footing_plan.DowelColumnSection` already established
+    for the column's own Cw/Cd/cover.
+
+    Raises :class:`DowelTieArrayTooSmallError` for fewer than 2 bars, and
+    :class:`DowelTieNotBuildableError` if the resulting rectangle cannot
+    be bent (A1) -- see each exception's own docstring.
+    """
+    if len(dowel_bars) < 2:
+        raise DowelTieArrayTooSmallError(
+            "A dowel_tie loop needs at least 2 dowel bars to wrap -- got "
+            "%d. This is the same 'no real array yet' situation "
+            "docs/footing/reuse-audit.md Sec 1 named as blocked; supply "
+            "a real dowel array (column_section plus dowel_count_b_face/"
+            "dowel_count_h_face/dowel_tie_dia_mm) before building a "
+            "dowel_tie loop." % len(dowel_bars))
+
+    positions = [
+        _ArrayBarPosition(
+            index=index, u_mm=bar.vertical.start.x_mm,
+            v_mm=bar.vertical.start.y_mm)
+        for index, bar in enumerate(dowel_bars)]
+    layout = _ArrayLayout(bars=positions)
+    subset = outer_perimeter_subset(len(positions))
+    resolved = resolve_tie(subset, layout, tie_dia_mm, bar_dia_mm,
+                           bend_diameter_mm)
+
+    if resolved.kind != KIND_CLOSED_LOOP:
+        raise DowelTieNotBuildableError(
+            "The dowel_tie loop wrapping all %d dowel bars cannot be "
+            "bent as a closed loop: %s" % (len(dowel_bars), resolved.reason))
+
+    corners = tuple(DowelTieCorner(x_mm=u, y_mm=v)
+                    for u, v in resolved.vertices)
+    return DowelTieLoop(corners=corners)
