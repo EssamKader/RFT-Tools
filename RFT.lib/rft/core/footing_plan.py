@@ -22,7 +22,12 @@ top too).
 
 from collections import namedtuple
 
-from .footing_dowels import dowel_embedment, local_dowel_bar_geometry
+from .column_layout import perimeter_bar_positions
+from .footing_dowels import (
+    DowelBarGeometry,
+    dowel_embedment,
+    local_dowel_bar_geometry,
+)
 from .footing_dowel_ties import dowel_tie_ladder
 from .footing_perimeter_tie import (
     perimeter_tie_bar_lengths_mm,
@@ -30,6 +35,8 @@ from .footing_perimeter_tie import (
     perimeter_tie_ladder_mm,
 )
 from .footing_mesh import (
+    BarEndpoints,
+    LocalPoint,
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
@@ -115,6 +122,21 @@ from .footing_mesh import (
 #: ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm`` (all already present) plus
 #: the already-existing ``perimeter_tie_spacing_mm``/
 #: ``perimeter_tie_quantity``.
+#: #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3, ruling R6):
+#: ``dowel_count_b_face``/``dowel_count_h_face`` are the dowel array's own
+#: count-per-face-including-corners inputs, the SAME counting convention
+#: ``column_layout.perimeter_bar_positions``'s own ``count_b_face``/
+#: ``count_h_face`` already use for ColumnRFT -- R6's own ruling is that a
+#: dowel array is not an independently invented count/spacing input, it
+#: mirrors the column's own longitudinal bar layout exactly. Both default
+#: to ``None`` (opt-in, same trailing-defaults pattern every dowel-related
+#: field has used since #202) so every caller that predates this ticket
+#: keeps building a plan with no dowel array unchanged. ``Cw_mm``/
+#: ``Cd_mm``/``Ccover_mm`` themselves are NOT ``FootingInputs`` fields --
+#: per the addendum spec Sec 4 ("Data flow"), they are read live off the
+#: auto-detected column (a later ticket's own adapter work) and passed
+#: into ``build_footing_plan`` as plain arguments alongside ``inputs``,
+#: never stored here.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -127,7 +149,8 @@ FootingInputs = namedtuple(
      "perimeter_tie_dia_mm", "perimeter_tie_spacing_mm",
      "perimeter_tie_quantity", "perimeter_tie_lap_mm",
      "perimeter_tie_first_bar_length_mm",
-     "perimeter_tie_second_bar_length_mm"],
+     "perimeter_tie_second_bar_length_mm",
+     "dowel_count_b_face", "dowel_count_h_face"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -141,7 +164,8 @@ TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
 FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
-    None, None, None, None, None, None)
+    None, None, None, None, None, None,
+    None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -163,13 +187,27 @@ BottomMeshPlan = namedtuple(
 #: shaped plan for what is not new math.
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 
-#: #202 (Sec 3 Story 5, Sec 8): ``embedment`` is a
-#: ``footing_dowels.DowelEmbedment`` (``a_dowel_mm``/``b_dowel_mm``/
-#: ``ld_mm``); ``geometry`` is a ``footing_dowels.DowelBarGeometry`` --
-#: the one representative dowel bar's footing-local bent-bar centreline,
-#: resting on top of the bottom mesh (see ``footing_dowels`` docstrings
-#: for both).
-DowelPlan = namedtuple("DowelPlan", ["embedment", "geometry"])
+#: #202 (Sec 3 Story 5, Sec 8), reshaped by #222 (specs/isolated-footing-
+#: dowel-array.md Sec 3 Story 3): ``embedment`` is a ``footing_dowels.
+#: DowelEmbedment`` (``a_dowel_mm``/``b_dowel_mm``/``ld_mm``) -- ONE shared
+#: value, since every dowel in the array has identical vertical sizing,
+#: never re-derived per bar. ``bars`` is a list of ``footing_dowels.
+#: DowelBarGeometry`` (bent-bar centreline resting on top of the bottom
+#: mesh, see ``footing_dowels`` docstrings), one entry per dowel position.
+#:
+#: When ``inputs.dowel_count_b_face``/``dowel_count_h_face`` and the
+#: ``Cw_mm``/``Cd_mm``/``Ccover_mm`` arguments to ``build_footing_plan``
+#: are all supplied, ``bars`` holds one ``DowelBarGeometry`` per position
+#: ``column_layout.perimeter_bar_positions`` returns (corner dowels
+#: de-duplicated -- see ``_build_dowel_plan``). Otherwise ``bars`` holds
+#: exactly the SAME single representative bar (centred on the footing's
+#: own plan centroid) #202 always built -- every caller that predates
+#: #222 keeps building a plan with no dowel array unchanged, just wrapped
+#: in the new one-item ``bars`` list instead of a bare ``geometry`` field,
+#: per docs/token-efficient-expansion.md Sec 7 (one composing-module
+#: shape, built before a second consumer -- #223's placement adapter --
+#: exists).
+DowelArrayPlan = namedtuple("DowelArrayPlan", ["embedment", "bars"])
 
 #: #203 (Sec 3 Story 6, Sec 9): ``ladder`` is a
 #: ``footing_dowel_ties.DowelTieLadder`` -- the starter/end-offset vertical
@@ -206,7 +244,8 @@ PerimeterTiePlan = namedtuple(
 #: ``TOP_REINFORCEMENT_TOP_AND_BTM`` is chosen.
 #: ``dowel`` is ``None`` when ``inputs.dowel_bar_dia_mm``/
 #: ``dowel_ld_multiplier`` were not supplied (#202 is opt-in, same
-#: trailing-default pattern as ``top_mesh``) and a ``DowelPlan`` otherwise.
+#: trailing-default pattern as ``top_mesh``) and a ``DowelArrayPlan``
+#: (#222) otherwise.
 #: ``dowel_ties`` is ``None`` when ``inputs.dowel_tie_dia_mm``/
 #: ``dowel_tie_spacing_mm`` were not supplied (#203 is opt-in, same
 #: trailing-default pattern) and a ``DowelTiePlan`` otherwise.
@@ -295,27 +334,88 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
         bar_x_hooks=bar_x_hooks, bar_y_hooks=bar_y_hooks)
 
 
-def _build_dowel_plan(inputs):
-    """#202 (Sec 3 Story 5, Sec 8): the one place ``footing_dowels.
-    dowel_embedment``/``local_dowel_bar_geometry`` are called from, so a
-    future report/preview and the placement adapter both read the SAME
-    ``DowelPlan`` rather than each calling ``footing_dowels`` independently
-    (the same Sec 4 "one composing module" rule ``_build_mesh_mat_plan``
-    already follows for the mesh mats).
+def _translate_dowel_bar_geometry(geometry, u_mm, v_mm):
+    """Shift a #202 ``DowelBarGeometry`` (built at the footing's own plan
+    centroid, ``x_mm == y_mm == 0``) sideways to a real footing-local
+    ``(u, v)`` dowel position.
+
+    Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 3 --
+    "this story changes WHERE dowels are and HOW MANY there are, not how
+    any single dowel's own vertical geometry is sized." Only the plan
+    (x/y) coordinates move; ``z_mm`` (the bend-corner/top elevation
+    ``local_dowel_bar_geometry`` already computed) and every embedment
+    length are untouched, so this is a translation, never a re-sizing.
+    """
+    def _shift(point):
+        return LocalPoint(point.x_mm + u_mm, point.y_mm + v_mm, point.z_mm)
+
+    return DowelBarGeometry(
+        bottom_hook=BarEndpoints(
+            start=_shift(geometry.bottom_hook.start),
+            end=_shift(geometry.bottom_hook.end)),
+        vertical=BarEndpoints(
+            start=_shift(geometry.vertical.start),
+            end=_shift(geometry.vertical.end)))
+
+
+def _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm):
+    """#202 (Sec 3 Story 5, Sec 8), extended by #222 (specs/isolated-
+    footing-dowel-array.md Sec 3 Story 3): the one place ``footing_dowels.
+    dowel_embedment``/``local_dowel_bar_geometry`` (and, when a real array
+    is being built, ``column_layout.perimeter_bar_positions``) are called
+    from, so a future report/preview and the placement adapter (#223) both
+    read the SAME ``DowelArrayPlan`` rather than each calling
+    ``footing_dowels``/``column_layout`` independently (the same Sec 4
+    "one composing module" rule ``_build_mesh_mat_plan`` already follows
+    for the mesh mats).
 
     Reads mesh bar diameters and ``footing_thickness_mm``/
     ``bottom_cover_mm`` straight off ``inputs`` -- the SAME fields
     ``mesh_bar_lengths``/``local_mesh_bar_endpoints`` already read for the
     bottom mat -- never a second, independently-named copy of them.
+    ``embedment`` is computed exactly once and shared by every bar in the
+    array (Sec 3 Story 3: "every dowel has identical vertical sizing").
+
+    A real array (``perimeter_bar_positions``, R6's own reuse target) is
+    built only when the caller supplies BOTH the live column cross-section
+    (``Cw_mm``/``Cd_mm``/``Ccover_mm`` -- read live off the auto-detected
+    column by a later ticket's adapter, never stored on ``FootingInputs``,
+    per the addendum spec Sec 4) and the two count-per-face inputs
+    (``inputs.dowel_count_b_face``/``dowel_count_h_face``). When either is
+    missing, ``bars`` falls back to the SAME single representative bar
+    #202 always built, at the footing's own plan centroid -- every caller
+    that predates #222 keeps building a plan with no dowel array
+    unchanged (see ``DowelArrayPlan``'s own docstring).
     """
     embedment = dowel_embedment(
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
         inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
-    geometry = local_dowel_bar_geometry(
+
+    representative = local_dowel_bar_geometry(
         embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
         inputs.mesh_bar_y_dia_mm)
-    return DowelPlan(embedment=embedment, geometry=geometry)
+
+    if (Cw_mm is not None and Cd_mm is not None and Ccover_mm is not None
+            and inputs.dowel_count_b_face is not None
+            and inputs.dowel_count_h_face is not None):
+        # Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 3 --
+        # the exact call the addendum spec names, reused as-is (R6): every
+        # dowel's footing-local (u, v) position, once, corner dowels
+        # de-duplicated between faces.
+        layout = perimeter_bar_positions(
+            b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm,
+            tie_dia_mm=inputs.dowel_tie_dia_mm,
+            bar_dia_mm=inputs.dowel_bar_dia_mm,
+            count_b_face=inputs.dowel_count_b_face,
+            count_h_face=inputs.dowel_count_h_face)
+        bars = [_translate_dowel_bar_geometry(representative,
+                                              bar.u_mm, bar.v_mm)
+                for bar in layout.bars]
+    else:
+        bars = [representative]
+
+    return DowelArrayPlan(embedment=embedment, bars=bars)
 
 
 def _build_dowel_tie_plan(inputs):
@@ -369,7 +469,7 @@ def _build_perimeter_tie_plan(inputs):
         bar_lengths=bar_lengths)
 
 
-def build_footing_plan(inputs):
+def build_footing_plan(inputs, Cw_mm=None, Cd_mm=None, Ccover_mm=None):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
     are called from, for both the bottom mat and (#201) the optional top
@@ -386,6 +486,18 @@ def build_footing_plan(inputs):
     and ``TOP_REINFORCEMENT_TOP_AND_BTM`` (builds a ``TopMeshPlan`` with
     ``inputs.top_mat_shape_mode``, independent of ``bottom_mat_shape_mode``
     per Sec 7's "set separately, never coupled").
+
+    #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"):
+    ``Cw_mm``/``Cd_mm``/``Ccover_mm`` are the column's own live cross-
+    section width/depth and dowel-positioning cover -- deliberately NOT
+    ``FootingInputs`` fields, since Sec 4 states they are "read live ...
+    and passed in as plain arguments alongside inputs", keeping this
+    function unit-testable with a plain ``(Cw_mm, Cd_mm, Ccover_mm)``
+    tuple and no Revit object ever required. All three default to
+    ``None`` so every caller that predates #222 (this file's own callers
+    that build no dowel array) is unchanged; see ``_build_dowel_plan``
+    for exactly which combination of these plus ``inputs.dowel_count_
+    b_face``/``dowel_count_h_face`` is required to build a real array.
     """
     bottom_mesh = _build_mesh_mat_plan(
         BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode,
@@ -406,7 +518,7 @@ def build_footing_plan(inputs):
     dowel = None
     if (inputs.dowel_bar_dia_mm is not None
             and inputs.dowel_ld_multiplier is not None):
-        dowel = _build_dowel_plan(inputs)
+        dowel = _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm)
 
     dowel_ties = None
     if (inputs.dowel_tie_dia_mm is not None

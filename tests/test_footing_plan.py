@@ -21,6 +21,7 @@ from rft.core.footing_mesh import (
     mesh_bar_lengths,
 )
 from rft.core.footing_dowels import dowel_embedment, local_dowel_bar_geometry
+from rft.core.column_layout import perimeter_bar_positions
 from rft.core.footing_perimeter_tie import (
     PerimeterTieBarLengthMismatchError,
     PerimeterTieLadderExceedsFootingError,
@@ -30,7 +31,7 @@ from rft.core.footing_perimeter_tie import (
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
-    DowelPlan,
+    DowelArrayPlan,
     FootingInputs,
     PerimeterTiePlan,
     TopMeshPlan,
@@ -259,11 +260,15 @@ def test_the_plan_defaults_dowel_fields_to_none_with_no_dowel_plan():
     assert plan.dowel is None
 
 
-def test_supplying_dowel_inputs_builds_a_dowel_plan_matching_the_core_call():
-    """The composing module must be the ONE place ``footing_dowels.
-    dowel_embedment``/``local_dowel_bar_geometry`` are called from -- so
-    its output must match calling them directly with the same inputs."""
+def test_supplying_dowel_inputs_with_no_array_counts_falls_back_to_one_bar():
+    """#222: when the two count-per-face inputs (and Cw/Cd/Ccover) are not
+    supplied, ``DowelArrayPlan.bars`` must carry exactly the SAME single
+    representative bar #202 always built -- every caller that predates
+    #222 keeps building a plan with no dowel array unchanged, per the
+    addendum spec Sec 3 Story 3's own trailing-defaults wording."""
     inputs = _inputs(dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0)
+    assert inputs.dowel_count_b_face is None
+    assert inputs.dowel_count_h_face is None
     plan = build_footing_plan(inputs)
 
     expected_embedment = dowel_embedment(
@@ -274,9 +279,68 @@ def test_supplying_dowel_inputs_builds_a_dowel_plan_matching_the_core_call():
         expected_embedment, inputs.bottom_cover_mm,
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
 
-    assert isinstance(plan.dowel, DowelPlan)
+    assert isinstance(plan.dowel, DowelArrayPlan)
     assert plan.dowel.embedment == expected_embedment
-    assert plan.dowel.geometry == expected_geometry
+    assert plan.dowel.bars == [expected_geometry]
+
+
+def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
+    """#222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): a
+    2x2-per-face column layout (4 corner bars, none in the middle) must
+    produce exactly 4 ``DowelArrayPlan.bars`` entries, each the
+    representative bar's own bent-bar geometry translated to that bar's
+    ``perimeter_bar_positions`` ``(u, v)`` -- corner bars de-duplicated
+    between the two faces, not counted twice."""
+    inputs = _inputs(
+        dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=2, dowel_count_h_face=2)
+    Cw_mm, Cd_mm, Ccover_mm = 450.0, 600.0, 40.0
+    plan = build_footing_plan(inputs, Cw_mm=Cw_mm, Cd_mm=Cd_mm,
+                              Ccover_mm=Ccover_mm)
+
+    expected_layout = perimeter_bar_positions(
+        b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm,
+        tie_dia_mm=inputs.dowel_tie_dia_mm,
+        bar_dia_mm=inputs.dowel_bar_dia_mm,
+        count_b_face=inputs.dowel_count_b_face,
+        count_h_face=inputs.dowel_count_h_face)
+
+    assert isinstance(plan.dowel, DowelArrayPlan)
+    assert len(expected_layout.bars) == 4
+    assert len(plan.dowel.bars) == 4
+
+    expected_embedment = dowel_embedment(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
+    representative = local_dowel_bar_geometry(
+        expected_embedment, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+
+    for expected_bar, actual_geometry in zip(expected_layout.bars,
+                                              plan.dowel.bars):
+        assert actual_geometry.vertical.end.x_mm == pytest.approx(
+            representative.vertical.end.x_mm + expected_bar.u_mm)
+        assert actual_geometry.vertical.end.y_mm == pytest.approx(
+            representative.vertical.end.y_mm + expected_bar.v_mm)
+        assert actual_geometry.vertical.end.z_mm == pytest.approx(
+            representative.vertical.end.z_mm)
+        assert actual_geometry.bottom_hook.start.x_mm == pytest.approx(
+            representative.bottom_hook.start.x_mm + expected_bar.u_mm)
+        assert actual_geometry.bottom_hook.start.y_mm == pytest.approx(
+            representative.bottom_hook.start.y_mm + expected_bar.v_mm)
+
+
+def test_the_dowel_array_requires_every_one_of_its_own_five_inputs():
+    """Missing any single one of Cw_mm/Cd_mm/Ccover_mm/count_b_face/
+    count_h_face must fall back to the single-bar plan, never a partial
+    or guessed array."""
+    inputs = _inputs(
+        dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=2, dowel_count_h_face=2)
+    plan = build_footing_plan(inputs, Cw_mm=450.0, Cd_mm=600.0,
+                              Ccover_mm=None)
+    assert len(plan.dowel.bars) == 1
 
 
 def test_the_plan_defaults_perimeter_tie_fields_to_none_with_no_perimeter_tie_plan():

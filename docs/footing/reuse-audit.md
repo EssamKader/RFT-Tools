@@ -52,6 +52,26 @@ wiring the actual closed-loop shape and `column_place_ties`-style
 placement is left for the ticket that adds the dowel-bar array, which can
 then call `resolve_tie`/`place_ties` directly per the ⚠️ rows above.
 
+### Item 1 resolved by #222: the dowel-bar array now exists
+
+**Ruling:** R6 (`docs/footing/spec-amendments.md`) — the dowel array
+mirrors ColumnRFT's own longitudinal bar layout model exactly (bar count
+per face plus corner bars, one continuous perimeter arrangement), rather
+than an independently invented count/spacing input.
+
+| Module / member | Status | Reason |
+|---|---|---|
+| `rft.core.column_layout.perimeter_bar_positions` | ✅ Reused as-is | #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3) calls it directly with the footing's own dowel inputs (`b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm, tie_dia_mm=dowel_tie_dia_mm, bar_dia_mm=dowel_bar_dia_mm, count_b_face=dowel_count_b_face, count_h_face=dowel_count_h_face`) — the same function, same signature, no footing-specific fork. `Cw_mm`/`Cd_mm`/`Ccover_mm` are plain arguments to `footing_plan.build_footing_plan` (not `FootingInputs` fields), per the addendum spec Sec 4 — they are read live off the auto-detected column by a later ticket's (#221) adapter, keeping `rft.core.footing_plan` unit-testable with a plain `(Cw_mm, Cd_mm, Ccover_mm)` tuple. `RFT.lib/rft/core/footing_plan.FootingPlan.dowel` is now a `DowelArrayPlan` (`embedment` + `bars`, one `footing_dowels.DowelBarGeometry` per position, corner dowels de-duplicated), each bar's geometry built from the EXISTING #202 `dowel_embedment`/`local_dowel_bar_geometry` math translated to its own `(u, v)` — no per-bar sizing re-derived. |
+
+Item 1 ("a dowel-bar array") is closed. Item 2 (the tie rectangle's own
+plan dimensions — `Cw`/`Cd`) is closed by R7 (`docs/footing/spec-
+amendments.md`), read live via `rft.revit.column_host.read_section_mm`
+(a separate ticket's own adapter work, #220/#221) rather than by this
+ticket. `dowel_tie`'s own closed-loop shape/placement (`resolve_tie`/
+`place_ties`, the ⚠️ rows above) remains the follow-on ticket
+`docs/footing/HANDOVER-2026-09-24.md` item 6 names — now unblocked by
+both items being resolved, but not built by #222.
+
 ---
 
 ## 2. Resolved import graph — verified empirically (#99 discipline)
@@ -78,6 +98,24 @@ sys.modules gained: rft.core.column_layout, rft.core.column_ties,
 | `rft.core.guards` reachable? | ❌ No | Same check, same result. |
 | `rft.core.layout` (the BEAM's own module, home of `FacePlan`/`LayerPlan`) reachable? | ⚠️ Yes, two hops away — but only two generic functions | `column_ties` imports `column_layout`, which imports `layout.corner_bar_side_offset_mm` / `layout.corner_bar_u_positions_mm` only. `rft.core.layout` itself has **zero** imports of its own (a leaf module) and neither `FacePlan` nor `LayerPlan` is on the import path — those are separate names defined in the same file but never referenced by `column_layout`. This is the exact two-hop shape #99 warns about, so it is recorded here rather than assumed safe: importing `column_ties` for a footing DOES put `rft.core.layout` in `sys.modules`, but it never executes the beam's face-plan code, and `specs/isolated-footing.md` §1's non-reuse line ("the beam's FacePlan/LayerPlan model in `rft.core.layout`") is about those two functions specifically, not the module as a whole. |
 | `rft.revit.column_place_ties` importable under `tests/fake_revit_api.py`'s stand-ins? | ✅ Yes | No new fake types were needed — the existing harness the footing revit tests already use (`test_footing_revit_dowels.py`, `test_footing_revit_mesh.py`) covers it. |
+
+### #222's own reuse target: `rft.core.column_layout` alone (not `column_ties`)
+
+Unlike the `dowel_tie` blocked-item rows above (which reuse `column_ties`/
+`column_tie_levels`), #222 imports ONLY `rft.core.column_layout` — it
+never calls `resolve_tie` or `tie_levels`, so it is checked separately:
+
+```
+>>> import rft.core.column_layout
+sys.modules gained: rft.core.column_layout, rft.core.layout
+```
+
+| Finding | Verdict | Reason |
+|---|---|---|
+| `rft.core.anchorage` reachable? | ❌ No | Confirmed absent from `sys.modules` — `column_layout` alone carries no anchorage coupling. |
+| `rft.core.guards` reachable? | ❌ No | Same check, same result. |
+| `rft.core.column_ties`/`column_tie_levels` reachable? | ❌ No | `column_layout` does not import either — those are only pulled in by the SEPARATE `dowel_tie` reuse path (§1 above), not by `perimeter_bar_positions`. |
+| `rft.core.layout` reachable? | ⚠️ Yes, one hop — same two generic functions only | `column_layout` imports `layout.corner_bar_side_offset_mm`/`layout.corner_bar_u_positions_mm` directly (one hop, not two, since `column_ties` is not on this import path at all). Same #99-safe finding as §2's first row: `FacePlan`/`LayerPlan` are not referenced. |
 
 ---
 

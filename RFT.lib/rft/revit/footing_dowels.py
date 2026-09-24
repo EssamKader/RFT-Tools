@@ -3,8 +3,8 @@
 #202, spec Ref: specs/isolated-footing.md Sec 3 (Story 5), Sec 8, Sec 11
 item 6.
 
-Converts ``rft.core.footing_plan.DowelPlan`` geometry (mm, footing-local,
-centroid at x=y=0, bottom face at z=0) to Revit internal units at the
+Converts ``rft.core.footing_plan.DowelArrayPlan`` geometry (mm, footing-
+local, centroid at x=y=0, bottom face at z=0) to Revit internal units at the
 mm/feet boundary (``rft.revit.units``, the repo's single designated
 boundary -- REUSE_GUIDELINES.md Sec 1) and calls
 ``Rebar.CreateFromCurves`` once, with the bent bar's two connected curves,
@@ -95,17 +95,22 @@ def place_dowel_bar(document, footing, dowel_plan, bar_type):
     No array, no stirrup/tie wiring (Story 6 / #203's own scope): this
     proves the placement mechanics for a single representative dowel,
     matching #198's own "one representative bar per direction" precedent
-    for the mesh.
+    for the mesh. #222 (specs/isolated-footing-dowel-array.md Sec 3 Story
+    3) reshaped ``rft.core.footing_plan``'s dowel plan into a
+    ``DowelArrayPlan`` carrying ``bars`` (a list); this tracer bullet still
+    places only the FIRST entry -- placing every bar in the array is
+    Story 4's own scope (#223), not built here.
 
-    ``dowel_plan`` is a ``rft.core.footing_plan.DowelPlan`` -- the caller
-    must build it via ``rft.core.footing_plan.build_footing_plan``, never
-    by calling ``rft.core.footing_dowels`` directly (the one composing
-    module rule, docs/token-efficient-expansion.md Sec 7).
+    ``dowel_plan`` is a ``rft.core.footing_plan.DowelArrayPlan`` -- the
+    caller must build it via ``rft.core.footing_plan.build_footing_plan``,
+    never by calling ``rft.core.footing_dowels`` directly (the one
+    composing module rule, docs/token-efficient-expansion.md Sec 7).
 
     Returns the created ``Rebar`` element.
     """
     origin_x, origin_y, origin_z = _footing_origin(footing)
-    curves = _dowel_curves(origin_x, origin_y, origin_z, dowel_plan.geometry)
+    curves = _dowel_curves(
+        origin_x, origin_y, origin_z, dowel_plan.bars[0])
     return Rebar.CreateFromCurves(
         document,
         RebarStyle.Standard,
