@@ -1,21 +1,32 @@
 title: "Footing"
 tooltip: >-
   Reinforcement for ONE rectangular isolated (pad) footing under one
-  rectangular column: bottom mesh, optional top mesh, column dowels, dowel
-  stirrups and the footing-perimeter tie bar.
+  rectangular column: bottom mesh and the column dowel array, in a single
+  modeless window. Top mesh, dowel-tie closed loops and the
+  footing-perimeter tie bar have core math but no placement wired yet.
 
-  THIS RELEASE (#198) places the bottom mesh's straight case only -- ONE
-  mesh_bar_x bar and ONE mesh_bar_y bar, centred on the footing, hosted
-  directly on the picked footing. No hooks, no array/spacing, no top mesh,
-  no dowels, no ties yet -- those are later tickets, following the same
-  tracer-bullet-first order the beam and column tools used.
+  Pick a footing; its column auto-detects (#220) and both the column's
+  own section/cover (#221) and the footing's own plan dimensions/
+  thickness/covers (#228) are read live -- never typed. State the mesh
+  and dowel-array inputs, review the plan, then Place (one footing) or
+  Batch (#226) every other footing sharing this footing+column type
+  pair, all inside ONE transaction.
 
-  See specs/isolated-footing.md and IsolatedFooting.extension/CONTEXT.md.
+  See specs/isolated-footing.md, specs/isolated-footing-dowel-array.md,
+  specs/isolated-footing-batch.md and IsolatedFooting.extension/CONTEXT.md.
 author: Essam Kader
 
-# No modeless window in this release -- inputs are asked one at a time
-# with pyrevit.forms, matching the tracer-bullet scope. A persistent
-# engine is only load-bearing once a MODELESS window exists (see the
-# column tool's own bundle.yaml comment on this); this script blocks on
-# each forms call and returns, so it is not needed yet. Revisit this the
-# moment a modeless Review window is added, per the same rc2 lesson.
+# #205: the window is MODELESS (window.show(), never ShowDialog() -- a
+# modal window disables Revit's own main window, so PickObject could
+# never receive a viewport click), and a modeless window's event
+# handlers run AFTER this script has returned. Without a persistent
+# engine pyRevit tears the IronPython engine down at that point: the
+# window survives as a CLR object and its handlers still repaint, but
+# every ExternalEvent carrying a Revit API call is raised into a dead
+# engine and silently never delivers -- a button that appears to work
+# and then waits forever, with no error anywhere. ColumnRFT's own
+# bundle.yaml records the same lesson; this tool deliberately deferred
+# setting it until a modeless window existed (see this file's git
+# history) -- that moment is now.
+engine:
+  persistent: true

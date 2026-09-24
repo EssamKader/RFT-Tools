@@ -1,0 +1,370 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Isolated Footing"
+        Height="680" Width="820"
+        MinHeight="520" MinWidth="620"
+        WindowStartupLocation="CenterScreen"
+        SizeToContent="Manual">
+
+    <!-- #205: this window mirrors ColumnWindow.xaml's SHAPE (the TabItem
+         chrome below is copied verbatim from it, shared brushes, not a
+         shared Style, per that window's own comment on why a Style is
+         per-window); it does not reuse ColumnRFT's own UI source
+         directly (do not open ColumnRFT.extension/, per this ticket's own
+         instruction).
+
+         The Source below is a PLACEHOLDER, rewritten to an absolute
+         file:/// URI by rft.ui.shared_styles BEFORE this markup is parsed,
+         since every {StaticResource} below is resolved DURING the parse
+         and StaticResource does not do forward references. Loading from a
+         string leaves BaseUri null, so this must stay the only relative
+         URI in the file. -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="SharedStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <Style TargetType="{x:Type TabItem}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="TabChrome"
+                                    Background="{StaticResource SurfaceTint}"
+                                    BorderBrush="{StaticResource BorderSubtle}"
+                                    BorderThickness="1,1,1,0"
+                                    Margin="0,0,2,0" Padding="14,7,14,7">
+                                <ContentPresenter ContentSource="Header"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SkyBlue}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource InkPrimary}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsSelected" Value="False"/>
+                                        <Condition Property="IsMouseOver" Value="True"/>
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SkyBlueHover}"/>
+                                </MultiTrigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="TabChrome" Property="Background"
+                                            Value="{StaticResource SurfaceDisabled}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource InkDisabled}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SectionHeading" TargetType="{x:Type TextBlock}">
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Foreground" Value="{StaticResource SkyBlueDeep}"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+                <Setter Property="Margin" Value="0,10,0,4"/>
+            </Style>
+
+            <!-- A READ-OUT, not an input, per R7/R8 (docs/footing/spec-
+                 amendments.md): footing geometry and the column's own
+                 section/cover are read live off the model, never typed,
+                 so every value in the "Footing & Column" tab must not
+                 look like an input. -->
+            <Style x:Key="ReadOut" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkPrimary}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <Style x:Key="ReadOutLabel" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="Margin" Value="0,2,10,2"/>
+            </Style>
+
+            <Style x:Key="ReadOutSource" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                <Setter Property="FontStyle" Value="Italic"/>
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <Style TargetType="{x:Type ComboBox}">
+                <Setter Property="Margin" Value="0,2,0,2"/>
+                <Setter Property="Padding" Value="3,2,3,2"/>
+            </Style>
+
+            <Style x:Key="InputLabel" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{StaticResource InkPrimary}"/>
+                <Setter Property="Margin" Value="0,2,10,2"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- The ground lives on the root Grid, not on the Window element: a
+         Window's own attributes resolve BEFORE Window.Resources exists,
+         so a StaticResource up there throws at load (the beam tool's
+         rc6 defect). -->
+    <Grid Margin="8" Background="{StaticResource SurfaceWhite}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Margin="2,0,2,8" TextWrapping="Wrap"
+                   Text="Detail Isolated Footing -- pick a footing on the first tab. Its column is auto-detected (#220); the other tabs stay disabled until both the footing and its column are accepted -- a footing with no column, or a geometry/cover parameter this tool cannot read, is refused with the reason, not detailed halfway (R7/R8)."/>
+
+        <TabControl x:Name="tabs" Grid.Row="1"
+                    Background="{StaticResource SurfaceWhite}"
+                    BorderBrush="{StaticResource BorderSubtle}">
+
+            <TabItem Header="Footing &amp; Column">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Footing"/>
+                        <StackPanel Orientation="Horizontal">
+                            <!-- No Click attribute. Handlers are wired in
+                                 script.py, since a string-loaded window has
+                                 no code behind (see ColumnWindow.xaml's own
+                                 comment on this, verified live on Revit
+                                 2024). -->
+                            <Button x:Name="pick_footing_btn"
+                                    Content="Pick footing..."
+                                    Padding="12,5,12,5"/>
+                            <TextBlock x:Name="footing_status_tb"
+                                       Style="{StaticResource ReadOut}"
+                                       Margin="12,6,0,2"
+                                       Text="No footing picked yet."/>
+                        </StackPanel>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="a (X) x b (Y)"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       x:Name="footing_ab_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Thickness"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       x:Name="footing_thickness_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Side cover"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1"
+                                       x:Name="footing_cover_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Bottom / Top cover"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1"
+                                       x:Name="footing_bt_cover_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Column above (auto-detected, #220)"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Cw x Cd"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       x:Name="column_cwcd_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Cover"
+                                       Style="{StaticResource ReadOutLabel}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       x:Name="column_ccover_tb"
+                                       Style="{StaticResource ReadOut}" Text="--"/>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="mesh_dowels_tab" Header="Mesh &amp; Dowels"
+                     IsEnabled="False">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Bottom mesh (#198)"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Column-face clear offset X, mm"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="x_offset_tb" Text="300"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Column-face clear offset Y, mm"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1"
+                                     x:Name="y_offset_tb" Text="150"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="LD multiplier (mesh)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1"
+                                     x:Name="ld_multiplier_tb" Text="40"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="mesh_bar_x type (X-direction)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1"
+                                      x:Name="mesh_bar_x_type_cb"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="mesh_bar_y type (Y-direction)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1"
+                                      x:Name="mesh_bar_y_type_cb"/>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Dowel array (#202/#222) -- hooks bend outward, R10"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Dowel bar type"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="dowel_bar_type_cb"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="LD multiplier (dowel)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1"
+                                     x:Name="dowel_ld_multiplier_tb" Text="40"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Dowel tie bar type (array spacing only)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1"
+                                      x:Name="dowel_tie_bar_type_cb"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Dowel count on each Cw-face, incl. corners"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1"
+                                     x:Name="dowel_count_b_face_tb" Text="3"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="Dowel count on each Cd-face, incl. corners"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1"
+                                     x:Name="dowel_count_h_face_tb" Text="3"/>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Margin="0,10,0,0"
+                                   Text="Top mesh, dowel-tie closed loops and the perimeter-tie bar are not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for them here."/>
+
+                        <Button x:Name="build_report_btn" Margin="0,12,0,0"
+                                HorizontalAlignment="Left" Padding="12,5,12,5"
+                                Content="Build plan and go to Review"/>
+                        <TextBlock x:Name="mesh_dowels_status_tb"
+                                   Style="{StaticResource ReadOutSource}"
+                                   Margin="0,6,0,0" Text=""/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="review_tab" Header="Review" IsEnabled="False">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="report_tb" FontFamily="Consolas"
+                                   Style="{StaticResource ReadOut}"
+                                   FontWeight="Normal" Text="--"/>
+                    </ScrollViewer>
+
+                    <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                        <CheckBox x:Name="batch_cb" Margin="0,0,0,8"
+                                  Content="Batch this footing+column type pair (#226) -- apply to every other footing sharing this footing type AND column type"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="place_btn" Content="Place"
+                                    Padding="14,6,14,6"/>
+                            <TextBlock x:Name="review_status_tb"
+                                       Style="{StaticResource ReadOutSource}"
+                                       Margin="12,8,0,0" Text=""/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+        </TabControl>
+
+        <StackPanel Grid.Row="2" Margin="2,10,2,0">
+            <TextBlock x:Name="status_tb"
+                       Style="{StaticResource ReadOutSource}" Text="ready"/>
+        </StackPanel>
+    </Grid>
+</Window>

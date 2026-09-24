@@ -259,38 +259,50 @@ and then confirmed correct by Essam — recorded as **R3** in
   what #203 did not build) remains a follow-on ticket
   (`docs/footing/HANDOVER-2026-09-24.md` item 6) -- unblocked now that a
   real dowel-bar array exists and places (#222/#223), but not built.
-- Any modeless Review window -- inputs are asked one at a time with
-  `pyrevit.forms` for now (spec-named #205, not started). The batch flow
-  (#226) confirms with a plain-text `forms.alert` report for the same
-  reason -- no WPF grid exists yet to show groups/exclusions/replacements
-  the way ColumnRFT's own batch tab does.
-- Batch placement's own live-host tracer bullet (an N-FOOTING loop inside
-  one transaction, mirroring #223's own N-bar proof) -- `rft.revit.
-  footing_batch` is built and unit-tested (`docs/footing/reuse-audit.md`
-  §9) but not yet run against `ColumnRFT.Trail.rvt`.
 - `dowel_tie`'s own closed-loop shape/placement and `perimeter_tie`
-  placement remain out of the batch too (spec Ref: `specs/
-  isolated-footing-batch.md` §7) -- a batch cannot place what the
-  single-footing path does not place either.
+  placement remain out of the single-footing path AND the batch (spec
+  Ref: `specs/isolated-footing-batch.md` §7) -- a batch cannot place what
+  the single-footing path does not place either. `IsolatedFootingRFT.
+  pushbutton/FootingWindow.xaml`'s own "Mesh & Dowels" tab deliberately
+  asks nothing for these (see #205's own scope note below) rather than
+  offering an input this tool cannot act on.
 
 **Now DONE, no longer a gap (2026-09-24 session):** the dowel array
 (#220-#223 -- auto-detect the column, read its Cw/Cd/cover live, compute
-the full array, place every bar), the footing's own plan
-dimensions/thickness/three covers (#228 -- read live off the picked
-`FamilyInstance`'s `STRUCTURAL_FOUNDATION_LENGTH`/`_WIDTH`/`_THICKNESS`
-type parameters and `CLEAR_COVER_BOTTOM`/`_TOP`/`_OTHER` instance
-parameters, never typed), and multi-footing batch placement (#226,
+the full array, place every bar, hooks bending OUTWARD per R10), the
+footing's own plan dimensions/thickness/three covers (#228 -- read live
+off the picked `FamilyInstance`'s `STRUCTURAL_FOUNDATION_LENGTH`/`_WIDTH`/
+`_THICKNESS` type parameters and `CLEAR_COVER_BOTTOM`/`_TOP`/`_OTHER`
+instance parameters, never typed), multi-footing batch placement (#226,
 `specs/isolated-footing-batch.md` -- collect by footing+column type
 pair, group by R9's live-read tuple, plan/refuse/report, one
 all-or-nothing transaction, `RFT-FTG-` ownership tagging via new
-`rft.revit.footing_ownership`) are all wired into `IsolatedFootingRFT.
-pushbutton/script.py`. `x_offset_mm`/`y_offset_mm`/`ld_multiplier` and
-the dowel array's own bar-type/LD-multiplier/count-per-face inputs
-remain typed `pyrevit.forms` prompts, shared across the whole batch when
-one is run -- see `docs/footing/reuse-audit.md` §6-§9 and
-`docs/footing/verification/issue-22{0,3}-*.md` /
-`issue-228-footing-dimension-read.md` for the live-host proof landed so
-far (#226's own live-host step is still outstanding, see above).
+`rft.revit.footing_ownership`, live-host-verified including the
+N-footing loop), and the modeless Review window (#205 -- `IsolatedFootingRFT.
+pushbutton/FootingWindow.xaml` + `script.py`'s `FootingWindow` class,
+`engine: persistent: true` now set) are all built. `x_offset_mm`/
+`y_offset_mm`/`ld_multiplier`, the dowel array's own bar-type/LD-
+multiplier/count-per-face inputs, and the batch checkbox all live in the
+window's own three tabs (Footing & Column -- read-only live values;
+Mesh & Dowels -- the shared inputs; Review -- the report plus Place/
+Batch), shared across the whole batch when one is run -- see
+`docs/footing/reuse-audit.md` §6-§10 and `docs/footing/verification/
+issue-22{0,2,3,6}-*.md` / `issue-228-footing-dimension-read.md` for the
+live-host proof.
+
+**#205's own scope decision, recorded here (not a separate ruling --
+a reuse/scope note, per REUSE_GUIDELINES.md §3):** the ticket's own text
+names every input across #198-#204, including top mesh's U/L-shape
+toggle, `dowel_tie` diameter/spacing and `perimeter_tie` diameter/
+spacing/quantity. None of those three has a Revit PLACEMENT adapter in
+this repo (see the bullet above and `docs/footing/reuse-audit.md`) --
+only core math. Exposing input fields for them would let an engineer
+configure something this tool cannot place, which is the exact
+"guessed scope" REUSE_GUIDELINES.md §3 exists to prevent. The window
+therefore wires only what #198-#228 actually PLACE (bottom mesh, the
+dowel array, single or batch) and says so directly in its own "Mesh &
+Dowels" tab, rather than silently expanding scope to build three new
+placement adapters as a side effect of a UI-wiring ticket.
 
 ## Open gap: rotated footings refuse rather than place wrong
 

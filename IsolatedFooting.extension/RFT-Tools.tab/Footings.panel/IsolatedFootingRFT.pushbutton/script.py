@@ -1,48 +1,50 @@
 # -*- coding: utf-8 -*-
-"""IsolatedFootingRFT -- bottom-mesh + dowel-array tracer-bullet slice.
+"""IsolatedFootingRFT -- the modeless window shell (#205).
 
-Spec Ref: specs/isolated-footing.md Sec 11 item 2 (bottom mesh);
-specs/isolated-footing-dowel-array.md Sec 3 Story 4, Sec 4 (dowel array,
-#223). Places ONE mesh_bar_x bar and ONE mesh_bar_y bar (straight case, no
-hooks), plus every dowel bar the auto-detected column's own live section
-calls for, on a picked isolated footing, using the API pattern
-docs/footing/verification/issue-197-footing-tracer-bullet.md Sec 1
-confirmed by a kept write.
+Wires everything #198-#228 built into ONE window: pick a footing, its
+column auto-detects (#220) and both refuse before any tab enables (R7/
+R8), state the mesh/dowel-array inputs, review the plan, then Place (one
+footing) or Batch (#226, every footing sharing this footing+column type
+pair). Nothing here re-derives a detailing rule -- every number comes
+from `rft.core.footing_plan.build_footing_plan`/`rft.revit.footing_batch`,
+the SAME functions the report and the placement both read
+(REUSE_GUIDELINES.md Sec 1).
 
-SCOPE: this ticket (#198, extended by #223) is core math + the composing
-module + this tracer-bullet placement -- NOT a review/report UI. A modeless
-Review window (#205), hook logic (#199), L-shape alternation, top mesh, and
-dowel ties/perimeter tie placement are separate tickets, following the same
-tracer-bullet-first order the beam and column tools used (spec Sec 11).
+## Scope -- what this window does NOT expose, and why
 
-Every input below is asked one at a time and the whole placement (mesh AND
-dowel array) happens in ONE transaction, so a failure anywhere -- including
-partway through the dowel array loop -- leaves the model exactly as it was
-(this repo's transaction hard rule; spec Ref: isolated-footing-dowel-array
-Sec 3 Story 4, "roll back the WHOLE transaction").
+Top mesh (#201), dowel-tie closed loops (#203) and the perimeter-tie bar
+(#204) have core math (`rft.core.footing_plan`/`footing_dowel_ties`/
+`footing_perimeter_tie`) but no Revit placement adapter yet
+(`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
+adding input fields for them here would let an engineer configure
+something this tool cannot place. This ticket wires what #198-#228
+actually PLACE (bottom mesh, the dowel array, single or batch); it does
+not implement new placement logic for the rest, which stays out of
+scope per REUSE_GUIDELINES.md Sec 3 ("Zero API Guessing") the same way
+every other undelivered piece in this tool has been treated all session.
 
-The column is auto-detected (#220) and its Cw/Cd/cover read live (#221),
-and the footing's OWN plan dimensions/thickness/covers are read live off
-the picked FamilyInstance (#228) -- all BEFORE any remaining dimension is
-asked and before any transaction opens. R7's own ruling ("no manual
-pick/typed fallback") and R8's own ruling ("read dimension from revit not
-from typed inputs") both apply: a footing with no column above it, or with
-a geometry/cover parameter this tool cannot read, refuses immediately,
-never reaching a half-asked dialog.
+## The two settings that are not visible in this file
 
-Once the shared inputs are collected, the engineer is asked whether to
-place them on this ONE footing (unchanged) or run them as a BATCH across
-every other footing sharing this footing+column type pair (#226, spec
-Ref: specs/isolated-footing-batch.md) -- the entire batch mechanism
-(collect, group by R9's live-read tuple, plan, refuse, place) is
-``rft.revit.footing_batch``'s own, called here only to gather the shared
-inputs and report the result.
+- **MODELESS** (``window.show()``, never ``ShowDialog()``). A modal
+  window disables every other top-level window in the process, Revit's
+  included, so ``PickObject`` could never receive a viewport click.
+- **``engine: persistent: true``** in ``bundle.yaml``. Without it pyRevit
+  tears the IronPython engine down when this script returns; the window
+  survives as a CLR object and still repaints, but every
+  ``ExternalEvent`` is raised into a dead engine and silently never
+  delivers -- a button that waits forever with no error. ColumnRFT's own
+  ``bundle.yaml`` records the same lesson; this tool had explicitly
+  deferred setting it until a modeless window existed (see this file's
+  git history) -- that moment is now.
 """
+
+import os
 
 from pyrevit import forms, revit, script
 from Autodesk.Revit.DB import Transaction
 
 from rft.core.footing_plan import FootingInputs, build_footing_plan
+from rft.core import footing_report
 from rft.revit import footing_batch
 from rft.revit.bar_types import bar_type_diameter_mm, bar_type_options
 from rft.revit.column_host import ColumnHostError
@@ -53,6 +55,9 @@ from rft.revit.footing_host import (
 )
 from rft.revit.footing_mesh import place_straight_bottom_mesh
 from rft.revit.units import internal_to_mm
+from rft.ui import footing_persistence as ui_persistence
+from rft.ui.inputs import parse_optional_positive_int, parse_positive_float
+from rft.ui.shared_styles import window_xaml
 
 TRANSACTION_NAME = (
     "Isolated Footing RFT -- bottom mesh (straight case) + dowel array")
@@ -60,247 +65,484 @@ TRANSACTION_NAME = (
 logger = script.get_logger()
 
 
-def _ask_mm(prompt, default_mm):
-    value = forms.ask_for_string(
-        default=str(default_mm), prompt=prompt,
-        title="Isolated Footing RFT")
-    if value is None:
-        return None
-    return float(value)
+class FootingWindow(forms.WPFWindow):
+    """The three-tab shell: Footing & Column, Mesh & Dowels, Review."""
 
+    def __init__(self):
+        # Loaded as a STRING so the shared palette's absolute location can
+        # be substituted into the markup before WPF parses it -- see
+        # rft.ui.shared_styles for why a merge after LoadComponent is too
+        # late. ColumnRFT's own window uses the identical pattern.
+        forms.WPFWindow.__init__(
+            self,
+            window_xaml(os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "FootingWindow.xaml",
+            )),
+            literal_string=True,
+        )
 
-def _ask_count(prompt, default_count):
-    """Same one-at-a-time string prompt as ``_ask_mm``, but for a dowel
-    face count -- ``perimeter_bar_positions`` (#222's own reuse target)
-    indexes a range with this value, so it must be an ``int``, not the
-    ``float`` every other ``_ask_mm`` input is."""
-    value = forms.ask_for_string(
-        default=str(default_count), prompt=prompt,
-        title="Isolated Footing RFT")
-    if value is None:
-        return None
-    return int(value)
+        self.footing = None
+        self.column = None
+        self.geometry = None
+        self.column_section = None
+        self.plan = None
+        self._footing_inputs = None
+        self._batch_inputs = None
+        self._bar_types = {}
+        self._bar_type_options = []
+        self._api_call_in_flight = False
 
+        # Wired HERE, not with a Click="..." attribute in the XAML -- a
+        # window loaded from a string has no code behind, so WPF cannot
+        # resolve a handler name in the markup (ColumnWindow.xaml's own
+        # comment, verified live on Revit 2024).
+        self.pick_footing_btn.Click += self.on_pick_click
+        self.build_report_btn.Click += self.on_build_report_click
+        self.place_btn.Click += self.on_place_click
+        self.Closing += self._on_closing
 
-def _ask_bar_type(document, prompt):
-    options = bar_type_options(document, internal_to_mm)
-    if not options:
-        forms.alert("No RebarBarType found in this document.",
-                     title="Isolated Footing RFT")
-        return None
-    labels = [label for label, _bar_type in options]
-    chosen = forms.SelectFromList.show(
-        labels, title=prompt, button_name="Select")
-    if chosen is None:
-        return None
-    for label, bar_type in options:
-        if label == chosen:
-            return bar_type
-    return None
+        self._restore_project_inputs()
 
+    # ---------------------------------------------------------- dispatch
+    def _dispatch_to_revit_context(self, func, action_label):
+        """Run ``func`` where Revit's API is legal -- a modeless window's
+        handlers run OUTSIDE Revit's own API context, where ``PickObject``
+        and ``Transaction`` both raise. Same
+        ``revit.events.execute_in_revit_context`` precedent ColumnRFT's
+        own window follows, not an inference.
+        """
+        if self._api_call_in_flight:
+            return
+        self._api_call_in_flight = True
+        self.status_tb.Text = "{} -- waiting for Revit...".format(
+            action_label)
+        revit.events.execute_in_revit_context(
+            self._run_in_revit_context, func, action_label)
 
-def _format_batch_report(batch_plan, existing):
-    """Plain-text stand-in for spec Sec 4/6's report -- there is no
-    modeless Review window for this tool yet (#205, not started), so the
-    same shared inputs / groups / exclusions / replacement table are
-    rendered as text for ``forms.alert`` instead of a WPF grid, matching
-    this script's own sequential-`pyrevit.forms` style everywhere else.
-    """
-    lines = []
-    lines.append("%d group(s):" % len(batch_plan.groups))
-    for group in batch_plan.groups:
-        lines.append(
-            "  a=%.0f b=%.0f t=%.0f Cw=%.0f Cd=%.0f -- footing(s) %s"
-            % (group.key.a_mm, group.key.b_mm,
-               group.key.footing_thickness_mm, group.key.Cw_mm,
-               group.key.Cd_mm,
-               ", ".join(str(i) for i in group.element_ids)))
-    if batch_plan.exclusions:
-        lines.append("%d excluded:" % len(batch_plan.exclusions))
-        for exclusion in batch_plan.exclusions:
-            lines.append("  footing %s -- %s"
-                         % (exclusion.element_id, exclusion.reason))
-    replacing = [row for row in existing if row.replaced_count]
-    if replacing:
-        lines.append("%d footing(s) already hold elements this tool "
-                     "placed:" % len(replacing))
-        for row in replacing:
-            lines.append("  footing %s -- %d element(s)"
-                         % (row.element_id, row.replaced_count))
-    return "\n".join(lines)
+    def _run_in_revit_context(self, func, action_label):
+        try:
+            func()
+            if self.status_tb.Text.endswith("waiting for Revit..."):
+                self.status_tb.Text = "ready"
+        except (FootingHostError, ColumnHostError) as refusal:
+            # An EXPECTED outcome, not a crash -- a footing/column this
+            # tool declines to detail (R7/R8's own refusals).
+            self._reset_footing_state()
+            self.status_tb.Text = str(refusal)
+            forms.alert(str(refusal), title="Footing out of scope",
+                        warn_icon=True)
+        except Exception as ex:
+            # NEVER let this reach the ExternalEvent handler, which would
+            # log it and show the engineer nothing at all.
+            message = "{} failed -- {}: {}".format(
+                action_label, type(ex).__name__, ex)
+            self.status_tb.Text = message
+            forms.alert(message, title="{} failed".format(action_label))
+        finally:
+            self._api_call_in_flight = False
 
+    def _refuse_on_tab(self, status_control, message):
+        """A refusal the engineer cannot see is a silent failure -- every
+        tab's own status line, plus the always-visible footer
+        ``status_tb`` (ColumnWindow.xaml's own lesson: a refusal written
+        only below the fold reads as a button that does nothing)."""
+        status_control.Text = message
+        self.status_tb.Text = message
 
-def _run_batch(footing, batch_inputs, bar_x_type, bar_y_type,
-               dowel_bar_type):
-    """Spec Ref: specs/isolated-footing-batch.md Sec 2-6. Collects, reads,
-    groups and plans every footing sharing ``footing``'s own footing+
-    column type pair, reports groups/exclusions/replacements, confirms a
-    replacement the same way the single-footing path would (were it
-    wired for ownership at all -- it is not; batch is this tool's first
-    consumer of ``footing_ownership``), then places every survivor inside
-    ONE transaction.
-    """
-    doc = revit.doc
-    batch_plan = footing_batch.plan_candidates(doc, footing, batch_inputs)
-    existing = footing_batch.read_existing(doc, batch_plan)
-    report = _format_batch_report(batch_plan, existing)
+    # ------------------------------------------------------------ picking
+    def on_pick_click(self, sender, args):
+        self._dispatch_to_revit_context(
+            self._pick_footing_in_context, "Pick footing")
 
-    replacing = [row for row in existing if row.replaced_count]
-    if replacing:
-        proceed = forms.alert(
-            "%s\n\nApply will DELETE this tool's own existing elements on "
-            "%d footing(s) and rebuild them. Proceed?"
-            % (report, len(replacing)),
-            title="Replace existing reinforcement in %d footing(s)?"
-                 % len(replacing),
-            ok=False, yes=True, no=True)
-        if not proceed:
-            forms.alert("Batch cancelled -- nothing changed.\n\n%s" % report,
-                         title="Isolated Footing RFT Batch")
+    def _reset_footing_state(self, message="No footing picked yet."):
+        self.footing = None
+        self.column = None
+        self.geometry = None
+        self.column_section = None
+        self.plan = None
+        self.footing_status_tb.Text = message
+        self.footing_ab_tb.Text = "--"
+        self.footing_thickness_tb.Text = "--"
+        self.footing_cover_tb.Text = "--"
+        self.footing_bt_cover_tb.Text = "--"
+        self.column_cwcd_tb.Text = "--"
+        self.column_ccover_tb.Text = "--"
+        self.mesh_dowels_tab.IsEnabled = False
+        self.review_tab.IsEnabled = False
+
+    def _pick_footing_in_context(self):
+        # Reset FIRST, regardless of how far the previous pick got.
+        self._reset_footing_state()
+
+        footing = revit.pick_element(
+            message="Select an isolated footing to detail.")
+        if footing is None:
+            self._refuse_on_tab(self.footing_status_tb,
+                                "No footing picked yet.")
             return
 
-    try:
-        result = footing_batch.apply_batch(
-            doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type)
-    except footing_batch.FootingBatchError as ex:
-        forms.alert(str(ex), title="Batch refused")
-        return
-    except Exception as ex:
-        logger.error("Isolated Footing RFT batch failed: %s", ex)
-        forms.alert(
-            "Batch FAILED and was rolled back -- %s: %s"
-            % (type(ex).__name__, ex),
-            title="Batch failed -- rolled back")
-        return
-
-    forms.alert(
-        "Placed %d footing(s) in %d group(s). %d excluded.\n\n%s"
-        % (len(result.per_footing), len(batch_plan.groups),
-           len(batch_plan.exclusions), report),
-        title="Isolated Footing RFT Batch")
-
-
-def main():
-    footing = revit.pick_element("Pick an isolated footing")
-    if footing is None:
-        return
-
-    # Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 1 (R7) +
-    # docs/footing/spec-amendments.md R8. Both run BEFORE any dimension is
-    # asked and before any transaction opens, so a footing with no column
-    # above it, or missing/unset geometry parameters, refuses immediately
-    # rather than after a half-filled dialog.
-    try:
+        # R7 (#220/#221) then R8 (#228) -- BOTH refuse BEFORE any tab
+        # enables and before any reads populate the window: a window
+        # showing numbers for a footing it is about to decline is worse
+        # than one showing none.
         column = find_column_above(revit.doc, footing)
         column_section = read_dowel_column_section_mm(column)
         geometry = read_footing_geometry_mm(footing)
-    except (FootingHostError, ColumnHostError) as gap:
-        forms.alert(str(gap), title="Isolated Footing RFT")
-        return
 
-    x_offset_mm = _ask_mm("Column-face clear offset X, mm", 300.0)
-    y_offset_mm = _ask_mm("Column-face clear offset Y, mm", 150.0)
-    ld_multiplier = _ask_mm(
-        "Development length multiplier (LD = multiplier x db)", 40.0)
+        self.footing = footing
+        self.column = column
+        self.geometry = geometry
+        self.column_section = column_section
+        self._populate_footing_readouts()
+        self._populate_bar_type_combos()
+        self.mesh_dowels_tab.IsEnabled = True
+        self.footing_status_tb.Text = (
+            "Footing %s, column %s accepted."
+            % (footing.Id.IntegerValue, column.Id.IntegerValue))
 
-    if None in (x_offset_mm, y_offset_mm, ld_multiplier):
-        return
+    def _populate_footing_readouts(self):
+        geometry = self.geometry
+        column_section = self.column_section
+        self.footing_ab_tb.Text = "%.0f x %.0f mm" % (
+            geometry.a_mm, geometry.b_mm)
+        self.footing_thickness_tb.Text = "%.0f mm" % (
+            geometry.footing_thickness_mm)
+        self.footing_cover_tb.Text = "%.0f mm" % geometry.cover_mm
+        self.footing_bt_cover_tb.Text = "%.0f / %.0f mm" % (
+            geometry.bottom_cover_mm, geometry.top_cover_mm)
+        self.column_cwcd_tb.Text = "%.0f x %.0f mm" % (
+            column_section.Cw_mm, column_section.Cd_mm)
+        self.column_ccover_tb.Text = "%.0f mm" % column_section.Ccover_mm
 
-    bar_x_type = _ask_bar_type(revit.doc, "mesh_bar_x type (X-direction)")
-    if bar_x_type is None:
-        return
-    bar_y_type = _ask_bar_type(revit.doc, "mesh_bar_y type (Y-direction)")
-    if bar_y_type is None:
-        return
-    dowel_bar_type = _ask_bar_type(revit.doc, "Dowel bar type")
-    if dowel_bar_type is None:
-        return
-    dowel_tie_bar_type = _ask_bar_type(
-        revit.doc, "Dowel tie bar type (array spacing only -- the tie "
-                   "ladder itself is a separate ticket)")
-    if dowel_tie_bar_type is None:
-        return
+    # -------------------------------------------------------- bar types
+    def _populate_bar_type_combos(self):
+        """One shared option list for all four bar-type pickers -- unlike
+        ColumnRFT's main/tie split, this tool filters no role out of
+        ``bar_type_options``'s own list, so every combo indexes the same
+        list (``_selected_bar_type_object`` needs no per-combo dispatch).
+        """
+        options = bar_type_options(revit.doc, internal_to_mm)
+        for combo in (self.mesh_bar_x_type_cb, self.mesh_bar_y_type_cb,
+                     self.dowel_bar_type_cb, self.dowel_tie_bar_type_cb):
+            combo.Items.Clear()
+            for label, _bar_type in options:
+                combo.Items.Add(label)
+        self._bar_type_options = options
+        self._restore_bar_type_selections()
 
-    dowel_ld_multiplier = _ask_mm(
-        "Dowel development length multiplier (LD = multiplier x db)", 40.0)
-    dowel_count_b_face = _ask_count(
-        "Dowel count on each Cw-face, incl. corners", 3)
-    dowel_count_h_face = _ask_count(
-        "Dowel count on each Cd-face, incl. corners", 3)
+    def _selected_bar_type_object(self, combo):
+        """The actual ``RebarBarType`` behind a combo -- never parsed out
+        of the name (the live model's ``16M`` is 15.90mm, ``25M`` is
+        25.40mm)."""
+        index = combo.SelectedIndex
+        if index < 0 or index >= len(self._bar_type_options):
+            return None
+        return self._bar_type_options[index][1]
 
-    if None in (dowel_ld_multiplier, dowel_count_b_face,
-                dowel_count_h_face):
-        return
+    # ---------------------------------------------------- mesh & dowels
+    def on_build_report_click(self, sender, args):
+        """Parses every shared input, builds ``FootingInputs`` from them
+        PLUS this footing's own live reads, calls the SAME
+        ``build_footing_plan`` the placer will use, and shows the report
+        -- WPF-only work, no Revit API call, so this handler does not
+        need ``_dispatch_to_revit_context``.
+        """
+        try:
+            x_offset_mm = parse_positive_float(
+                self.x_offset_tb.Text, "Column-face clear offset X")
+            y_offset_mm = parse_positive_float(
+                self.y_offset_tb.Text, "Column-face clear offset Y")
+            ld_multiplier = parse_positive_float(
+                self.ld_multiplier_tb.Text, "LD multiplier (mesh)")
+            dowel_ld_multiplier = parse_positive_float(
+                self.dowel_ld_multiplier_tb.Text, "LD multiplier (dowel)")
+            dowel_count_b_face = parse_optional_positive_int(
+                self.dowel_count_b_face_tb.Text,
+                "Dowel count on each Cw-face")
+            dowel_count_h_face = parse_optional_positive_int(
+                self.dowel_count_h_face_tb.Text,
+                "Dowel count on each Cd-face")
+        except ValueError as ex:
+            self._refuse_on_tab(self.mesh_dowels_status_tb, str(ex))
+            return
 
-    # Spec Ref: specs/isolated-footing-batch.md Sec 1-2 (#226). Every
-    # shared input above is now collected; offer the batch BEFORE
-    # building this one footing's own FootingInputs/transaction, so a
-    # "yes" here never also runs the single-footing placement below.
-    run_as_batch = forms.alert(
-        "Apply this same design to every OTHER footing sharing this "
-        "footing type AND column type too?",
-        title="Batch this footing+column type pair?",
-        ok=False, yes=True, no=True)
-    if run_as_batch:
-        batch_inputs = footing_batch.BatchInputs(
+        if dowel_count_b_face is None or dowel_count_h_face is None:
+            self._refuse_on_tab(
+                self.mesh_dowels_status_tb,
+                "Dowel counts must be given -- the array is always built "
+                "from the live column section (R6).")
+            return
+
+        mesh_bar_x_type = self._selected_bar_type_object(
+            self.mesh_bar_x_type_cb)
+        mesh_bar_y_type = self._selected_bar_type_object(
+            self.mesh_bar_y_type_cb)
+        dowel_bar_type = self._selected_bar_type_object(
+            self.dowel_bar_type_cb)
+        dowel_tie_bar_type = self._selected_bar_type_object(
+            self.dowel_tie_bar_type_cb)
+        if None in (mesh_bar_x_type, mesh_bar_y_type, dowel_bar_type,
+                    dowel_tie_bar_type):
+            self._refuse_on_tab(self.mesh_dowels_status_tb,
+                                "Every bar type must be selected.")
+            return
+
+        mesh_bar_x_dia_mm = bar_type_diameter_mm(
+            mesh_bar_x_type, internal_to_mm)
+        mesh_bar_y_dia_mm = bar_type_diameter_mm(
+            mesh_bar_y_type, internal_to_mm)
+        dowel_bar_dia_mm = bar_type_diameter_mm(
+            dowel_bar_type, internal_to_mm)
+        dowel_tie_dia_mm = bar_type_diameter_mm(
+            dowel_tie_bar_type, internal_to_mm)
+
+        geometry = self.geometry
+        inputs = FootingInputs(
+            a_mm=geometry.a_mm, b_mm=geometry.b_mm,
+            cover_mm=geometry.cover_mm,
+            footing_thickness_mm=geometry.footing_thickness_mm,
+            bottom_cover_mm=geometry.bottom_cover_mm,
+            top_cover_mm=geometry.top_cover_mm,
+            mesh_bar_x_dia_mm=mesh_bar_x_dia_mm,
+            mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
             x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
             ld_multiplier=ld_multiplier,
-            bar_x_type=bar_x_type, bar_y_type=bar_y_type,
+            dowel_bar_dia_mm=dowel_bar_dia_mm,
+            dowel_ld_multiplier=dowel_ld_multiplier,
+            dowel_tie_dia_mm=dowel_tie_dia_mm,
+            dowel_count_b_face=dowel_count_b_face,
+            dowel_count_h_face=dowel_count_h_face)
+
+        try:
+            plan = build_footing_plan(
+                inputs, column_section=self.column_section)
+        except ValueError as ex:
+            self._refuse_on_tab(self.mesh_dowels_status_tb, str(ex))
+            return
+
+        self.plan = plan
+        self._footing_inputs = inputs
+        self._bar_types = {
+            "mesh_bar_x_type": mesh_bar_x_type,
+            "mesh_bar_y_type": mesh_bar_y_type,
+            "dowel_bar_type": dowel_bar_type,
+            "dowel_tie_bar_type": dowel_tie_bar_type,
+        }
+        # Spec Ref: specs/isolated-footing-batch.md Sec 1 -- the shared
+        # inputs a batch states once, carried as one object so
+        # footing_batch never has to remember which caller supplied what.
+        self._batch_inputs = footing_batch.BatchInputs(
+            x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
+            ld_multiplier=ld_multiplier,
+            bar_x_type=mesh_bar_x_type, bar_y_type=mesh_bar_y_type,
             dowel_bar_type=dowel_bar_type,
             dowel_tie_bar_type=dowel_tie_bar_type,
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_count_b_face=dowel_count_b_face,
             dowel_count_h_face=dowel_count_h_face)
-        _run_batch(footing, batch_inputs, bar_x_type, bar_y_type,
-                  dowel_bar_type)
-        return
 
-    mesh_bar_x_dia_mm = bar_type_diameter_mm(bar_x_type, internal_to_mm)
-    mesh_bar_y_dia_mm = bar_type_diameter_mm(bar_y_type, internal_to_mm)
-    dowel_bar_dia_mm = bar_type_diameter_mm(dowel_bar_type, internal_to_mm)
-    dowel_tie_dia_mm = bar_type_diameter_mm(
-        dowel_tie_bar_type, internal_to_mm)
+        sections = [
+            footing_report.footing_geometry_section(geometry),
+            footing_report.column_section_section(self.column_section),
+            footing_report.mesh_section(plan),
+            footing_report.dowel_array_section(plan),
+            footing_report.not_yet_placed_section(),
+        ]
+        self.report_tb.Text = footing_report.render(sections)
+        self.review_tab.IsEnabled = True
+        self.tabs.SelectedItem = self.review_tab
+        self.mesh_dowels_status_tb.Text = "Plan built -- see Review."
+        self.status_tb.Text = "ready"
 
-    inputs = FootingInputs(
-        a_mm=geometry.a_mm, b_mm=geometry.b_mm, cover_mm=geometry.cover_mm,
-        footing_thickness_mm=geometry.footing_thickness_mm,
-        bottom_cover_mm=geometry.bottom_cover_mm,
-        top_cover_mm=geometry.top_cover_mm,
-        mesh_bar_x_dia_mm=mesh_bar_x_dia_mm,
-        mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
-        x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
-        ld_multiplier=ld_multiplier,
-        dowel_bar_dia_mm=dowel_bar_dia_mm,
-        dowel_ld_multiplier=dowel_ld_multiplier,
-        dowel_tie_dia_mm=dowel_tie_dia_mm,
-        dowel_count_b_face=dowel_count_b_face,
-        dowel_count_h_face=dowel_count_h_face)
+    # -------------------------------------------------------------- place
+    def on_place_click(self, sender, args):
+        self._dispatch_to_revit_context(self._place_in_context, "Place")
 
-    try:
-        plan = build_footing_plan(inputs, column_section=column_section)
-    except ValueError as gap:
-        forms.alert(str(gap), title="Isolated Footing RFT")
-        return
+    def _place_in_context(self):
+        if self.batch_cb.IsChecked:
+            self._place_batch_in_context()
+        else:
+            self._place_single_in_context()
 
-    transaction = Transaction(revit.doc, TRANSACTION_NAME)
-    transaction.Start()
-    try:
-        bar_x, bar_y = place_straight_bottom_mesh(
-            revit.doc, footing, plan.bottom_mesh, bar_x_type, bar_y_type)
-        dowel_bars = place_dowel_bars(
-            revit.doc, footing, plan.dowel, dowel_bar_type)
-    except Exception as ex:
-        transaction.RollBack()
-        logger.error("Isolated Footing RFT placement failed: %s", ex)
-        forms.alert("Placement failed: %s" % ex,
-                     title="Isolated Footing RFT")
-        return
-    transaction.Commit()
+    def _place_single_in_context(self):
+        """One footing, ONE transaction, all-or-nothing (this repo's own
+        transaction hard rule) -- the exact placement sequence #223 wired,
+        now called from the window instead of a sequential script.
+        """
+        doc = revit.doc
+        bar_types = self._bar_types
+        transaction = Transaction(doc, TRANSACTION_NAME)
+        transaction.Start()
+        try:
+            bar_x, bar_y = place_straight_bottom_mesh(
+                doc, self.footing, self.plan.bottom_mesh,
+                bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])
+            dowel_bars = place_dowel_bars(
+                doc, self.footing, self.plan.dowel,
+                bar_types["dowel_bar_type"])
+        except Exception as ex:
+            transaction.RollBack()
+            message = "Placement FAILED and was rolled back -- {}: {}".format(
+                type(ex).__name__, ex)
+            logger.error(message)
+            self._refuse_on_tab(self.review_status_tb, message)
+            forms.alert(message, title="Placement failed -- rolled back")
+            return
+        transaction.Commit()
 
-    forms.alert(
-        "Placed mesh_bar_x (id %s), mesh_bar_y (id %s), and %d dowel "
-        "bar(s)." % (bar_x.Id, bar_y.Id, len(dowel_bars)),
-        title="Isolated Footing RFT")
+        message = (
+            "Placed mesh_bar_x (id %s), mesh_bar_y (id %s), and %d dowel "
+            "bar(s)." % (bar_x.Id, bar_y.Id, len(dowel_bars)))
+        self.review_status_tb.Text = message
+        self.status_tb.Text = message
+        forms.alert(message, title="Isolated Footing RFT")
+
+    def _place_batch_in_context(self):
+        """Spec Ref: specs/isolated-footing-batch.md Sec 2-6 (#226) --
+        collect, read/group, plan/refuse, report, confirm a replacement,
+        then place every survivor inside ONE transaction.
+        """
+        doc = revit.doc
+        batch_plan = footing_batch.plan_candidates(
+            doc, self.footing, self._batch_inputs)
+        existing = footing_batch.read_existing(doc, batch_plan)
+
+        sections = [
+            footing_report.batch_group_section(batch_plan.groups),
+            footing_report.batch_exclusion_section(batch_plan.exclusions),
+            footing_report.batch_replacement_section(existing),
+        ]
+        report = footing_report.render(sections)
+        self.report_tb.Text = report
+
+        replacing = [row for row in existing if row.replaced_count]
+        if replacing:
+            proceed = forms.alert(
+                "{}\nApply will DELETE this tool's own existing elements "
+                "on {} footing(s) and rebuild them. Proceed?".format(
+                    report, len(replacing)),
+                title="Replace existing reinforcement in {} footing(s)?"
+                     .format(len(replacing)),
+                ok=False, yes=True, no=True)
+            if not proceed:
+                self._refuse_on_tab(
+                    self.review_status_tb,
+                    "Batch cancelled -- nothing changed.")
+                return
+
+        try:
+            result = footing_batch.apply_batch(
+                doc, batch_plan, self._bar_types["mesh_bar_x_type"],
+                self._bar_types["mesh_bar_y_type"],
+                self._bar_types["dowel_bar_type"])
+        except footing_batch.FootingBatchError as ex:
+            self._refuse_on_tab(self.review_status_tb, str(ex))
+            forms.alert(str(ex), title="Batch refused")
+            return
+        except Exception as ex:
+            message = "Batch FAILED and was rolled back -- {}: {}".format(
+                type(ex).__name__, ex)
+            logger.error(message)
+            self._refuse_on_tab(self.review_status_tb, message)
+            forms.alert(message, title="Batch failed -- rolled back")
+            return
+
+        message = "Placed {} footing(s) in {} group(s). {} excluded.".format(
+            len(result.per_footing), len(batch_plan.groups),
+            len(batch_plan.exclusions))
+        self.review_status_tb.Text = message
+        self.status_tb.Text = message
+        forms.alert(message, title="Isolated Footing RFT Batch")
+
+    # --------------------------------------------------------- persistence
+    def _store_project_inputs(self):
+        """Remember this project's shared conventions (#205, U10-style).
+        Never raises -- failing to save a convenience must not turn into
+        a failed Place or a window that cannot close.
+        """
+        try:
+            data = ui_persistence.to_store(
+                dict((name, getattr(self, name).Text)
+                     for name in ui_persistence.TEXT_FIELDS),
+                self._persistable_type_ids())
+            script.store_data(
+                ui_persistence.SETTINGS_SLOT, data, this_project=True)
+        except Exception:
+            pass
+
+    def _persistable_type_ids(self):
+        ids = {}
+        combo_by_field = {
+            "mesh_bar_x_type": self.mesh_bar_x_type_cb,
+            "mesh_bar_y_type": self.mesh_bar_y_type_cb,
+            "dowel_bar_type": self.dowel_bar_type_cb,
+            "dowel_tie_bar_type": self.dowel_tie_bar_type_cb,
+        }
+        for field_name in ui_persistence.TYPE_FIELDS:
+            combo = combo_by_field.get(field_name)
+            bar_type = (self._selected_bar_type_object(combo)
+                       if combo is not None else None)
+            if bar_type is not None:
+                ids[field_name] = bar_type.UniqueId
+        return ids
+
+    def _restore_project_inputs(self):
+        """Never raises, never half-applies a field -- a settings file is
+        not worth failing to open the tool over."""
+        try:
+            if not script.data_exists(
+                    ui_persistence.SETTINGS_SLOT, this_project=True):
+                return
+            raw = script.load_data(
+                ui_persistence.SETTINGS_SLOT, this_project=True)
+        except Exception:
+            return
+
+        text, self._pending_type_ids = ui_persistence.from_store(raw)
+        for name, value in text.items():
+            getattr(self, name).Text = value
+
+    def _restore_bar_type_selections(self):
+        """Re-select each remembered bar type by ``UniqueId``, matched
+        against THIS combo's own freshly-populated options -- a deleted
+        type, or one that now belongs to something else, simply fails to
+        match and the role stays "not selected" (the normal state of a
+        freshly opened window).
+        """
+        unique_ids = getattr(self, "_pending_type_ids", None)
+        if not unique_ids:
+            return
+        combo_by_field = {
+            "mesh_bar_x_type": self.mesh_bar_x_type_cb,
+            "mesh_bar_y_type": self.mesh_bar_y_type_cb,
+            "dowel_bar_type": self.dowel_bar_type_cb,
+            "dowel_tie_bar_type": self.dowel_tie_bar_type_cb,
+        }
+        for field_name, unique_id in unique_ids.items():
+            combo = combo_by_field.get(field_name)
+            if combo is None:
+                continue
+            for index, (_label, bar_type) in enumerate(
+                    self._bar_type_options):
+                if bar_type.UniqueId == unique_id:
+                    combo.SelectedIndex = index
+                    break
+
+    def _on_closing(self, sender, args):
+        self._store_project_inputs()
 
 
-main()
+window = None
+
+
+def main():
+    global window
+    window = FootingWindow()
+    # MODELESS. ShowDialog() would disable Revit's main window, so
+    # PickObject could never receive a viewport click.
+    window.show()
+
+
+if __name__ == "__main__":
+    main()

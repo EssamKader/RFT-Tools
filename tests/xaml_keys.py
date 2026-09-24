@@ -47,21 +47,20 @@ COLUMN_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "ColumnWindow.xaml")
 #: must see it, or the tool ships a window nobody is checking.
 COLUMN_ROOF_XAML_PATH = os.path.join(COLUMN_PUSHBUTTON_DIR, "RoofWindow.xaml")
 
-#: Every window that merges the shared palette. Guards iterate this so a
-#: THIRD element cannot ship a window nobody is checking -- the failure
-#: #86 exists to prevent, one element later.
-WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH,
-                     COLUMN_ROOF_XAML_PATH)
-
-#: #198: the footing tool's pushbutton. It ships no XAML window yet (see
-#: IsolatedFooting.extension/CONTEXT.md), so it is not added to
-#: WINDOW_XAML_PATHS -- only its script.py is a name this file's own
-#: consumers (test_pushbutton_scripts_resolve_their_names.py) need.
+#: #205: the footing tool's own modeless window, added alongside the beam
+#: and column ones.
 FOOTING_PUSHBUTTON_DIR = os.path.join(
     REPO_ROOT,
     "IsolatedFooting.extension", "RFT-Tools.tab",
     "Footings.panel", "IsolatedFootingRFT.pushbutton",
 )
+FOOTING_XAML_PATH = os.path.join(FOOTING_PUSHBUTTON_DIR, "FootingWindow.xaml")
+
+#: Every window that merges the shared palette. Guards iterate this so a
+#: FOURTH element cannot ship a window nobody is checking -- the failure
+#: #86 exists to prevent, one element later.
+WINDOW_XAML_PATHS = (BEAM_XAML_PATH, COLUMN_XAML_PATH,
+                     COLUMN_ROOF_XAML_PATH, FOOTING_XAML_PATH)
 
 SHARED_STYLES_PATH = shared_styles_path()
 
