@@ -655,10 +655,23 @@ def _build_perimeter_tie_plan(inputs):
     geometry = perimeter_tie_geometry(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.perimeter_tie_lap_mm)
-    ladder = perimeter_tie_ladder_mm(
-        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
-        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
-        inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
+    # Found in review (PR #245): perimeter_tie_ladder_mm hard-requires
+    # spacing_mm/quantity (Sec 10: no default) and raises a bare
+    # ValueError otherwise -- gate on both being supplied and degrade to
+    # ladder=None, the SAME graceful-optional-piece pattern every other
+    # plan section already uses (bar_x_array/bar_y_array stay None with
+    # no spacing, DowelTiePlan.loop stays None with no bend diameter).
+    # rft.revit.footing_perimeter_tie.place_perimeter_ties already
+    # anticipates and refuses cleanly on ladder is None
+    # (PerimeterTieNotPlaceableError) -- this is the gate that error path
+    # was always meant to be reached through, not a bare core exception.
+    ladder = None
+    if (inputs.perimeter_tie_spacing_mm is not None
+            and inputs.perimeter_tie_quantity is not None):
+        ladder = perimeter_tie_ladder_mm(
+            inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+            inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+            inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
 
     bar_lengths = None
     split_bars = None

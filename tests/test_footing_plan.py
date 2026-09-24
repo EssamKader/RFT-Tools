@@ -793,6 +793,39 @@ def test_an_unsplit_perimeter_tie_never_builds_split_bars():
     assert plan.perimeter_tie.split_bars is None
 
 
+def test_a_perimeter_tie_dia_with_no_quantity_yet_leaves_the_ladder_none():
+    """Found in review (PR #245): perimeter_tie_quantity has no default
+    (Sec 10) and the window's own parser lets it come back None (an
+    engineer who picked a bar type but hasn't typed a quantity yet) --
+    this must degrade gracefully to ladder=None (the same optional-piece
+    pattern bar_x_array/DowelTiePlan.loop already use), not raise a bare
+    ValueError out of perimeter_tie_ladder_mm. geometry itself (needing
+    only a/b/cover) is still built -- only the Z-position ladder is
+    gated on spacing/quantity."""
+    inputs = _inputs(
+        footing_thickness_mm=1500.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=None)
+    plan = build_footing_plan(inputs)
+
+    assert plan.perimeter_tie is not None
+    assert plan.perimeter_tie.geometry is not None
+    assert plan.perimeter_tie.ladder is None
+
+
+def test_a_perimeter_tie_dia_with_no_spacing_yet_leaves_the_ladder_none():
+    """The mirrored half of the check above: spacing missing (quantity
+    given) must also degrade to ladder=None, not raise."""
+    inputs = _inputs(
+        footing_thickness_mm=1500.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=None,
+        perimeter_tie_quantity=3)
+    plan = build_footing_plan(inputs)
+
+    assert plan.perimeter_tie is not None
+    assert plan.perimeter_tie.ladder is None
+
+
 def test_a_split_perimeter_tie_with_mismatched_bar_lengths_refuses():
     with pytest.raises(PerimeterTieBarLengthMismatchError):
         build_footing_plan(_inputs(

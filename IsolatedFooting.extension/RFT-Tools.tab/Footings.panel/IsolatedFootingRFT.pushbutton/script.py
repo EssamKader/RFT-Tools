@@ -443,6 +443,23 @@ class FootingWindow(forms.WPFWindow):
                 self.mesh_dowels_status_tb,
                 "A perimeter tie hook type must be selected too (#244).")
             return
+        # Found in review (PR #245): perimeter_tie_quantity is parsed as
+        # OPTIONAL (parse_optional_positive_int) since a footing with no
+        # perimeter_tie at all must not be forced to type one, but
+        # footing_plan._build_perimeter_tie_plan has no graceful fallback
+        # for a missing quantity once perimeter_tie_dia_mm IS supplied --
+        # it calls footing_perimeter_tie.perimeter_tie_ladder_mm
+        # unconditionally, which raises a bare ValueError. Refused HERE,
+        # with a field-specific message, the same "optional-parsed field
+        # that is actually required once this feature is requested"
+        # pattern the dowel-count check above already uses, rather than
+        # letting that generic core-layer ValueError surface instead.
+        if (perimeter_tie_bar_type is not None
+                and perimeter_tie_quantity is None):
+            self._refuse_on_tab(
+                self.mesh_dowels_status_tb,
+                "A perimeter tie quantity must be given too (#244).")
+            return
 
         mesh_bar_x_dia_mm = bar_type_diameter_mm(
             mesh_bar_x_type, internal_to_mm)
