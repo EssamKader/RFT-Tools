@@ -30,6 +30,7 @@ from rft.core.footing_perimeter_tie import (
     PerimeterTieLadderExceedsFootingError,
     perimeter_tie_geometry,
     perimeter_tie_ladder_mm,
+    perimeter_tie_split_bar_points_mm,
 )
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
@@ -757,6 +758,39 @@ def test_a_split_perimeter_tie_with_matching_bar_lengths_builds_the_r5_plan():
         15000.0)
     assert plan.perimeter_tie.bar_lengths.second_bar_length_mm == pytest.approx(
         13200.0)
+    # R14: split_bars must be the SAME result calling
+    # perimeter_tie_split_bar_points_mm directly would give (Sec 4, "one
+    # composing module") -- never re-derived independently by a consumer.
+    expected_split = perimeter_tie_split_bar_points_mm(
+        plan.perimeter_tie.geometry, plan.perimeter_tie.bar_lengths)
+    assert plan.perimeter_tie.split_bars == expected_split
+
+
+def test_a_split_perimeter_tie_with_no_bar_lengths_typed_yet_leaves_split_bars_none():
+    """R14's own split_bars is gated on bar_lengths (R5) already being
+    populated -- an engineer who has not yet typed both individual bar
+    lengths gets a plan with bar_lengths=None and split_bars=None, not a
+    guessed shape."""
+    inputs = _inputs(
+        a_mm=7000.0, b_mm=7000.0, footing_thickness_mm=1500.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=1, perimeter_tie_lap_mm=600.0)
+    plan = build_footing_plan(inputs)
+
+    assert plan.perimeter_tie.geometry.splice.bar_count == 2
+    assert plan.perimeter_tie.bar_lengths is None
+    assert plan.perimeter_tie.split_bars is None
+
+
+def test_an_unsplit_perimeter_tie_never_builds_split_bars():
+    inputs = _inputs(
+        footing_thickness_mm=1500.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=3)
+    plan = build_footing_plan(inputs)
+
+    assert plan.perimeter_tie.geometry.splice.bar_count == 1
+    assert plan.perimeter_tie.split_bars is None
 
 
 def test_a_split_perimeter_tie_with_mismatched_bar_lengths_refuses():

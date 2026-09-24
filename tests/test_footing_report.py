@@ -22,6 +22,7 @@ from rft.core.footing_report import (
     footing_geometry_section,
     mesh_section,
     not_yet_placed_section,
+    perimeter_tie_section,
     render,
     top_mesh_section,
 )
@@ -205,13 +206,56 @@ def test_dowel_tie_section_states_the_loop_corners_when_one_is_built():
     assert "Closed loop wraps all" in lines
 
 
-def test_not_yet_placed_section_names_the_one_remaining_unwired_piece():
-    """#233 (R13): top mesh is now wired to placement; #242 wires the
-    dowel_tie closed loop too -- only perimeter-tie remains."""
+def test_perimeter_tie_section_states_a_single_closed_loop():
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0, top_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0,
+        y_offset_mm=150.0, ld_multiplier=40.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=3)
+    plan = build_footing_plan(inputs)
+    lines = "\n".join(perimeter_tie_section(plan).lines)
+    assert "One continuous closed loop" in lines
+    assert "Splits into TWO" not in lines
+
+
+def test_perimeter_tie_section_states_the_split_and_typed_bar_lengths():
+    inputs = FootingInputs(
+        a_mm=7000.0, b_mm=7000.0, cover_mm=50.0,
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0, top_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0,
+        y_offset_mm=150.0, ld_multiplier=40.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=1, perimeter_tie_lap_mm=600.0,
+        perimeter_tie_first_bar_length_mm=15000.0,
+        perimeter_tie_second_bar_length_mm=13200.0)
+    plan = build_footing_plan(inputs)
+    lines = "\n".join(perimeter_tie_section(plan).lines)
+    assert "Splits into TWO" in lines
+    assert "Bar 1 = 15000.0 mm, Bar 2 = 13200.0 mm" in lines
+
+
+def test_perimeter_tie_section_states_a_pending_split_with_no_bar_lengths_yet():
+    inputs = FootingInputs(
+        a_mm=7000.0, b_mm=7000.0, cover_mm=50.0,
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0, top_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0,
+        y_offset_mm=150.0, ld_multiplier=40.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=1, perimeter_tie_lap_mm=600.0)
+    plan = build_footing_plan(inputs)
+    lines = "\n".join(perimeter_tie_section(plan).lines)
+    assert "not typed yet" in lines
+
+
+def test_not_yet_placed_section_states_everything_is_now_wired():
+    """#233 (R13): top mesh is wired; #242 wires the dowel_tie closed loop;
+    #244 wires perimeter_tie (closed loop or split, R14) -- nothing named
+    by this tool's own scope remains unplaced."""
     lines = "\n".join(not_yet_placed_section().lines)
-    assert "Top mesh" not in lines
-    assert "dowel-tie" not in lines.lower()
-    assert "perimeter-tie" in lines.lower()
+    assert "perimeter_tie" in lines
+    assert "#244" in lines
 
 
 def _top_plan():

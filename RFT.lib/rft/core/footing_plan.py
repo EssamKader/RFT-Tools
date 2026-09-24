@@ -35,6 +35,7 @@ from .footing_perimeter_tie import (
     perimeter_tie_bar_lengths_mm,
     perimeter_tie_geometry,
     perimeter_tie_ladder_mm,
+    perimeter_tie_split_bar_points_mm,
 )
 from .footing_mesh import (
     MAT_SHAPE_L_ALTERNATING,
@@ -341,10 +342,21 @@ DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm", "loop"])
 #: length_mm`` are supplied AND the loop needed splitting, else ``None``
 #: (an unsplit loop, or a split loop whose two lengths the engineer
 #: hasn't typed yet).
+#: R14 (`docs/footing/spec-amendments.md`), added after #204/R4/R5
+#: merged: ``split_bars`` is a ``footing_perimeter_tie.
+#: PerimeterTieSplitBars`` (``bar1_points``/``bar2_points``, each a tuple
+#: of footing-local plan points) built from THIS plan's own ``geometry``/
+#: ``bar_lengths`` -- present only when the loop needed splitting AND
+#: ``bar_lengths`` itself is already populated (both engineer-typed
+#: lengths supplied); ``None`` otherwise (an unsplit loop, or a split
+#: loop whose two lengths are not typed yet), the same gating
+#: ``bar_lengths`` itself already uses. The placement adapter reads THIS
+#: field rather than calling ``perimeter_tie_split_bar_points_mm``
+#: directly (Sec 4, "one composing module").
 PerimeterTiePlan = namedtuple(
     "PerimeterTiePlan",
     ["geometry", "dia_mm", "spacing_mm", "quantity", "ladder",
-     "bar_lengths"])
+     "bar_lengths", "split_bars"])
 
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
@@ -649,18 +661,23 @@ def _build_perimeter_tie_plan(inputs):
         inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
 
     bar_lengths = None
+    split_bars = None
     if (geometry.splice.bar_count == 2
             and inputs.perimeter_tie_first_bar_length_mm is not None
             and inputs.perimeter_tie_second_bar_length_mm is not None):
         bar_lengths = perimeter_tie_bar_lengths_mm(
             geometry.splice, inputs.perimeter_tie_first_bar_length_mm,
             inputs.perimeter_tie_second_bar_length_mm)
+        # R14: the two open bars' own point chains, built from THIS SAME
+        # geometry/bar_lengths -- never re-derived by the placement
+        # adapter (Sec 4, "one composing module").
+        split_bars = perimeter_tie_split_bar_points_mm(geometry, bar_lengths)
 
     return PerimeterTiePlan(
         geometry=geometry, dia_mm=inputs.perimeter_tie_dia_mm,
         spacing_mm=inputs.perimeter_tie_spacing_mm,
         quantity=inputs.perimeter_tie_quantity, ladder=ladder,
-        bar_lengths=bar_lengths)
+        bar_lengths=bar_lengths, split_bars=split_bars)
 
 
 def build_footing_plan(inputs, column_section=None,

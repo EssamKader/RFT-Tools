@@ -72,6 +72,37 @@ site), and :func:`perimeter_tie_bar_lengths_mm` only validates that the
 two typed lengths sum to the total this module already computed -- it
 never derives them.
 
+## The split shape -- RESOLVED (R14)
+
+R14 (`docs/footing/spec-amendments.md`) rules that a split `perimeter_tie`
+(`PerimeterTieSplice.bar_count == 2`) is modelled as TWO separate OPEN
+`Rebar` elements, not one closed loop with the split noted only in the
+report. R14 gives the exact construction: pick a fixed unroll start point
+(the SW corner, `local_perimeter_tie_corners_mm`'s own first-wound corner,
+arc-length `s = 0`), walk the closed rectangle's own perimeter by arc
+length through its four corners (SW -> SE -> NE -> NW -> back to SW at
+`s = length_mm`), and place bar 1 from `s = 0` to
+`s = first_bar_length_mm`, bar 2 from
+`s = first_bar_length_mm - lap_mm` to `s = length_mm` (the same physical
+point as `s = 0`, closing the loop).
+
+Algebraic check (R14 says to verify this before coding it, not just trust
+the summary): bar 1's own arc-length span is `first_bar_length_mm - 0 =
+first_bar_length_mm`. Bar 2's own arc-length span is
+`length_mm - (first_bar_length_mm - lap_mm) = length_mm -
+first_bar_length_mm + lap_mm`. Since R5's own
+:func:`perimeter_tie_bar_lengths_mm` already requires
+`first_bar_length_mm + second_bar_length_mm == total_length_mm ==
+length_mm + lap_mm`, bar 2's own span simplifies to
+`second_bar_length_mm` exactly (`length_mm + lap_mm -
+first_bar_length_mm == second_bar_length_mm`). So each bar's own
+UNROLLED arc length equals its own R5-typed cut length exactly, and the
+two bars overlap by `lap_mm` in the middle of the run (from
+`s = first_bar_length_mm - lap_mm` to `s = first_bar_length_mm`) --
+:func:`perimeter_tie_split_bar_points_mm` below implements exactly this,
+with :func:`perimeter_tie_unrolled_points_mm` as the generic "unroll by
+arc length" helper R14 asks for.
+
 ## The vertical ladder -- RESOLVED (R4)
 
 Sec 10 states diameter, spacing and quantity are all direct user inputs
@@ -146,6 +177,14 @@ PerimeterTieGeometry = namedtuple(
     "PerimeterTieGeometry",
     ["inner_a_mm", "inner_b_mm", "length_mm", "splice", "corners"])
 
+#: R14: the two open-bar point chains for a split `perimeter_tie` --
+#: `bar1_points`/`bar2_points` are each a tuple of `PerimeterTieCorner`,
+#: footing-local plan (x, y), no Z (the same "no Z here" convention this
+#: module's own `local_perimeter_tie_corners_mm` already uses -- see this
+#: module's docstring, "Scope this ticket does NOT cover").
+PerimeterTieSplitBars = namedtuple(
+    "PerimeterTieSplitBars", ["bar1_points", "bar2_points"])
+
 
 class PerimeterTieLadderExceedsFootingError(ValueError):
     """A computed `perimeter_tie` level would sit above the footing's own
@@ -178,6 +217,38 @@ class PerimeterTieBarLengthsNotApplicableError(ValueError):
     nothing to validate against -- refused rather than silently ignored,
     since a caller passing bar lengths for a one-bar loop is very likely
     reading stale UI state, not stating a real design decision.
+    """
+
+
+class PerimeterTieArcLengthRangeError(ValueError):
+    """`perimeter_tie_point_at_arc_length_mm`/`perimeter_tie_unrolled_
+    points_mm` was asked for an arc-length position outside `[0,
+    length_mm]` -- the rectangle's own perimeter has no point there. R14's
+    own unroll only ever walks the ONE loop from `s=0` to `s=length_mm`,
+    never wrapping a second time round, so a position outside that range
+    always means a caller-side arithmetic mistake, refused rather than
+    silently clamped.
+    """
+
+
+class PerimeterTieSplitNotApplicableError(ValueError):
+    """`perimeter_tie_split_bar_points_mm` only applies when
+    `PerimeterTieSplice.bar_count == 2` (R14) -- calling it for a single
+    continuous loop has no two-bar shape to build, mirroring
+    `PerimeterTieBarLengthsNotApplicableError`'s own refusal for the same
+    one-bar case.
+    """
+
+
+class PerimeterTieSplitLengthError(ValueError):
+    """The typed `first_bar_length_mm`/`second_bar_length_mm` (R5) do not
+    describe a valid arc-length split under R14's own construction --
+    either `first_bar_length_mm` is shorter than `lap_mm` (bar 2 would
+    have to start before the perimeter's own `s=0`) or longer than
+    `length_mm` (bar 1 would have to wrap past the closing corner). R5
+    already validates the two lengths SUM to the right total; this is the
+    separate, R14-specific check that the split point itself lands inside
+    one single unrolled lap of the perimeter.
     """
 
 
@@ -366,3 +437,140 @@ def perimeter_tie_geometry(a_mm, b_mm, cover_mm, lap_mm=None):
     return PerimeterTieGeometry(
         inner_a_mm=inner.inner_a_mm, inner_b_mm=inner.inner_b_mm,
         length_mm=length_mm, splice=splice, corners=corners)
+
+
+def _edge_lengths_mm(inner_a_mm, inner_b_mm):
+    """The closed rectangle's own four edge lengths, walked in
+    `local_perimeter_tie_corners_mm`'s own winding order (SW->SE->NE->
+    NW->SW): `inner_a_mm` (SW->SE), `inner_b_mm` (SE->NE), `inner_a_mm`
+    (NE->NW), `inner_b_mm` (NW->SW).
+    """
+    return (inner_a_mm, inner_b_mm, inner_a_mm, inner_b_mm)
+
+
+def perimeter_tie_point_at_arc_length_mm(corners, inner_a_mm, inner_b_mm,
+                                          s_mm):
+    """R14: the rectangle's own point at arc-length position `s_mm`,
+    walking `corners` (`local_perimeter_tie_corners_mm`'s own SW/SE/NE/NW
+    winding) from a fixed start at the SW corner (`s_mm=0`) through
+    `s_mm=length_mm` (back at the SW corner, closing the loop).
+
+    Raises :class:`PerimeterTieArcLengthRangeError` for `s_mm` outside
+    `[0, length_mm]` (`length_mm = 2*(inner_a_mm + inner_b_mm)`, per
+    :func:`perimeter_tie_length_mm`) -- this is a single unrolled lap,
+    never a wrap-around.
+    """
+    edges = _edge_lengths_mm(inner_a_mm, inner_b_mm)
+    total_mm = sum(edges)
+    if s_mm < -1.0e-6 or s_mm > total_mm + 1.0e-6:
+        raise PerimeterTieArcLengthRangeError(
+            "s_mm=%.3f is outside the perimeter's own single unrolled lap "
+            "[0, %.3f] (inner_a_mm=%.1f, inner_b_mm=%.1f)."
+            % (s_mm, total_mm, inner_a_mm, inner_b_mm))
+
+    remaining_mm = max(0.0, s_mm)
+    for index in range(4):
+        edge_length_mm = edges[index]
+        if remaining_mm <= edge_length_mm or index == 3:
+            start = corners[index]
+            end = corners[(index + 1) % 4]
+            t = 0.0 if edge_length_mm <= 0.0 \
+                else min(remaining_mm / edge_length_mm, 1.0)
+            return PerimeterTieCorner(
+                start.x_mm + t * (end.x_mm - start.x_mm),
+                start.y_mm + t * (end.y_mm - start.y_mm))
+        remaining_mm -= edge_length_mm
+
+    # Unreachable: the index == 3 branch above always returns.
+    raise PerimeterTieArcLengthRangeError(
+        "s_mm=%.3f could not be resolved to a point." % (s_mm,))
+
+
+def perimeter_tie_unrolled_points_mm(corners, inner_a_mm, inner_b_mm,
+                                      s_start_mm, s_end_mm):
+    """R14: the OPEN polyline's own vertex chain from arc-length
+    `s_start_mm` to `s_end_mm` (`s_end_mm > s_start_mm`), including every
+    rectangle corner the run passes strictly between the two endpoints,
+    in walking order -- the "unroll the rectangle by arc length" helper
+    R14's own ticket (#244) asks for, with no existing reuse target
+    (this module's own docstring, "The split shape -- RESOLVED (R14)").
+
+    Returns a tuple of :class:`PerimeterTieCorner`, footing-local plan
+    (x, y), starting with the point at `s_start_mm`, then every interior
+    corner (`local_perimeter_tie_corners_mm`'s own SE/NE/NW -- index 0's
+    SW corner is only ever an endpoint, at `s_mm=0` or `s_mm=length_mm`,
+    never a strictly-interior point of a sub-range), then the point at
+    `s_end_mm`.
+    """
+    if s_end_mm <= s_start_mm:
+        raise PerimeterTieArcLengthRangeError(
+            "s_end_mm=%.3f must be greater than s_start_mm=%.3f."
+            % (s_end_mm, s_start_mm))
+
+    edges = _edge_lengths_mm(inner_a_mm, inner_b_mm)
+    cumulative_mm = [0.0]
+    for edge_length_mm in edges:
+        cumulative_mm.append(cumulative_mm[-1] + edge_length_mm)
+
+    points = [
+        perimeter_tie_point_at_arc_length_mm(
+            corners, inner_a_mm, inner_b_mm, s_start_mm)]
+    for index in (1, 2, 3):
+        corner_s_mm = cumulative_mm[index]
+        if s_start_mm < corner_s_mm < s_end_mm:
+            points.append(corners[index])
+    points.append(
+        perimeter_tie_point_at_arc_length_mm(
+            corners, inner_a_mm, inner_b_mm, s_end_mm))
+    return tuple(points)
+
+
+def perimeter_tie_split_bar_points_mm(geometry, bar_lengths):
+    """R14: the two OPEN bars' own footing-local point chains for a split
+    `perimeter_tie` (`geometry.splice.bar_count == 2`) -- bar 1 spans
+    `s=0` to `s=bar_lengths.first_bar_length_mm`, bar 2 spans
+    `s=(first_bar_length_mm - lap_mm)` to `s=length_mm` (this module's
+    own docstring, "The split shape -- RESOLVED (R14)", has the full
+    algebraic check that each bar's own arc-length span equals its own
+    R5-typed cut length exactly).
+
+    `geometry` is a :class:`PerimeterTieGeometry`; `bar_lengths` is a
+    :class:`PerimeterTieBarLengths` already validated by
+    :func:`perimeter_tie_bar_lengths_mm` against `geometry.splice` (this
+    function does not re-validate the SUM, only the split point itself --
+    see :class:`PerimeterTieSplitLengthError`).
+
+    Raises :class:`PerimeterTieSplitNotApplicableError` when `geometry.
+    splice.bar_count == 1` (nothing to split -- mirrors
+    :func:`perimeter_tie_bar_lengths_mm`'s own one-bar refusal), and
+    :class:`PerimeterTieSplitLengthError` when `bar_lengths.first_bar_
+    length_mm` falls outside `[lap_mm, length_mm]` (the only range R14's
+    single-lap construction can place the split point in).
+    """
+    if geometry.splice.bar_count == 1:
+        raise PerimeterTieSplitNotApplicableError(
+            "This perimeter_tie is one continuous loop (bar_count=1) -- "
+            "there are no two open bars to build; place the single "
+            "closed loop from geometry.corners instead.")
+
+    lap_mm = geometry.splice.lap_mm
+    length_mm = geometry.length_mm
+    first_bar_length_mm = bar_lengths.first_bar_length_mm
+
+    if first_bar_length_mm < lap_mm or first_bar_length_mm > length_mm:
+        raise PerimeterTieSplitLengthError(
+            "first_bar_length_mm=%.1f must be between lap_mm=%.1f and "
+            "length_mm=%.1f for R14's own single-lap unroll -- bar 2 "
+            "would otherwise have to start before s=0 (first_bar_length_"
+            "mm < lap_mm) or bar 1 would have to wrap past the closing "
+            "corner (first_bar_length_mm > length_mm)."
+            % (first_bar_length_mm, lap_mm, length_mm))
+
+    bar1_points = perimeter_tie_unrolled_points_mm(
+        geometry.corners, geometry.inner_a_mm, geometry.inner_b_mm,
+        0.0, first_bar_length_mm)
+    bar2_points = perimeter_tie_unrolled_points_mm(
+        geometry.corners, geometry.inner_a_mm, geometry.inner_b_mm,
+        first_bar_length_mm - lap_mm, length_mm)
+    return PerimeterTieSplitBars(
+        bar1_points=bar1_points, bar2_points=bar2_points)
