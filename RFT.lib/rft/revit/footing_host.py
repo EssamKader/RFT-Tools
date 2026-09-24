@@ -249,6 +249,63 @@ FootingGeometry = namedtuple(
      "bottom_cover_mm", "top_cover_mm"])
 
 
+#: #249: how close a TYPE dimension (Length/Width) must land to a MEASURED
+#: bounding-box extent (mm) to count as "runs along this axis". A few mm,
+#: not the sub-micron slack ``footing_mesh._AXIS_ALIGNED_TOLERANCE_RAD``
+#: uses for a rotation READ (which is an exact double for an intentionally
+#: -set angle) -- here the two numbers being compared come from genuinely
+#: different sources (a typed dimension vs. a solid's own bounding box),
+#: so this only needs to absorb mm/feet round-trip rounding, not mask an
+#: actual authoring mismatch (e.g. a footing a few mm off its nominal type
+#: size some other way).
+_AXIS_MATCH_TOLERANCE_MM = 2.0
+
+
+class FootingAxisMismatchError(FootingHostError):
+    """Raised when neither the type's Length nor Width dimension matches
+    the footing's own measured world-X bounding-box extent (and,
+    correspondingly, the other measured world-Y extent) within
+    ``_AXIS_MATCH_TOLERANCE_MM`` -- see issue #249. Refused rather than
+    guessed, per this module's own discipline (``_require``'s docstring).
+    """
+
+
+def _match_dimension_to_extent(candidates, extent_mm):
+    for label, value_mm in candidates:
+        if abs(value_mm - extent_mm) <= _AXIS_MATCH_TOLERANCE_MM:
+            return label, value_mm
+    return None, None
+
+
+def _resolve_world_axes_mm(footing, length_mm, width_mm):
+    """Which of the type's Length/Width actually runs along world X (and
+    which runs along world Y), derived from the footing's OWN measured
+    solid -- issue #249, replacing the old unconditional "Length=X,
+    Width=Y" assumption this function's caller used to make.
+    """
+    box = footing_bounding_box_internal(footing)
+    x_extent_mm = internal_to_mm(box.Max.X - box.Min.X)
+    y_extent_mm = internal_to_mm(box.Max.Y - box.Min.Y)
+
+    mismatch_message = (
+        "This footing's measured plan extents (X=%.1fmm, Y=%.1fmm) match "
+        "neither its type's Length (%.1fmm) nor Width (%.1fmm) within "
+        "%.1fmm. The tool derives which world axis each dimension runs "
+        "along from the footing's own solid and refuses rather than guess "
+        "-- see rft.revit.footing_host's read_footing_geometry_mm "
+        "docstring." % (x_extent_mm, y_extent_mm, length_mm, width_mm,
+                        _AXIS_MATCH_TOLERANCE_MM))
+
+    candidates = [("Length", length_mm), ("Width", width_mm)]
+    x_label, x_value = _match_dimension_to_extent(candidates, x_extent_mm)
+    if x_label is None:
+        raise FootingAxisMismatchError(mismatch_message)
+    y_candidate_value = width_mm if x_label == "Length" else length_mm
+    if abs(y_candidate_value - y_extent_mm) > _AXIS_MATCH_TOLERANCE_MM:
+        raise FootingAxisMismatchError(mismatch_message)
+    return x_value, y_candidate_value
+
+
 def _require_type_dimension_mm(symbol, built_in, label):
     parameter = symbol.get_Parameter(built_in)
     _require(
@@ -296,38 +353,57 @@ def read_footing_geometry_mm(footing):
     ID does not depend on the UI language a family happens to be
     authored/renamed in):
 
-    - ``STRUCTURAL_FOUNDATION_LENGTH`` / ``_WIDTH`` / ``_THICKNESS``, all
-      TYPE (``Symbol``) parameters, never the bounding box -- the same
-      "type, not bounding box" discipline ``column_host.read_section_mm``
-      follows, for the same reason (#69: a bounding box degrades on
-      anything but an axis-aligned footing; ``footing_mesh._footing_origin``
-      already refuses a rotated footing rather than trust one).
+    - ``STRUCTURAL_FOUNDATION_LENGTH`` / ``_WIDTH`` / ``_THICKNESS`` VALUES
+      still come from the TYPE (``Symbol``) parameters, never the bounding
+      box -- a bounding box degrades on anything but an axis-aligned
+      footing (#69), so the two raw numbers are trusted from the type as
+      before. What issue #249 changes is WHICH WORLD AXIS each of
+      ``Length``/``Width`` is assigned to -- see below -- which the
+      bounding box now settles empirically instead of the old fixed
+      Length=X/Width=Y assumption.
     - ``CLEAR_COVER_OTHER`` / ``_BOTTOM`` / ``_TOP``, all INSTANCE
       parameters -- confirmed to exist independently of the TYPE cover
       convention ``column_host.read_cover_mm`` reads (a column has only
       ``CLEAR_COVER_OTHER``; a footing, being a horizontal element, also
       carries distinct bottom/top face covers).
 
-    ``a_mm``/``b_mm`` map from ``Length``/``Width`` respectively --
-    matching this family's own "1800 x 1200 x 450mm" type name and
-    ``IsolatedFootingRFT.pushbutton/script.py``'s pre-existing default
-    prompts (a=1800 X-direction, b=1200 Y-direction) exactly, though which
-    of the family's own local axes ``Length``/``Width`` actually run along
-    was NOT independently re-derived the way #69 proved column `b`/`h`
-    against a rotated instance -- this ticket's own live probe confirms
-    the PARAMETER NAMES and VALUES, not a rotation-independent axis proof.
-    Flagged, not silently assumed: see the verification doc's own "Still
-    open" note.
+    ``a_mm`` is now DERIVED, not assumed, to be whichever of the type's
+    ``Length``/``Width`` actually runs along world X -- issue #249. Essam's
+    own live footing showed the old unconditional "Length=X, Width=Y"
+    mapping is wrong for a footing family authored the other way round
+    (Length running along local/world Y instead), so this function now
+    measures the footing's own world bounding box (``footing_bounding_
+    box_internal``, already used elsewhere in this module) and matches
+    each TYPE dimension to whichever measured extent (X or Y) it agrees
+    with, within ``_AXIS_MATCH_TOLERANCE_MM``. Whichever type dimension
+    matches the X-extent becomes ``a_mm``; the other becomes ``b_mm``. If
+    neither matches (within tolerance) on either axis, this refuses with
+    ``FootingAxisMismatchError`` naming the measured extents and the
+    type's own Length/Width, rather than guessing.
 
-    Any of the six missing/unset refuses with ``FootingHostError``, naming
-    the parameter, before any rebar placement -- same discipline every
-    other live-read function in this module and ``column_host`` follows.
+    This still depends on the footing being axis-aligned (0/90/180/270
+    deg) for the bounding box to mean anything -- the existing rotation
+    guard (``footing_mesh._is_axis_aligned``, #246/#248) already refuses
+    upstream of this for any other rotation, unchanged by this ticket.
+
+    **Unverified against a live host** (issue #236's own "no false
+    verification claims" rule): this empirical-match approach has not yet
+    been re-run against Essam's own footing from the screenshot that
+    prompted #249. It replaces a mapping now KNOWN wrong for that footing
+    with one derived from its own measured geometry, but no live rerun has
+    confirmed the fix itself yet.
+
+    Any of the six missing/unset parameter reads still refuses with
+    ``FootingHostError``, naming the parameter, before any rebar placement
+    -- same discipline every other live-read function in this module and
+    ``column_host`` follows.
     """
     symbol = footing.Symbol
-    a_mm = _require_type_dimension_mm(
+    length_mm = _require_type_dimension_mm(
         symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_LENGTH, "Length")
-    b_mm = _require_type_dimension_mm(
+    width_mm = _require_type_dimension_mm(
         symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_WIDTH, "Width")
+    a_mm, b_mm = _resolve_world_axes_mm(footing, length_mm, width_mm)
     footing_thickness_mm = _require_type_dimension_mm(
         symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS,
         "Foundation Thickness")

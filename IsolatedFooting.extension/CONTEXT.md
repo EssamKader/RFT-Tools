@@ -357,6 +357,26 @@ shape, but the COMBINATION on a FOOTING host has not been run against a
 live host. Flag before this runs on a live host, the same way #197 Sec 4
 and `footing_dowels.py` both flag their own still-unverified shapes.
 
+**Now DONE, no longer a gap (#249):** `#228`'s own live-read function
+(`rft.revit.footing_host.read_footing_geometry_mm`) used to assign the
+type's `Length`/`Width` straight to `a_mm`/`b_mm` unconditionally --
+its own docstring flagged "which of the family's own local axes Length/
+Width actually run along was NOT independently re-derived". Essam found
+this wrong live: a footing family authored with `Length` running along
+world Y (not X) produced a bottom mesh built world-horizontal, sticking
+out past the footing's own left/right edges. Fixed by deriving which
+world axis each type dimension actually runs along from the footing's
+own measured bounding box (`footing_bounding_box_internal`), matching
+each dimension to whichever measured extent it agrees with within
+`_AXIS_MATCH_TOLERANCE_MM` (2mm), and refusing with the new
+`FootingAxisMismatchError` if neither matches either axis. This still
+depends on the footing being axis-aligned (0/90/180/270 deg) -- the
+"Open gap: rotated footings" section above, unchanged by this ticket,
+still refuses any other rotation upstream of this fix. **Unverified
+against a live host** (issue #236's own rule): no live rerun has yet
+confirmed this empirical-match approach against Essam's own footing from
+the screenshot that prompted #249.
+
 **#205's own scope decision, recorded here (not a separate ruling --
 a reuse/scope note, per REUSE_GUIDELINES.md §3):** the ticket's own text
 names every input across #198-#204, including top mesh's U/L-shape
