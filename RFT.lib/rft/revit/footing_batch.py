@@ -28,10 +28,10 @@ Sections 1, 2, 4 and 5 add on top of the single-footing path:
        dialog and before any transaction, via ``footing_ownership.
        partition_host_rebar`` -- so the replacement count and the
        elements apply deletes are the same query (Sec 6);
-    7. place every remaining candidate (bottom mesh + full dowel array)
-       inside ONE transaction, all-or-nothing (Sec 5) -- refusing the
-       whole run rather than opening an empty transaction if nothing
-       survived.
+    7. place every remaining candidate (bottom mesh + full dowel array,
+       plus the top mat -- #233 -- when its own plan carries one) inside
+       ONE transaction, all-or-nothing (Sec 5) -- refusing the whole run
+       rather than opening an empty transaction if nothing survived.
 
 Nothing here re-derives a detailing rule: every ``FootingPlan`` is built
 by the exact function the single-footing script already calls, so a batch
