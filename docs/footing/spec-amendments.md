@@ -429,3 +429,73 @@ else in the codebase referenced it. `column_layout.py`/`column_ties.py`
 are read-only reuse targets here (the OUTWARD-FROM-CENTROID reasoning is
 reused, not the code) — neither is modified, per this repo's
 element-isolation rule.
+
+## R11 — Bottom-mesh bar array: direct spacing input per direction, count derived
+
+**Spec Ref:** specs/isolated-footing.md §4 (Story 1) defines `mesh_bar_x`/
+`mesh_bar_y` bar-LENGTH formulas only — it never states how many mesh bars
+exist or how they are spaced, the same silent gap the dowel array had
+before R6. #198/#229 built and placed exactly ONE representative bar per
+direction, matching the spec's own silence, not a shortcut invented here.
+
+**Gap surfaced to Essam (2026-09-24):** running the fully-wired tool on a
+real footing places only one `mesh_bar_x`/one `mesh_bar_y` — not a mesh —
+because no ticket ever asked how many bars there are or their spacing.
+
+**Ruling (Essam, 2026-09-24):** direct spacing input, one per direction
+(mirrors `dowel_tie_spacing_mm`'s own precedent: a direct user number, no
+formula/code-table lookup). The tool computes how many bars fit across the
+footing's own available width for that direction and places them evenly —
+same reasoning `perimeter_bar_positions` already applies to a column's own
+bar layout, adapted to a rectangular mesh rather than a perimeter.
+
+**Scope this ruling opens (not yet ticketed):** new `FootingInputs` fields
+(`mesh_bar_x_spacing_mm`, `mesh_bar_y_spacing_mm`), a new core function
+building the full array of `MeshBarGeometry` per direction (reusing
+`bottom_mesh_bar_geometry`'s own per-bar hook logic unchanged — every bar
+in the array gets the identical U/L hook shape #229 already built, only
+its own Y/X offset differs), and a placement adapter looping
+`place_straight_bottom_mesh`'s own single-bar call once per array position
+(the same "loop the existing single-bar call" shape #223 already used for
+the dowel array over #202's one representative dowel). Top mesh (Story 4)
+gets the identical treatment once its own placement adapter exists (R11
+does not itself unblock that — see the top-mesh ticket instead).
+
+## R12 — Dowel splice length (`Ls`) extends into the column; the `§0 F3`
+boundary is narrowed for this one bar only
+
+**Spec Ref:** specs/isolated-footing.md §8 (Story 5) names `Ls` = lap/
+splice length as a user input but never consumes it in any Story 5
+formula — `LD` (development length), not `Ls`, governs `a_dowel`/
+`b_dowel`. §0 F3 states this tool's top boundary is "hands off at 50mm
+below Top of Footing... never details anything the column tool already
+owns", which is why `footing_dowels.py`'s vertical leg was built to stop
+exactly at the footing's own top face (`bend_z_mm + a_dowel_mm ==
+footing_thickness_mm`), reading `Ls` as orphaned spec text rather than a
+missed formula.
+
+**Gap surfaced to Essam (2026-09-24):** a dowel bar that stops at the
+footing top with no splice length into the column above is not a usable
+dowel on a real project — visually and functionally incomplete, screenshot
+on file.
+
+**Ruling (Essam, 2026-09-24):** narrow the F3 boundary for the dowel bar
+specifically: `Ls` becomes a real, direct user input on this tool
+(distinct from `LD` — Ls is *how far the bar continues past the footing
+top*, not a development-length comparison), and the dowel's vertical leg
+extends `Ls` mm past `footing_thickness_mm` into the column. This does
+NOT reopen the rest of F3 — `dowel_tie` (Story 6) still stops 50mm below
+T.O.F. exactly as before (no ties placed above T.O.F., the column's own
+tie logic still owns that), and this tool still details nothing about the
+column's own longitudinal bars or the column's own ties above T.O.F.
+
+**Scope this ruling opens (not yet ticketed):** a new `FootingInputs.
+dowel_splice_length_mm` field (append-only), `positioned_dowel_bar_
+geometry`'s `top` point extended from `bend_z_mm + embedment.a_dowel_mm`
+to `+ splice_length_mm`, and a live-host verification specifically for a
+bar hosted on a footing whose geometry extends past that footing's own
+top face into open space above it (a related, but not identical, question
+to #197 Sec 2's "may a footing-hosted bar extend beyond the footing's own
+top face" kept-write proof — that proof covers extending to the column
+base; extending further, through/past the column's own solid geometry, is
+a new combination, unverified until its own tracer bullet runs).
