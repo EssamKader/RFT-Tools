@@ -87,37 +87,17 @@ def _dowel_curves(origin_x, origin_y, origin_z, geometry):
     ]
 
 
-def place_dowel_bar(document, footing, dowel_plan, bar_type):
-    """Places ONE dowel bar (straight-vertical-plus-horizontal-hook,
-    centred on the footing's own plan centroid), hosted directly on
-    ``footing`` -- the tracer-bullet vertical slice (spec Sec 11 item 6).
-
-    No array, no stirrup/tie wiring (Story 6 / #203's own scope): this
-    proves the placement mechanics for a single representative dowel,
-    matching #198's own "one representative bar per direction" precedent
-    for the mesh. #222 (specs/isolated-footing-dowel-array.md Sec 3 Story
-    3) reshaped ``rft.core.footing_plan``'s dowel plan into a
-    ``DowelArrayPlan`` carrying ``bars`` (a list); this tracer bullet still
-    places only the FIRST entry -- placing every bar in the array is
-    Story 4's own scope (#223), not built here.
-
-    ``dowel_plan`` is a ``rft.core.footing_plan.DowelArrayPlan`` -- the
-    caller must build it via ``rft.core.footing_plan.build_footing_plan``,
-    never by calling ``rft.core.footing_dowels`` directly (the one
-    composing module rule, docs/token-efficient-expansion.md Sec 7).
-
-    Returns the created ``Rebar`` element.
+def _create_dowel_rebar(document, footing, origin, bar_geometry, bar_type):
+    """The single ``Rebar.CreateFromCurves`` call shared by
+    ``place_dowel_bar`` and ``place_dowel_bars`` -- one bent bar, at
+    ``bar_geometry``'s own footing-local position. Not called directly by
+    anything outside this module; both public functions exist so a caller
+    building a plan with no real array (``dowel_plan.bars`` still one
+    representative entry, per ``footing_plan.DowelArrayPlan``'s own
+    docstring) keeps working through either name.
     """
-    origin_x, origin_y, origin_z = _footing_origin(footing)
-    # Intentionally tracer-bullet-scoped to bars[0] ONLY (PR #225 review):
-    # if a caller ever builds a real multi-bar DowelArrayPlan (#222 --
-    # inputs.dowel_count_b_face/dowel_count_h_face/dowel_tie_dia_mm plus a
-    # live DowelColumnSection) and passes it here before #223 wires the real
-    # per-bar placement loop, every bar except the first is silently
-    # dropped -- no warning, no partial-placement error. Do not treat this
-    # as "the array already places" just because it does not crash.
-    curves = _dowel_curves(
-        origin_x, origin_y, origin_z, dowel_plan.bars[0])
+    origin_x, origin_y, origin_z = origin
+    curves = _dowel_curves(origin_x, origin_y, origin_z, bar_geometry)
     return Rebar.CreateFromCurves(
         document,
         RebarStyle.Standard,
@@ -136,3 +116,62 @@ def place_dowel_bar(document, footing, dowel_plan, bar_type):
         True,
         True,
     )
+
+
+def place_dowel_bar(document, footing, dowel_plan, bar_type):
+    """Places ONE dowel bar (straight-vertical-plus-horizontal-hook,
+    centred on the footing's own plan centroid), hosted directly on
+    ``footing`` -- the tracer-bullet vertical slice (spec Sec 11 item 6).
+
+    No array, no stirrup/tie wiring (Story 6 / #203's own scope): this
+    proves the placement mechanics for a single representative dowel,
+    matching #198's own "one representative bar per direction" precedent
+    for the mesh. #222 (specs/isolated-footing-dowel-array.md Sec 3 Story
+    3) reshaped ``rft.core.footing_plan``'s dowel plan into a
+    ``DowelArrayPlan`` carrying ``bars`` (a list); this tracer bullet still
+    places only the FIRST entry. Placing every bar in the array is
+    ``place_dowel_bars`` below (#223, Story 4) -- kept as its own function,
+    not a behaviour change here, since a caller with no real array still
+    wants exactly one bar, not a one-item loop.
+
+    ``dowel_plan`` is a ``rft.core.footing_plan.DowelArrayPlan`` -- the
+    caller must build it via ``rft.core.footing_plan.build_footing_plan``,
+    never by calling ``rft.core.footing_dowels`` directly (the one
+    composing module rule, docs/token-efficient-expansion.md Sec 7).
+
+    Returns the created ``Rebar`` element.
+    """
+    origin = _footing_origin(footing)
+    return _create_dowel_rebar(
+        document, footing, origin, dowel_plan.bars[0], bar_type)
+
+
+def place_dowel_bars(document, footing, dowel_plan, bar_type):
+    """Places EVERY dowel bar in ``dowel_plan.bars`` (#223, spec Ref:
+    specs/isolated-footing-dowel-array.md Sec 3 Story 4) -- the same
+    ``_create_dowel_rebar`` call ``place_dowel_bar`` makes for its one
+    representative bar, looped once per array position. Not a new shape:
+    #202's own tracer bullet already proved this call is a KEPT write on a
+    footing host; an N-bar array repeats it N times, so this function's own
+    verification only needs to confirm the LOOP -- no cross-bar
+    interference, no partial array left behind on a mid-loop failure (that
+    second half is the caller's job: this function raises on the first
+    failure and places nothing further, same as any other loop with no
+    try/except of its own -- the pushbutton script's existing one-
+    transaction pattern is what rolls the partial set back, not this
+    function).
+
+    Works unchanged whether ``dowel_plan.bars`` holds the one representative
+    bar (no live column section / array inputs supplied --
+    ``footing_plan.DowelArrayPlan``'s own fallback) or a real N-position
+    array (``footing_plan._build_dowel_plan``'s ``perimeter_bar_positions``
+    call) -- this function does not know or care which, it only iterates
+    ``bars``.
+
+    Returns the list of created ``Rebar`` elements, one per ``dowel_plan.
+    bars`` entry, in the same order.
+    """
+    origin = _footing_origin(footing)
+    return [_create_dowel_rebar(document, footing, origin, bar_geometry,
+                                bar_type)
+            for bar_geometry in dowel_plan.bars]

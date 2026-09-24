@@ -13,10 +13,12 @@ import math
 
 import pytest
 
-from fake_revit_api import FakeBoundingBox, FakeXYZ
+from fake_revit_api import FakeBoundingBox, FakeRebar, FakeXYZ
 
-from rft.core.footing_plan import FootingInputs, build_footing_plan
-from rft.revit.footing_dowels import place_dowel_bar
+from rft.core.footing_plan import (
+    DowelColumnSection, FootingInputs, build_footing_plan,
+)
+from rft.revit.footing_dowels import place_dowel_bar, place_dowel_bars
 from rft.revit.footing_mesh import FootingRotationUnsupportedError
 from rft.revit.units import mm_to_internal
 
@@ -167,3 +169,74 @@ def test_a_rotated_footing_refuses_instead_of_placing_the_dowel_wrong(plan):
     with pytest.raises(FootingRotationUnsupportedError):
         place_dowel_bar(
             object(), footing, plan.dowel, _FakeBarType("25M"))
+
+
+# --------------------------------------------------------------------- #
+# place_dowel_bars (#223, Story 4) -- the array-loop wiring ONLY. The
+# bent-bar shape itself (curve chain, norm, embedment Z, centring) is
+# already covered above via place_dowel_bar / #202's own tracer bullet and
+# is not re-tested here, per this ticket's own "Test volume rule".
+
+
+@pytest.fixture
+def array_plan(footing):
+    """A real N-bar array (not the single-representative-bar fallback):
+    a live-shaped ``DowelColumnSection`` plus the count/tie inputs
+    ``_build_dowel_plan``'s own seven-field gate requires (#222/#227)."""
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=3, dowel_count_h_face=3)
+    column_section = DowelColumnSection(
+        Cw_mm=450.0, Cd_mm=600.0, Ccover_mm=40.0)
+    plan = build_footing_plan(inputs, column_section=column_section)
+    assert len(plan.dowel.bars) > 1  # a real array, not the 1-bar fallback
+    return plan.dowel
+
+
+def test_every_bar_in_the_array_is_placed(footing, array_plan):
+    bar_type = _FakeBarType("25M")
+    bars = place_dowel_bars(object(), footing, array_plan, bar_type)
+    assert len(bars) == len(array_plan.bars)
+    for bar in bars:
+        assert bar.args[5] is footing
+        assert bar.args[2] is bar_type
+
+
+def test_the_array_bars_are_NOT_all_at_the_same_position(footing, array_plan):
+    """The loop wiring, not just its call count: each bar must come from
+    its OWN ``array_plan.bars`` entry, not the same one repeated."""
+    bars = place_dowel_bars(
+        object(), footing, array_plan, _FakeBarType("25M"))
+    tops = set()
+    for bar in bars:
+        top = bar.args[7][1].GetEndPoint(1)
+        tops.add((round(top.X, 6), round(top.Y, 6)))
+    assert len(tops) == len(bars)
+
+
+def test_a_mid_loop_failure_propagates_and_places_nothing_further(
+        monkeypatch, footing, array_plan):
+    """This function opens no transaction of its own (module docstring) --
+    a failure must simply propagate, not be swallowed or partially
+    retried, so the CALLER's transaction (the pushbutton script) is the one
+    thing standing between a raised exception and a partially-placed array
+    left in the model."""
+    original_create = FakeRebar.CreateFromCurves
+    calls = []
+
+    def flaky_create(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise RuntimeError("simulated placement failure")
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(FakeRebar, "CreateFromCurves",
+                        staticmethod(flaky_create))
+
+    with pytest.raises(RuntimeError):
+        place_dowel_bars(object(), footing, array_plan, _FakeBarType("25M"))
+    assert len(calls) == 2
