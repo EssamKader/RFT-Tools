@@ -148,6 +148,24 @@ def test_the_norm_argument_is_basis_y_for_bar_x_and_basis_x_for_bar_y(
     assert (norm_y.X, norm_y.Y, norm_y.Z) == (1.0, 0.0, 0.0)
 
 
+def test_a_bar_with_no_hooked_end_keeps_the_197_verified_basis_z_norm(
+        footing, straight_plan):
+    """Issue #236 (review of #229): a bar with NEITHER end hooked has no
+    bend at all -- issue #197 Sec 1's own kept-write tracer bullet is the
+    only live-host proof this repo has for a straight bar on a footing
+    host, and it used XYZ.BasisZ, not the per-axis bent norm. Switching
+    an un-bent bar to an unverified norm value would be exactly the kind
+    of untested combination this repo's own zero-API-guessing rule
+    exists to catch."""
+    bar_x, bar_y = place_straight_bottom_mesh(
+        object(), footing, straight_plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    norm_x = bar_x.args[6]
+    norm_y = bar_y.args[6]
+    assert (norm_x.X, norm_x.Y, norm_x.Z) == (0.0, 0.0, 1.0)
+    assert (norm_y.X, norm_y.Y, norm_y.Z) == (0.0, 0.0, 1.0)
+
+
 def test_bar_x_straight_run_is_centred_on_the_footing_and_spans_Z(
         footing, straight_plan):
     """The straight case: horizontal extent is Sec 3's own ``Z`` (the

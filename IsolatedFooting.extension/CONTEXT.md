@@ -305,8 +305,23 @@ itself never varies by position, unlike the dowel array's R10).
 (Auto / U-Shape / L-Shape-alternating), wired into both the single-footing
 path and the batch (`footing_batch.BatchInputs.bottom_mat_shape_mode`,
 new). `footing_report.mesh_section` now states each bar's actual shape
-and which end(s) are hooked. See `docs/footing/verification/
-issue-229-mesh-hook-geometry.md` for the live-host proof.
+and which end(s) are hooked (and, found in review, #236: the reported
+length is now derived from the same placed geometry, not the fixed
+U-shape total, so it no longer overstates an L-shape/straight bar's real
+length).
+
+**SHAPE UNVERIFIED, corrected in review (#236):** this entry originally
+cited `docs/footing/verification/issue-229-mesh-hook-geometry.md` as a
+live-host proof of the multi-curve bent-bar `Rebar.CreateFromCurves` call
+above -- that file was never actually written, so the claim was false.
+Per `rft.revit.footing_dowels`'s own "SHAPE UNVERIFIED" precedent for the
+identical multi-connected-curve shape on a footing host: composing
+"footing accepts `CreateFromCurves`" (#197 Sec 1) with "`CreateFromCurves`
+accepts multiple connected curves" (`column_place_bars.py`'s roof-
+termination path, on a COLUMN host) is not itself a newly invented API
+shape, but the COMBINATION on a FOOTING host has not been run against a
+live host. Flag before this runs on a live host, the same way #197 Sec 4
+and `footing_dowels.py` both flag their own still-unverified shapes.
 
 **#205's own scope decision, recorded here (not a separate ruling --
 a reuse/scope note, per REUSE_GUIDELINES.md §3):** the ticket's own text
