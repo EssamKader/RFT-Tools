@@ -21,7 +21,12 @@ from rft.core.footing_mesh import (
     mesh_bar_lengths,
 )
 from rft.core.footing_dowels import dowel_embedment, local_dowel_bar_geometry
-from rft.core.footing_perimeter_tie import perimeter_tie_geometry
+from rft.core.footing_perimeter_tie import (
+    PerimeterTieBarLengthMismatchError,
+    PerimeterTieLadderExceedsFootingError,
+    perimeter_tie_geometry,
+    perimeter_tie_ladder_mm,
+)
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
@@ -282,15 +287,19 @@ def test_the_plan_defaults_perimeter_tie_fields_to_none_with_no_perimeter_tie_pl
     assert inputs.perimeter_tie_spacing_mm is None
     assert inputs.perimeter_tie_quantity is None
     assert inputs.perimeter_tie_lap_mm is None
+    assert inputs.perimeter_tie_first_bar_length_mm is None
+    assert inputs.perimeter_tie_second_bar_length_mm is None
     plan = build_footing_plan(inputs)
     assert plan.perimeter_tie is None
 
 
 def test_supplying_perimeter_tie_inputs_builds_a_plan_matching_the_core_call():
     """The composing module must be the ONE place
-    ``footing_perimeter_tie.perimeter_tie_geometry`` is called from -- so
-    its output must match calling it directly with the same inputs."""
+    ``footing_perimeter_tie.perimeter_tie_geometry``/``perimeter_tie_
+    ladder_mm`` are called from -- so its output must match calling them
+    directly with the same inputs."""
     inputs = _inputs(
+        footing_thickness_mm=1500.0,
         perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
         perimeter_tie_quantity=3)
     plan = build_footing_plan(inputs)
@@ -298,12 +307,58 @@ def test_supplying_perimeter_tie_inputs_builds_a_plan_matching_the_core_call():
     expected_geometry = perimeter_tie_geometry(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.perimeter_tie_lap_mm)
+    expected_ladder = perimeter_tie_ladder_mm(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
 
     assert isinstance(plan.perimeter_tie, PerimeterTiePlan)
     assert plan.perimeter_tie.geometry == expected_geometry
     assert plan.perimeter_tie.dia_mm == pytest.approx(10.0)
     assert plan.perimeter_tie.spacing_mm == pytest.approx(200.0)
     assert plan.perimeter_tie.quantity == 3
+    assert plan.perimeter_tie.ladder == expected_ladder
+    # This footing's perimeter (5600mm) is under the 12m stock length, so
+    # there is nothing to split and bar_lengths stays None (R5).
+    assert plan.perimeter_tie.bar_lengths is None
+
+
+def test_a_split_perimeter_tie_with_matching_bar_lengths_builds_the_r5_plan():
+    """R5: a large-enough footing needs a lap, and the engineer's own two
+    typed bar lengths (summing to the total) build a ``PerimeterTieBarLengths``."""
+    inputs = _inputs(
+        a_mm=7000.0, b_mm=7000.0, footing_thickness_mm=1500.0,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=1, perimeter_tie_lap_mm=600.0,
+        perimeter_tie_first_bar_length_mm=15000.0,
+        perimeter_tie_second_bar_length_mm=13200.0)
+    plan = build_footing_plan(inputs)
+
+    # inner_a=inner_b=6900 -> length=2*(6900+6900)=27600; +600 lap = 28200.
+    assert plan.perimeter_tie.geometry.splice.bar_count == 2
+    assert plan.perimeter_tie.geometry.splice.total_length_mm == pytest.approx(
+        28200.0)
+    assert plan.perimeter_tie.bar_lengths.first_bar_length_mm == pytest.approx(
+        15000.0)
+    assert plan.perimeter_tie.bar_lengths.second_bar_length_mm == pytest.approx(
+        13200.0)
+
+
+def test_a_split_perimeter_tie_with_mismatched_bar_lengths_refuses():
+    with pytest.raises(PerimeterTieBarLengthMismatchError):
+        build_footing_plan(_inputs(
+            a_mm=7000.0, b_mm=7000.0, footing_thickness_mm=1500.0,
+            perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+            perimeter_tie_quantity=1, perimeter_tie_lap_mm=600.0,
+            perimeter_tie_first_bar_length_mm=15000.0,
+            perimeter_tie_second_bar_length_mm=10000.0))
+
+
+def test_a_perimeter_tie_ladder_that_exceeds_the_footing_refuses():
+    with pytest.raises(PerimeterTieLadderExceedsFootingError):
+        build_footing_plan(_inputs(
+            perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+            perimeter_tie_quantity=3))
 
 
 def test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh():

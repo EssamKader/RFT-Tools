@@ -5,18 +5,30 @@ velocity rule 3, per the ticket's own "Test volume rule"): `inner_a`/
 footing-specific plan-corner geometry (new math, since it is not a call
 into `rft.core.column_ties` -- see `footing_perimeter_tie`'s own
 docstring for why). specs/isolated-footing.md Sec 3 (Story 7), Sec 10.
+
+Also covers R4 (vertical starting offset) and R5 (splice cut-length
+split), both added to `docs/footing/spec-amendments.md` after #204
+merged.
 """
 
 import pytest
 
 from rft.core.footing_perimeter_tie import (
+    PERIMETER_TIE_START_OFFSET_ABOVE_BOTTOM_MESH_MM,
     PERIMETER_TIE_STOCK_LENGTH_MM,
+    PerimeterTieBarLengthMismatchError,
+    PerimeterTieBarLengthsNotApplicableError,
+    PerimeterTieLadderExceedsFootingError,
     PerimeterTieLapRequiredError,
+    bottom_mesh_top_z_mm,
     inner_dimensions_mm,
     local_perimeter_tie_corners_mm,
+    perimeter_tie_bar_lengths_mm,
     perimeter_tie_geometry,
+    perimeter_tie_ladder_mm,
     perimeter_tie_length_mm,
     perimeter_tie_splice,
+    perimeter_tie_start_z_mm,
 )
 
 
@@ -89,3 +101,86 @@ def test_the_geometry_builder_carries_everything_the_pieces_would_compute():
     assert geometry.length_mm == pytest.approx(length)
     assert geometry.splice == splice
     assert geometry.corners == corners
+
+
+# --- R4: vertical starting offset -------------------------------------
+
+def test_bottom_mesh_top_z_matches_footing_dowels_own_bend_corner_datum():
+    # bottom_cover=50, mesh_bar_x_dia=16, mesh_bar_y_dia=12 -> 50+16+12=78,
+    # the same hand-computed value footing_dowels' own bend corner uses.
+    assert bottom_mesh_top_z_mm(50.0, 16.0, 12.0) == pytest.approx(78.0)
+
+
+def test_perimeter_tie_start_z_is_250mm_above_the_bottom_mesh():
+    # bottom_mesh_top_z = 78 -> start_z = 78 + 250 = 328.
+    start_z = perimeter_tie_start_z_mm(50.0, 16.0, 12.0)
+    assert start_z == pytest.approx(78.0 + 250.0)
+    assert start_z == pytest.approx(
+        78.0 + PERIMETER_TIE_START_OFFSET_ABOVE_BOTTOM_MESH_MM)
+
+
+def test_ladder_first_level_is_the_start_z_and_steps_by_spacing():
+    ladder = perimeter_tie_ladder_mm(
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        spacing_mm=200.0, quantity=3)
+    assert ladder.levels_mm == pytest.approx((328.0, 528.0, 728.0))
+    assert ladder.start_z_mm == pytest.approx(328.0)
+    assert ladder.spacing_mm == pytest.approx(200.0)
+
+
+def test_a_single_quantity_ladder_has_just_the_starter_level():
+    ladder = perimeter_tie_ladder_mm(
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        spacing_mm=200.0, quantity=1)
+    assert ladder.levels_mm == pytest.approx((328.0,))
+
+
+def test_a_ladder_that_would_exceed_the_footing_refuses():
+    # thickness=450: start=328, spacing=200, quantity=3 -> last=728 > 450.
+    with pytest.raises(PerimeterTieLadderExceedsFootingError):
+        perimeter_tie_ladder_mm(
+            footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+            mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+            spacing_mm=200.0, quantity=3)
+
+
+def test_ladder_with_no_spacing_refuses_rather_than_guesses():
+    with pytest.raises(ValueError):
+        perimeter_tie_ladder_mm(
+            footing_thickness_mm=1500.0, bottom_cover_mm=50.0,
+            mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+            spacing_mm=None, quantity=3)
+
+
+def test_ladder_with_no_quantity_refuses_rather_than_guesses():
+    with pytest.raises(ValueError):
+        perimeter_tie_ladder_mm(
+            footing_thickness_mm=1500.0, bottom_cover_mm=50.0,
+            mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+            spacing_mm=200.0, quantity=None)
+
+
+# --- R5: splice cut-length split (engineer's own two-field input) -----
+
+def test_matching_bar_lengths_build_the_r5_result():
+    splice = perimeter_tie_splice(
+        PERIMETER_TIE_STOCK_LENGTH_MM + 1.0, lap_mm=600.0)
+    # total = 12000 + 1 + 600 = 12601 -- engineer picks any split, e.g. 7000 + 5601.
+    result = perimeter_tie_bar_lengths_mm(splice, 7000.0, 5601.0)
+    assert result.first_bar_length_mm == pytest.approx(7000.0)
+    assert result.second_bar_length_mm == pytest.approx(5601.0)
+
+
+def test_bar_lengths_that_do_not_sum_to_the_total_refuse():
+    splice = perimeter_tie_splice(
+        PERIMETER_TIE_STOCK_LENGTH_MM + 1.0, lap_mm=600.0)
+    with pytest.raises(PerimeterTieBarLengthMismatchError):
+        perimeter_tie_bar_lengths_mm(splice, 7000.0, 5000.0)
+
+
+def test_bar_lengths_are_not_applicable_to_a_single_continuous_bar():
+    splice = perimeter_tie_splice(PERIMETER_TIE_STOCK_LENGTH_MM)
+    with pytest.raises(PerimeterTieBarLengthsNotApplicableError):
+        perimeter_tie_bar_lengths_mm(splice, 6000.0, 6000.0)
