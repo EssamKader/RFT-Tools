@@ -325,7 +325,8 @@ class _FakeFootingGeometryHost(object):
 
 def _footing_with_geometry(missing_type_param=None, missing_cover_param=None,
                            unset_cover_param=None, x_extent_mm=1800.0,
-                           y_extent_mm=1200.0):
+                           y_extent_mm=1200.0, length_mm=1800.0,
+                           width_mm=1200.0):
     document = FakeDocument({
         FOOTING_COVER_ID: FakeRebarCoverType(
             mm(40.0), name="Interior (framing, columns)",
@@ -334,9 +335,9 @@ def _footing_with_geometry(missing_type_param=None, missing_cover_param=None,
 
     type_params = {
         FakeBuiltInParameter.STRUCTURAL_FOUNDATION_LENGTH:
-            FakeDoubleParameter(mm(1800.0)),
+            FakeDoubleParameter(mm(length_mm)),
         FakeBuiltInParameter.STRUCTURAL_FOUNDATION_WIDTH:
-            FakeDoubleParameter(mm(1200.0)),
+            FakeDoubleParameter(mm(width_mm)),
         FakeBuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS:
             FakeDoubleParameter(mm(450.0)),
     }
@@ -397,6 +398,25 @@ def test_neither_dimension_matches_the_measured_extents_refuses():
     message = str(caught.value)
     assert "900.0" in message
     assert "1800.0" in message and "1200.0" in message
+
+
+def test_a_near_square_footing_refuses_instead_of_picking_the_first_match():
+    """Review finding on #249's first draft: Length (1201.0) and Width
+    (1199.5) are close enough to each other that, for a footing whose
+    real bounding box measures X=1199.5/Y=1201.0 (Width actually runs
+    along X), BOTH possible assignments land within
+    ``_AXIS_MATCH_TOLERANCE_MM`` of the measured extents. Picking
+    "whichever of Length/Width is checked first" would have silently
+    returned the WRONG assignment here (Length=X) instead of refusing --
+    this must refuse as ambiguous, not guess.
+    """
+    with pytest.raises(FootingAxisMismatchError) as caught:
+        read_footing_geometry_mm(
+            _footing_with_geometry(
+                length_mm=1201.0, width_mm=1199.5,
+                x_extent_mm=1199.5, y_extent_mm=1201.0))
+    message = str(caught.value)
+    assert "1201.0" in message and "1199.5" in message
 
 
 def test_a_missing_type_dimension_refuses_naming_the_parameter():
