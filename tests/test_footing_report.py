@@ -71,6 +71,37 @@ def test_mesh_section_states_each_bars_hook_shape():
     assert "hooked" in lines
 
 
+def test_mesh_section_reports_the_actual_shorter_length_for_an_l_shape_bar():
+    """Issue #236 (review of #229): mesh_bar_lengths()'s own
+    mesh_bar_x_mm/mesh_bar_y_mm is the FIXED U-shape total (Z + 2*N),
+    computed before the per-end hook decision is known -- it must NOT be
+    what the report prints once a bar is actually L-shaped (one end
+    straight), since #229 places that bar with only ONE hook leg, not
+    two. x_offset=700 (> LD_x=640) means the mesh_bar_x end needs no
+    hook there, while y_offset=150 (< LD_y=480) still hooks both
+    mesh_bar_y ends -- an L-shape bar_x next to a U-shape bar_y in the
+    SAME plan, so the report's own per-bar wording must differ too."""
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=700.0, y_offset_mm=150.0,
+        ld_multiplier=40.0)
+    plan = build_footing_plan(inputs)
+    lengths = plan.bottom_mesh.lengths
+
+    assert not plan.bottom_mesh.bar_x_hooks.start.needs_hook
+    assert not plan.bottom_mesh.bar_x_hooks.end.needs_hook
+    lines = "\n".join(mesh_section(plan).lines)
+
+    fixed_u_total = "%.1f mm" % lengths.mesh_bar_x_mm
+    actual_l_total = "%.1f mm" % lengths.z_mm
+    assert fixed_u_total not in lines
+    assert actual_l_total in lines
+    assert "neither end hooked, straight bar" in lines
+    assert "both ends hooked" in lines  # bar_y is still U-shape
+
+
 def test_dowel_array_section_names_the_real_bar_count():
     plan = _plan()
     section = dowel_array_section(plan)

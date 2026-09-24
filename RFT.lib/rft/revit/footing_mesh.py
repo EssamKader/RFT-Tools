@@ -120,6 +120,18 @@ def _bent_bar_curves(origin_x, origin_y, origin_z, geometry):
             for i in range(len(points) - 1)]
 
 
+def _norm_for_bar(hooks, bent_axis_norm):
+    """Found in review (issue #236): a bar with NEITHER end hooked has no
+    bend at all, so it must keep issue #197 Sec 1's own live-verified
+    ``XYZ.BasisZ`` rather than switch to the bent-case's per-axis norm --
+    that switch is only valid, and only needed, once the bar actually
+    bends (see ``place_straight_bottom_mesh``'s own docstring).
+    """
+    if hooks.start.needs_hook or hooks.end.needs_hook:
+        return bent_axis_norm
+    return XYZ.BasisZ
+
+
 def _place_one_bar(document, footing, curves, norm, bar_type):
     return Rebar.CreateFromCurves(
         document,
@@ -151,14 +163,20 @@ def place_straight_bottom_mesh(document, footing, bottom_mesh,
     note), not named by this one's formulas.
 
     ``norm`` differs per axis, not per bar (unlike the dowel array's R10,
-    where it varies per bar's own outward direction): ``mesh_bar_x``
-    bends in the X-Z plane (its straight run is along local X, its hook
-    legs along Z), so its bend-plane-perpendicular ``norm`` is
-    ``XYZ.BasisY``; ``mesh_bar_y`` bends in the Y-Z plane, so its ``norm``
-    is ``XYZ.BasisX`` -- the same #183 measurement (``norm`` must be
-    perpendicular to the bend's own plane), fixed per axis here because
-    the hook direction itself is fixed (always straight up, never
-    per-position).
+    where it varies per bar's own outward direction), and ONLY when the
+    bar actually has a hooked end: ``mesh_bar_x`` bends in the X-Z plane
+    (its straight run is along local X, its hook legs along Z), so its
+    bend-plane-perpendicular ``norm`` is ``XYZ.BasisY``; ``mesh_bar_y``
+    bends in the Y-Z plane, so its ``norm`` is ``XYZ.BasisX`` -- the same
+    #183 measurement (``norm`` must be perpendicular to the bend's own
+    plane). A bar with NEITHER end hooked has no bend at all -- issue
+    #197 Sec 1's own kept-write tracer bullet is the only live-host proof
+    this repo has for a straight bar on a footing host, and it used
+    ``XYZ.BasisZ``; ``_norm_for_bar`` below keeps that exact, already-
+    verified value for the still-straight case rather than switching to
+    the bent-case norm for a bar that isn't bent (found in review: #229's
+    first draft used the bent-axis norm unconditionally, an untested
+    combination for the common no-hook footing).
 
     ``bottom_mesh`` is a ``rft.core.footing_plan.BottomMeshPlan`` -- the
     caller must build it via ``rft.core.footing_plan.build_footing_plan``,
@@ -173,6 +191,8 @@ def place_straight_bottom_mesh(document, footing, bottom_mesh,
         origin_x, origin_y, origin_z, bottom_mesh.bar_x_geometry)
     curves_y = _bent_bar_curves(
         origin_x, origin_y, origin_z, bottom_mesh.bar_y_geometry)
-    bar_x = _place_one_bar(document, footing, curves_x, XYZ.BasisY, bar_x_type)
-    bar_y = _place_one_bar(document, footing, curves_y, XYZ.BasisX, bar_y_type)
+    norm_x = _norm_for_bar(bottom_mesh.bar_x_hooks, XYZ.BasisY)
+    norm_y = _norm_for_bar(bottom_mesh.bar_y_hooks, XYZ.BasisX)
+    bar_x = _place_one_bar(document, footing, curves_x, norm_x, bar_x_type)
+    bar_y = _place_one_bar(document, footing, curves_y, norm_y, bar_y_type)
     return bar_x, bar_y
