@@ -256,6 +256,16 @@ and then confirmed correct by Essam — recorded as **R3** in
   `pyrevit.forms` for now.
 - Multi-footing / batch placement (F1, spec Sec 0) -- explicitly out of
   scope for the whole tool, not just this ticket.
+- Wiring `rft.revit.footing_host.find_column_above` (#220, Story 1 of
+  `specs/isolated-footing-dowel-array.md`) into the pushbutton script, or
+  into #11's own `column_host.read_section_mm`/`read_orientation` call
+  against the column it returns -- #220 built and unit-tested the
+  ray-cast adapter only. **Its own live-host tracer bullet (addendum
+  §5, read-only/rolled-back) has not been run** -- #220 was built without
+  `revit-mcp` access; see `docs/footing/reuse-audit.md` §5 for the
+  specific untested claim ("a view that sees `OST_StructuralFoundation`
+  also sees `OST_StructuralColumns`") this needs to confirm before it is
+  trusted on a live host.
 
 ## Open gap: rotated footings refuse rather than place wrong
 

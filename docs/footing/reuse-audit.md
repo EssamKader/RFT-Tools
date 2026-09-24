@@ -124,3 +124,33 @@ but per `docs/footing/verification/issue-197-footing-tracer-bullet.md`
 §4, a closed-loop shape's host acceptance is itself still unverified
 against a live footing host. Recorded as an open item, not silently
 skipped.
+
+---
+
+## 5. Column auto-detection ray-cast (Story 1, `specs/isolated-footing-dowel-array.md` §3) — audited by #220
+
+| Module / member | Status | Reason |
+|---|---|---|
+| `rft.revit.column_host.find_search_view` / `find_support_face_z_mm` | ⚠️ Technique reused, not the function | Same verdict the addendum's own §1 already states: the `ReferenceIntersector` ray-cast through a behaviourally-chosen `View3D` is the proven mechanism (#69/#107). The DIRECTION — a footing casting a ray upward to find an unknown column, instead of a column casting a ray at a known support — is new code, built as `rft.revit.footing_host.find_search_view` / `find_column_above` rather than calling into `column_host` for this part. `column_host` itself is imported by nothing new here. |
+| `rft.revit.column_host.read_section_mm` / `read_orientation` | ❌ Not called by this ticket | Named by Story 1's own text as the NEXT ticket's job ("#11 calls `column_host.read_section_mm`/`read_orientation` against whatever element this ticket returns") — out of #220's scope by the ticket's own wording, not a gap. |
+
+### Design decision made without live-host access — flagged for the orchestrator's own tracer bullet
+
+`column_host.find_search_view` self-tests a candidate view by firing a ray,
+filtered to the SAME category it searches with later
+(`OST_StructuralColumns`), at the element already known to exist (the
+column itself). Story 1 has no known column yet — that is what is being
+searched for — so `footing_host.find_search_view` mirrors the self-test
+onto the FOOTING instead: fire a ray filtered to
+`OST_StructuralFoundation` at the footing, then trust the same view,
+unquestioned, for a SEPARATE `OST_StructuralColumns`-filtered search
+upward. This is the same *shape* of trust `column_host` already carries
+(a column-filtered self-test view is reused, unquestioned, for a
+`SUPPORT_CATEGORIES` multicategory search in `find_support_face_z_mm`),
+but the SPECIFIC claim "a view that sees foundations also sees columns"
+has never been measured live the way #69/#107 measured the column/support
+case. This is exactly the addendum's own §5 requirement — a read-only,
+rolled-back tracer bullet for Story 1 — and this repo's agent had no
+`revit-mcp` access to perform it (see `RFT.lib/rft/revit/footing_host.py`'s
+own module docstring). **Not yet verified on a live host as of this
+ticket's PR.**
