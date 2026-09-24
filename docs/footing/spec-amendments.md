@@ -258,3 +258,51 @@ the element and never typed, since #80 found Revit silently clamping a
 typed cover to the host's own). No new `FootingInputs` field for this —
 one more value that flows in live alongside `Cw`/`Cd`, not a fourth
 typed input.
+
+---
+
+## R8 — Footing batch grouping: footing dimensions must be read live off the model first, not typed
+
+**Spec Ref:** ticket #226 (Footing #14, batch placement)'s own "Open
+question." `specs/column-batch-placement.md` §0/§3's batch mechanism
+(which Essam ruled #226 must reuse as-is) groups columns by a
+per-instance fact the single-column path already MEASURES live off the
+host (clear height) — never by the type match alone, because two
+columns of identical family+type were found, on a live model, to need
+different tie ladders (one pair sat under a beam and had 300mm less
+clear height than the rest). The footing tool has no equivalent
+per-instance measured fact: `a_mm`/`b_mm`/`footing_thickness_mm`/
+`cover_mm` are all manually typed per run today
+(`IsolatedFootingRFT.pushbutton/script.py`), so there is nothing real to
+group footings by yet — flagged as an open question rather than guessed,
+per `REUSE_GUIDELINES.md` §3.
+
+**Ruling (Essam, 2026-09-24):** "first it shall read dimension from
+revit not from typed inputs." Footing geometry (`a_mm`/`b_mm`/
+`footing_thickness_mm`, and cover if a matching live parameter is
+confirmed) must be read live off the picked footing `FamilyInstance`'s
+own TYPE parameters BEFORE batch placement work starts — mirroring
+`column_host.read_section_mm`'s pattern, not a typed-input assumption.
+This is Option 1 of #226's two flagged readings, not Option 2 (grouping
+by the attached column's own live-read `Cw`/`Cd`/`Ccover` alone, with the
+footing's own dimensions still typed and merely assumed identical for a
+"same type" match).
+
+**"If same footing so do share same rft no worries for no.02 run"** —
+once dimensions are read live (rather than typed), footings that measure
+identically automatically share identical detailing; the batch mechanism
+never needs a second, separate run for genuinely identical footings, the
+same guarantee `column_batch`'s own live-read grouping key already gives
+columns.
+
+**Ticketed as #228** (footing dimension live-read), which blocks #226 —
+the batch ticket's own grouping key (its equivalent of
+`specs/column-batch-placement.md` §3) cannot be written correctly until
+#228 lands and the actual measured facts it exposes are known.
+
+**Why this doesn't touch anything else:** every existing formula that
+reads `FootingInputs.a_mm`/`b_mm`/`footing_thickness_mm` as plain numbers
+(`footing_mesh.py`, `footing_dowels.py`, `footing_perimeter_tie.py`,
+`footing_plan.py`) is unchanged — #228 only changes WHERE those numbers
+come from (a live Revit read instead of a `pyrevit.forms` prompt), not
+what any core formula does with them once supplied.
