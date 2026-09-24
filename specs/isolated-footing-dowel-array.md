@@ -187,12 +187,21 @@ phase.
 future report and the placement adapter read from (parent spec §4 /
 `docs/token-efficient-expansion.md` §7). `Cw_mm`/`Cd_mm`/`Ccover_mm` are
 NOT stored on `FootingInputs` — they are read live (Story 1/2) at the
-point the pushbutton script builds the plan and passed in as plain
-arguments alongside `inputs`, the same "adapter reads Revit, core takes
-plain numbers" split `REUSE_GUIDELINES.md` §1 already states. This keeps
-`rft.core.footing_plan` unit-testable with a plain
-`(Cw_mm, Cd_mm, Ccover_mm)` tuple, with no Revit object ever required to
-exercise the core math.
+point the pushbutton script builds the plan and passed in as a single
+`column_section` argument alongside `inputs`, the same "adapter reads
+Revit, core takes plain numbers" split `REUSE_GUIDELINES.md` §1 already
+states. As implemented (#222/#227), the three values are bundled into one
+`footing_plan.DowelColumnSection` namedtuple (`Cw_mm`/`Cd_mm`/`Ccover_mm`)
+rather than passed as three bare positional floats — found in review
+(PR #225/#227): three same-typed, same-unit floats at two call sites
+invited a silent width/depth swap that type-checks fine and produces a
+silently mirrored array; a keyword-constructed namedtuple does not. This
+keeps `rft.core.footing_plan` unit-testable with a plain
+`DowelColumnSection` (or `None`), with no Revit object ever required to
+exercise the core math. Not named `ColumnSection` — `rft.core.
+column_host_rules` already defines its own, differently-shaped
+`ColumnSection` for ColumnRFT; reusing that name here would collide the
+moment both modules are imported together, which #221 will need to do.
 
 ## 5. Verification discipline
 

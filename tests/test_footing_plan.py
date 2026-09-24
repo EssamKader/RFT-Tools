@@ -31,7 +31,7 @@ from rft.core.footing_perimeter_tie import (
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
-    ColumnSection,
+    DowelColumnSection,
     DowelArrayLayoutError,
     DowelArrayPlan,
     FootingInputs,
@@ -287,13 +287,16 @@ def test_supplying_dowel_inputs_with_no_array_counts_falls_back_to_one_bar():
 
 
 def _array_inputs():
-    """Every one of the array's own five gating inputs supplied, plus the
-    column_section they pair with -- the fixture every "one missing"
-    permutation test below starts from and knocks a single value out of."""
+    """Every one of the array's own four gating inputs (column_section as
+    a whole, dowel_count_b_face, dowel_count_h_face, dowel_tie_dia_mm)
+    supplied, with column_section's own three sub-fields also set -- the
+    fixture every "one missing" permutation test below starts from and
+    knocks a single value out of."""
     inputs = _inputs(
         dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
         dowel_tie_dia_mm=10.0, dowel_count_b_face=2, dowel_count_h_face=2)
-    column_section = ColumnSection(Cw_mm=450.0, Cd_mm=600.0, Ccover_mm=40.0)
+    column_section = DowelColumnSection(
+        Cw_mm=450.0, Cd_mm=600.0, Ccover_mm=40.0)
     return inputs, column_section
 
 
@@ -318,6 +321,11 @@ def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
         count_h_face=inputs.dowel_count_h_face)
 
     assert isinstance(plan.dowel, DowelArrayPlan)
+    # Pinned to the spec's own worked example (a 2x2-per-face column: 4
+    # corner bars, none in the middle) -- found in review (PR #227): a
+    # bare self-comparison against expected_layout.bars would stay green
+    # even if a future fixture change silently broke the real count.
+    assert len(plan.dowel.bars) == 4
     assert len(plan.dowel.bars) == len(expected_layout.bars)
 
     expected_embedment = dowel_embedment(
@@ -347,15 +355,17 @@ def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
     "dowel_count_b_face", "dowel_count_h_face", "dowel_tie_dia_mm"])
 def test_the_dowel_array_requires_every_one_of_its_own_gating_inputs(
         missing_field):
-    """Missing ANY single one of the array's five gating inputs --
-    column_section (or one of its own three fields) plus dowel_count_
-    b_face/dowel_count_h_face/dowel_tie_dia_mm -- must fall back to the
-    single-bar plan, never a partial or guessed array. dowel_tie_dia_mm
-    is the field found missing from this guard in review (PR #225): it is
-    an independently opt-in #203 field that can legitimately be None while
-    the other four array inputs are set, and perimeter_bar_positions
-    itself still requires it as tie_dia_mm -- omitting it from the guard
-    previously produced a bare TypeError instead of this fallback."""
+    """Missing ANY single one of the array's four conceptual gating
+    inputs -- column_section as a whole (or one of its own three
+    sub-fields, seven `is not None` checks total, found miscounted as
+    "five"/"six" in review, PR #227) plus dowel_count_b_face/dowel_count_
+    h_face/dowel_tie_dia_mm -- must fall back to the single-bar plan,
+    never a partial or guessed array. dowel_tie_dia_mm is the field found
+    missing from this guard in review (PR #225): it is an independently
+    opt-in #203 field that can legitimately be None while the other
+    array inputs are set, and perimeter_bar_positions itself still
+    requires it as tie_dia_mm -- omitting it from the guard previously
+    produced a bare TypeError instead of this fallback."""
     inputs, column_section = _array_inputs()
 
     if missing_field == "column_section":
@@ -377,7 +387,7 @@ def test_a_column_section_too_small_for_the_array_raises_a_footing_error():
     reused function's own ValueError -- never a bare ValueError in
     column-cross-section wording leaking out of a footing module."""
     inputs, _ = _array_inputs()
-    tiny_column = ColumnSection(Cw_mm=10.0, Cd_mm=10.0, Ccover_mm=40.0)
+    tiny_column = DowelColumnSection(Cw_mm=10.0, Cd_mm=10.0, Ccover_mm=40.0)
     with pytest.raises(DowelArrayLayoutError):
         build_footing_plan(inputs, column_section=tiny_column)
 
