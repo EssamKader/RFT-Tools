@@ -525,3 +525,47 @@ subtracted from (not added to) each hooked end's own elevation. The
 straight-run span and elevations themselves are unchanged
 (`local_top_mesh_bar_endpoints`, R3-confirmed) — only the hook leg's
 own sign flips relative to the bottom mat's rule.
+
+## R14 — `perimeter_tie` splice: modeled as TWO separate open bars, not one closed loop with a BOM-only split
+
+**Spec Ref:** `rft.core.footing_perimeter_tie.py`'s own docstring
+("The splice's own open question -- RESOLVED (R5)") already resolved
+*how the total length divides into two cut lengths* (a direct two-field
+engineer input, R5) but never stated *how the two resulting bars should
+look in the Revit model itself* when `PerimeterTieSplice.bar_count == 2`
+— a genuinely separate question from R5, since a placement adapter has
+to choose an actual geometric shape for "two bars," not just a cut-list
+number.
+
+**Ruling (Essam, 2026-09-25):** model the split as TWO separate physical
+`Rebar` elements in the 3D model — not one continuous closed loop with
+the split only noted in the report. This is more realistic (matches what
+actually gets fabricated and tied on site) at the cost of being a new
+shape this tool has not built before.
+
+**Scope this ruling opens (not yet ticketed until #244 lands):**
+`perimeter_tie_geometry`'s own docstring already reads Sec 10's splice as
+"the perimeter treated as one long UNROLLED length, cut at a single
+point, exactly like a straight bar lap-spliced along its run" — this
+ruling is the placement adapter that reading was always pointing at.
+Concretely: pick a fixed unroll start point (the SW corner,
+`local_perimeter_tie_corners_mm`'s own first-wound corner, arc-length
+position `s = 0`), walk the closed rectangle's own perimeter by arc
+length through its four corners (SW→SE→NE→NW→back to SW at
+`s = length_mm`), and place:
+- **Bar 1**: from `s = 0` to `s = first_bar_length_mm` (an OPEN
+  multi-segment polyline, turning at whichever corners `s` passes
+  through — not a closed shape).
+- **Bar 2**: from `s = first_bar_length_mm - lap_mm` to
+  `s = length_mm` (which is the SAME physical point as `s = 0`, closing
+  the loop) — so bar 2's own end meets bar 1's own start exactly where
+  the rectangle closes on itself (no gap, no separate overlap needed
+  there), while the two bars overlap by `lap_mm` in the middle of the
+  unrolled run, at the single splice point Sec 10 describes. This
+  arithmetic is self-consistent with `perimeter_tie_splice`'s own
+  `total_length_mm = length_mm + lap_mm` formula (verify algebraically
+  before implementing, don't just trust this summary).
+
+When `PerimeterTieSplice.bar_count == 1` (loop at or under the 12m stock
+length, the common case), this ruling does not apply — place the single
+closed loop exactly as before, unaffected.
