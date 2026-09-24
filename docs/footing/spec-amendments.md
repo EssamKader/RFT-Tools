@@ -165,3 +165,96 @@ a value the tool already knows.
 and the bar-count/total-length decision in `perimeter_tie_splice` are
 unchanged — this ruling only adds a validation step consuming that
 existing total, it does not change how the total itself is computed.
+
+---
+
+## R6 — Dowel array layout: mirrors the column's own longitudinal bar layout
+
+**Spec Ref:** `specs/isolated-footing.md` §8 (Story 5). The rule as
+written sizes ONE `dowel_bar`'s embedment/hook, and #202 places exactly
+one representative dowel — the spec never states how many dowels exist or
+where they sit in plan, only that `dowel_bar` IS "the column vertical
+starter bar."
+
+**Found by:** the handover from the 2026-09-24 session
+(`docs/footing/HANDOVER-2026-09-24.md` item 5) — this is one of the two
+prerequisites blocking `dowel_tie`'s own closed-loop shape (§9), flagged
+as an architectural gap (no data to guess with) rather than a single
+ambiguous value, per `REUSE_GUIDELINES.md` §3's "Explicit Refusals" rule.
+
+**Ruling (Essam, 2026-09-24):** the dowel array is not an independent
+count/spacing input. It mirrors ColumnRFT's own longitudinal bar layout
+model exactly (`specs/column-rft-detailing.md` §2 — bar count per face
+plus corner bars, one continuous perimeter arrangement), because each
+`dowel_bar` IS the continuation of a real column vertical bar below the
+splice, not a separately-invented array. `FootingInputs` gains fields
+matching ColumnRFT's own layout inputs; a dowel is positioned at the same
+perimeter location its corresponding column bar occupies.
+
+**Why this doesn't need to touch anything else:** the per-bar embedment/
+hook math `footing_dowels.dowel_embedment`/`local_dowel_bar_geometry`
+already builds (#202) is unchanged — this ruling only decides HOW MANY
+dowels exist and WHERE in plan, not how any single dowel's own vertical
+geometry is sized.
+
+---
+
+## R7 — Column cross-section (Cw/Cd) source: read live from the column, reusing `column_host`
+
+**Spec Ref:** `specs/isolated-footing.md` §2/§3. The naming table gives a
+symbol (`Cw`) for the column's width in the a-direction only — it never
+names the column's depth (b-direction) dimension, and `FootingInputs`
+deliberately never stores `Cw` either (`footing_plan.py`'s own comment:
+`x_offset_mm`/`y_offset_mm` are supplied directly "rather than derived
+from a/b/Cw").
+
+**Found by:** the same handover gap as R6 — the second of the two
+`dowel_tie` prerequisites, since a real tie rectangle needs the column's
+own b-direction cross-section width, which nothing in `FootingInputs`
+carries today.
+
+**Ruling (Essam, 2026-09-24):** not derived by offset math
+(`Cd = b_mm - 2*y_offset_mm`) and not a new typed field — "each column is
+defined by two dimensions a and b" read from Revit itself. `Cw`/`Cd` are
+sourced live by reusing `rft.revit.column_host.read_section_mm`/
+`read_orientation` as-is (the same live-host-verified, rotation-safe
+adapter ColumnRFT already uses — issue #87/#69), against the actual
+column `FamilyInstance` above the footing. This refuses on a
+non-rectangular or flipped column exactly as `column_host` already does
+for ColumnRFT — no separate refusal rule invented here.
+
+**Ruling (Essam, 2026-09-24) — column is auto-detected, not picked:**
+the footing tool does not ask the engineer to separately pick the column.
+It auto-detects the column sitting on top of the picked footing, the same
+`ReferenceIntersector` ray-cast technique `column_host.find_search_view`/
+`find_support_face_z_mm` already use to find what's above/below a column
+(live-host-proven in that direction), run in reverse — a ray fired upward
+from the footing's own top face, filtered to `OST_StructuralColumns`. This
+exact direction (footing -> column above) is a NEW use of a proven
+technique, not proven itself yet, so it needs its own tracer-bullet
+verification before it ships (same discipline as every other footing
+feature, spec §5). If no column is found (or the column found is
+non-rectangular/flipped), the tool refuses with a clear message ("no
+column is attached to this footing") before any rebar placement runs —
+**no manual pick/typed fallback**.
+
+**Why this doesn't need to touch anything else:** every existing formula
+that already reads `mesh_bar_x_dia_mm`/`mesh_bar_y_dia_mm`/`footing_
+thickness_mm`/etc. off `FootingInputs` is unchanged — `Cw`/`Cd` are new
+data flowing in from a new adapter, consumed only by the new dowel-array
+placement logic (R6), not by any mesh/tie math that predates this
+ruling.
+
+**Extended during To-Spec (Essam, 2026-09-24, same day):** the To-Spec
+draft (`specs/isolated-footing-dowel-array.md`) initially proposed a new
+typed `FootingInputs` field for the cover used to position dowels within
+the column's own cross-section, since that cover is conceptually distinct
+from the footing's own `cover_mm`/`bottom_cover_mm`. Flagged rather than
+assumed. **Ruling:** "for this use column cover for sure" — same
+treatment as `Cw`/`Cd`, read live off the detected column by reusing
+`rft.revit.column_host.read_cover_mm` (`CLEAR_COVER_OTHER`, already
+live-host-verified for ColumnRFT's own amendment A2: cover is read from
+the element and never typed, since #80 found Revit silently clamping a
+typed cover to the host's own). No new `FootingInputs` field for this —
+one more value that flows in live alongside `Cw`/`Cd`, not a fourth
+typed input.
