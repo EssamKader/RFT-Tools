@@ -31,6 +31,8 @@ from rft.core.footing_perimeter_tie import (
 from rft.core.footing_plan import (
     TOP_REINFORCEMENT_BTM_ONLY,
     TOP_REINFORCEMENT_TOP_AND_BTM,
+    ColumnSection,
+    DowelArrayLayoutError,
     DowelArrayPlan,
     FootingInputs,
     PerimeterTiePlan,
@@ -261,11 +263,11 @@ def test_the_plan_defaults_dowel_fields_to_none_with_no_dowel_plan():
 
 
 def test_supplying_dowel_inputs_with_no_array_counts_falls_back_to_one_bar():
-    """#222: when the two count-per-face inputs (and Cw/Cd/Ccover) are not
-    supplied, ``DowelArrayPlan.bars`` must carry exactly the SAME single
-    representative bar #202 always built -- every caller that predates
-    #222 keeps building a plan with no dowel array unchanged, per the
-    addendum spec Sec 3 Story 3's own trailing-defaults wording."""
+    """#222: when the two count-per-face inputs (and column_section) are
+    not supplied, ``DowelArrayPlan.bars`` must carry exactly the SAME
+    single representative bar #202 always built -- every caller that
+    predates #222 keeps building a plan with no dowel array unchanged, per
+    the addendum spec Sec 3 Story 3's own trailing-defaults wording."""
     inputs = _inputs(dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0)
     assert inputs.dowel_count_b_face is None
     assert inputs.dowel_count_h_face is None
@@ -284,30 +286,39 @@ def test_supplying_dowel_inputs_with_no_array_counts_falls_back_to_one_bar():
     assert plan.dowel.bars == [expected_geometry]
 
 
-def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
-    """#222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): a
-    2x2-per-face column layout (4 corner bars, none in the middle) must
-    produce exactly 4 ``DowelArrayPlan.bars`` entries, each the
-    representative bar's own bent-bar geometry translated to that bar's
-    ``perimeter_bar_positions`` ``(u, v)`` -- corner bars de-duplicated
-    between the two faces, not counted twice."""
+def _array_inputs():
+    """Every one of the array's own five gating inputs supplied, plus the
+    column_section they pair with -- the fixture every "one missing"
+    permutation test below starts from and knocks a single value out of."""
     inputs = _inputs(
         dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
         dowel_tie_dia_mm=10.0, dowel_count_b_face=2, dowel_count_h_face=2)
-    Cw_mm, Cd_mm, Ccover_mm = 450.0, 600.0, 40.0
-    plan = build_footing_plan(inputs, Cw_mm=Cw_mm, Cd_mm=Cd_mm,
-                              Ccover_mm=Ccover_mm)
+    column_section = ColumnSection(Cw_mm=450.0, Cd_mm=600.0, Ccover_mm=40.0)
+    return inputs, column_section
+
+
+def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
+    """#222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): every
+    ``DowelArrayPlan.bars`` entry must be the representative bar's own
+    bent-bar geometry translated to that bar's own ``perimeter_bar_
+    positions`` ``(u, v)`` -- the footing-specific translation wiring this
+    ticket adds. Corner de-duplication/count is ``perimeter_bar_
+    positions``' OWN behaviour, already proven by
+    ``tests/test_column_layout.py::test_the_four_corner_bars_appear_ONCE_each``
+    -- not re-derived here (Essam's own Test volume rule)."""
+    inputs, column_section = _array_inputs()
+    plan = build_footing_plan(inputs, column_section=column_section)
 
     expected_layout = perimeter_bar_positions(
-        b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm,
+        b_mm=column_section.Cw_mm, h_mm=column_section.Cd_mm,
+        cover_mm=column_section.Ccover_mm,
         tie_dia_mm=inputs.dowel_tie_dia_mm,
         bar_dia_mm=inputs.dowel_bar_dia_mm,
         count_b_face=inputs.dowel_count_b_face,
         count_h_face=inputs.dowel_count_h_face)
 
     assert isinstance(plan.dowel, DowelArrayPlan)
-    assert len(expected_layout.bars) == 4
-    assert len(plan.dowel.bars) == 4
+    assert len(plan.dowel.bars) == len(expected_layout.bars)
 
     expected_embedment = dowel_embedment(
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
@@ -331,16 +342,44 @@ def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
             representative.bottom_hook.start.y_mm + expected_bar.v_mm)
 
 
-def test_the_dowel_array_requires_every_one_of_its_own_five_inputs():
-    """Missing any single one of Cw_mm/Cd_mm/Ccover_mm/count_b_face/
-    count_h_face must fall back to the single-bar plan, never a partial
-    or guessed array."""
-    inputs = _inputs(
-        dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
-        dowel_tie_dia_mm=10.0, dowel_count_b_face=2, dowel_count_h_face=2)
-    plan = build_footing_plan(inputs, Cw_mm=450.0, Cd_mm=600.0,
-                              Ccover_mm=None)
+@pytest.mark.parametrize("missing_field", [
+    "column_section", "Cw_mm", "Cd_mm", "Ccover_mm",
+    "dowel_count_b_face", "dowel_count_h_face", "dowel_tie_dia_mm"])
+def test_the_dowel_array_requires_every_one_of_its_own_gating_inputs(
+        missing_field):
+    """Missing ANY single one of the array's five gating inputs --
+    column_section (or one of its own three fields) plus dowel_count_
+    b_face/dowel_count_h_face/dowel_tie_dia_mm -- must fall back to the
+    single-bar plan, never a partial or guessed array. dowel_tie_dia_mm
+    is the field found missing from this guard in review (PR #225): it is
+    an independently opt-in #203 field that can legitimately be None while
+    the other four array inputs are set, and perimeter_bar_positions
+    itself still requires it as tie_dia_mm -- omitting it from the guard
+    previously produced a bare TypeError instead of this fallback."""
+    inputs, column_section = _array_inputs()
+
+    if missing_field == "column_section":
+        column_section = None
+    elif missing_field in ("Cw_mm", "Cd_mm", "Ccover_mm"):
+        column_section = column_section._replace(**{missing_field: None})
+    else:
+        inputs = inputs._replace(**{missing_field: None})
+
+    plan = build_footing_plan(inputs, column_section=column_section)
     assert len(plan.dowel.bars) == 1
+
+
+def test_a_column_section_too_small_for_the_array_raises_a_footing_error():
+    """#222 (PR #225 review): perimeter_bar_positions' own ValueError
+    (section too small to fit a dowel at cover+tie+half-bar) must surface
+    as a footing-domain error, the same wrap-and-relabel pattern
+    footing_dowel_ties.DowelTieRunTooShortError already establishes for a
+    reused function's own ValueError -- never a bare ValueError in
+    column-cross-section wording leaking out of a footing module."""
+    inputs, _ = _array_inputs()
+    tiny_column = ColumnSection(Cw_mm=10.0, Cd_mm=10.0, Ccover_mm=40.0)
+    with pytest.raises(DowelArrayLayoutError):
+        build_footing_plan(inputs, column_section=tiny_column)
 
 
 def test_the_plan_defaults_perimeter_tie_fields_to_none_with_no_perimeter_tie_plan():

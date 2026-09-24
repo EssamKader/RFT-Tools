@@ -24,9 +24,9 @@ from collections import namedtuple
 
 from .column_layout import perimeter_bar_positions
 from .footing_dowels import (
-    DowelBarGeometry,
     dowel_embedment,
     local_dowel_bar_geometry,
+    translate_dowel_bar_geometry,
 )
 from .footing_dowel_ties import dowel_tie_ladder
 from .footing_perimeter_tie import (
@@ -35,8 +35,6 @@ from .footing_perimeter_tie import (
     perimeter_tie_ladder_mm,
 )
 from .footing_mesh import (
-    BarEndpoints,
-    LocalPoint,
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
@@ -187,6 +185,17 @@ BottomMeshPlan = namedtuple(
 #: shaped plan for what is not new math.
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 
+#: #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"): the
+#: column's own live cross-section width/depth and dowel-positioning
+#: cover, bundled into ONE namedtuple rather than passed as three
+#: same-typed, same-unit positional floats -- found in review (PR #225):
+#: three bare floats at two call sites (``build_footing_plan`` and
+#: ``_build_dowel_plan``) invite a silent width/depth swap that
+#: type-checks fine and produces a silently mirrored array. A caller now
+#: either constructs this by keyword or gets a ``TypeError`` at
+#: construction, never a silent transposition.
+ColumnSection = namedtuple("ColumnSection", ["Cw_mm", "Cd_mm", "Ccover_mm"])
+
 #: #202 (Sec 3 Story 5, Sec 8), reshaped by #222 (specs/isolated-footing-
 #: dowel-array.md Sec 3 Story 3): ``embedment`` is a ``footing_dowels.
 #: DowelEmbedment`` (``a_dowel_mm``/``b_dowel_mm``/``ld_mm``) -- ONE shared
@@ -195,9 +204,10 @@ TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 #: DowelBarGeometry`` (bent-bar centreline resting on top of the bottom
 #: mesh, see ``footing_dowels`` docstrings), one entry per dowel position.
 #:
-#: When ``inputs.dowel_count_b_face``/``dowel_count_h_face`` and the
-#: ``Cw_mm``/``Cd_mm``/``Ccover_mm`` arguments to ``build_footing_plan``
-#: are all supplied, ``bars`` holds one ``DowelBarGeometry`` per position
+#: When ``inputs.dowel_count_b_face``/``dowel_count_h_face``/
+#: ``dowel_tie_dia_mm`` and the ``column_section`` (``ColumnSection``)
+#: argument to ``build_footing_plan`` are all supplied, ``bars`` holds one
+#: ``DowelBarGeometry`` per position
 #: ``column_layout.perimeter_bar_positions`` returns (corner dowels
 #: de-duplicated -- see ``_build_dowel_plan``). Otherwise ``bars`` holds
 #: exactly the SAME single representative bar (centred on the footing's
@@ -334,40 +344,32 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
         bar_x_hooks=bar_x_hooks, bar_y_hooks=bar_y_hooks)
 
 
-def _translate_dowel_bar_geometry(geometry, u_mm, v_mm):
-    """Shift a #202 ``DowelBarGeometry`` (built at the footing's own plan
-    centroid, ``x_mm == y_mm == 0``) sideways to a real footing-local
-    ``(u, v)`` dowel position.
+class DowelArrayLayoutError(ValueError):
+    """The live column cross-section/cover the caller supplied leaves no
+    room for a dowel at ``perimeter_bar_positions``' own offset from the
+    column face (cover + tie + half a bar).
 
-    Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 3 --
-    "this story changes WHERE dowels are and HOW MANY there are, not how
-    any single dowel's own vertical geometry is sized." Only the plan
-    (x/y) coordinates move; ``z_mm`` (the bend-corner/top elevation
-    ``local_dowel_bar_geometry`` already computed) and every embedment
-    length are untouched, so this is a translation, never a re-sizing.
+    Wraps ``column_layout.perimeter_bar_positions``' own ``ValueError``
+    (raised in column-cross-section wording -- "the bar centreline would
+    fall outside the concrete") into a footing-domain error, the same
+    pattern ``footing_dowel_ties.DowelTieRunTooShortError`` already
+    establishes for wrapping a reused function's own ``ValueError`` (found
+    in review, PR #225): every footing refusal is catchable as a
+    footing-specific class, never a bare ``ValueError`` from a reused
+    column module leaking through unlabelled.
     """
-    def _shift(point):
-        return LocalPoint(point.x_mm + u_mm, point.y_mm + v_mm, point.z_mm)
-
-    return DowelBarGeometry(
-        bottom_hook=BarEndpoints(
-            start=_shift(geometry.bottom_hook.start),
-            end=_shift(geometry.bottom_hook.end)),
-        vertical=BarEndpoints(
-            start=_shift(geometry.vertical.start),
-            end=_shift(geometry.vertical.end)))
 
 
-def _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm):
+def _build_dowel_plan(inputs, column_section):
     """#202 (Sec 3 Story 5, Sec 8), extended by #222 (specs/isolated-
     footing-dowel-array.md Sec 3 Story 3): the one place ``footing_dowels.
-    dowel_embedment``/``local_dowel_bar_geometry`` (and, when a real array
-    is being built, ``column_layout.perimeter_bar_positions``) are called
-    from, so a future report/preview and the placement adapter (#223) both
-    read the SAME ``DowelArrayPlan`` rather than each calling
-    ``footing_dowels``/``column_layout`` independently (the same Sec 4
-    "one composing module" rule ``_build_mesh_mat_plan`` already follows
-    for the mesh mats).
+    dowel_embedment``/``local_dowel_bar_geometry``/``translate_dowel_bar_
+    geometry`` (and, when a real array is being built, ``column_layout.
+    perimeter_bar_positions``) are called from, so a future report/preview
+    and the placement adapter (#223) both read the SAME ``DowelArrayPlan``
+    rather than each calling ``footing_dowels``/``column_layout``
+    independently (the same Sec 4 "one composing module" rule
+    ``_build_mesh_mat_plan`` already follows for the mesh mats).
 
     Reads mesh bar diameters and ``footing_thickness_mm``/
     ``bottom_cover_mm`` straight off ``inputs`` -- the SAME fields
@@ -377,15 +379,36 @@ def _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm):
     array (Sec 3 Story 3: "every dowel has identical vertical sizing").
 
     A real array (``perimeter_bar_positions``, R6's own reuse target) is
-    built only when the caller supplies BOTH the live column cross-section
-    (``Cw_mm``/``Cd_mm``/``Ccover_mm`` -- read live off the auto-detected
-    column by a later ticket's adapter, never stored on ``FootingInputs``,
-    per the addendum spec Sec 4) and the two count-per-face inputs
-    (``inputs.dowel_count_b_face``/``dowel_count_h_face``). When either is
-    missing, ``bars`` falls back to the SAME single representative bar
-    #202 always built, at the footing's own plan centroid -- every caller
-    that predates #222 keeps building a plan with no dowel array
-    unchanged (see ``DowelArrayPlan``'s own docstring).
+    built only when the caller supplies the live column cross-section
+    (``column_section`` -- a ``ColumnSection``, read live off the
+    auto-detected column by a later ticket's adapter, never stored on
+    ``FootingInputs``, per the addendum spec Sec 4) WITH ALL THREE of its
+    own ``Cw_mm``/``Cd_mm``/``Ccover_mm`` fields set (found missing in
+    review, PR #225: a non-``None`` ``column_section`` whose own fields
+    are still ``None`` reproduced the exact same bare-``TypeError`` defect
+    named below, one level down), AND the array's own THREE remaining
+    opt-in ``FootingInputs`` fields: ``dowel_count_b_face``/``dowel_count_
+    h_face`` (this ticket) and ``dowel_tie_dia_mm`` (#203 -- an
+    independently opt-in field ``perimeter_bar_positions`` still requires
+    as its own ``tie_dia_mm`` argument; found missing from this gate in
+    review, PR #225, where its absence produced a bare ``TypeError`` deep
+    in ``rft.core.layout`` instead of the documented fallback). When ANY
+    of these six checks is not satisfied, ``bars`` falls back to the SAME
+    single representative bar #202 always built, at the footing's own
+    plan centroid -- every caller that predates #222 keeps building a
+    plan with no dowel array unchanged (see ``DowelArrayPlan``'s own
+    docstring).
+
+    ``perimeter_bar_positions``' own ``(u, v)`` is used directly as this
+    footing's own local ``(x, y)`` with NO rotation transform for a column
+    whose axes are not parallel to the footing's own a/b axes --
+    ``column_host.read_orientation`` exists precisely because ColumnRFT
+    found this can differ (#69). #222 has no orientation input available
+    to it at all (pure numbers only, per the addendum spec Sec 4), so this
+    is assumed and deferred, not silently forgotten: see
+    ``docs/footing/reuse-audit.md`` Sec 1 (#222 entry) for the same note,
+    to whichever future ticket (#221/#223) has access to the column's
+    actual orientation.
     """
     embedment = dowel_embedment(
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
@@ -396,21 +419,33 @@ def _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm):
         embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
         inputs.mesh_bar_y_dia_mm)
 
-    if (Cw_mm is not None and Cd_mm is not None and Ccover_mm is not None
+    if (column_section is not None
+            and column_section.Cw_mm is not None
+            and column_section.Cd_mm is not None
+            and column_section.Ccover_mm is not None
             and inputs.dowel_count_b_face is not None
-            and inputs.dowel_count_h_face is not None):
+            and inputs.dowel_count_h_face is not None
+            and inputs.dowel_tie_dia_mm is not None):
         # Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 3 --
         # the exact call the addendum spec names, reused as-is (R6): every
         # dowel's footing-local (u, v) position, once, corner dowels
         # de-duplicated between faces.
-        layout = perimeter_bar_positions(
-            b_mm=Cw_mm, h_mm=Cd_mm, cover_mm=Ccover_mm,
-            tie_dia_mm=inputs.dowel_tie_dia_mm,
-            bar_dia_mm=inputs.dowel_bar_dia_mm,
-            count_b_face=inputs.dowel_count_b_face,
-            count_h_face=inputs.dowel_count_h_face)
-        bars = [_translate_dowel_bar_geometry(representative,
-                                              bar.u_mm, bar.v_mm)
+        try:
+            layout = perimeter_bar_positions(
+                b_mm=column_section.Cw_mm, h_mm=column_section.Cd_mm,
+                cover_mm=column_section.Ccover_mm,
+                tie_dia_mm=inputs.dowel_tie_dia_mm,
+                bar_dia_mm=inputs.dowel_bar_dia_mm,
+                count_b_face=inputs.dowel_count_b_face,
+                count_h_face=inputs.dowel_count_h_face)
+        except ValueError as exc:
+            raise DowelArrayLayoutError(
+                "Column section %.1f x %.1f mm at cover %.1f mm leaves no "
+                "room for a dowel array: %s"
+                % (column_section.Cw_mm, column_section.Cd_mm,
+                   column_section.Ccover_mm, exc))
+        bars = [translate_dowel_bar_geometry(representative,
+                                             bar.u_mm, bar.v_mm)
                 for bar in layout.bars]
     else:
         bars = [representative]
@@ -469,7 +504,7 @@ def _build_perimeter_tie_plan(inputs):
         bar_lengths=bar_lengths)
 
 
-def build_footing_plan(inputs, Cw_mm=None, Cd_mm=None, Ccover_mm=None):
+def build_footing_plan(inputs, column_section=None):
     """The ONE place ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, ``local_mesh_bar_endpoints`` and ``bar_hook_plan_for_mat``
     are called from, for both the bottom mat and (#201) the optional top
@@ -488,16 +523,18 @@ def build_footing_plan(inputs, Cw_mm=None, Cd_mm=None, Ccover_mm=None):
     per Sec 7's "set separately, never coupled").
 
     #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"):
-    ``Cw_mm``/``Cd_mm``/``Ccover_mm`` are the column's own live cross-
-    section width/depth and dowel-positioning cover -- deliberately NOT
-    ``FootingInputs`` fields, since Sec 4 states they are "read live ...
-    and passed in as plain arguments alongside inputs", keeping this
-    function unit-testable with a plain ``(Cw_mm, Cd_mm, Ccover_mm)``
-    tuple and no Revit object ever required. All three default to
-    ``None`` so every caller that predates #222 (this file's own callers
-    that build no dowel array) is unchanged; see ``_build_dowel_plan``
-    for exactly which combination of these plus ``inputs.dowel_count_
-    b_face``/``dowel_count_h_face`` is required to build a real array.
+    ``column_section`` is a ``ColumnSection`` (``Cw_mm``/``Cd_mm``/
+    ``Ccover_mm`` -- the column's own live cross-section width/depth and
+    dowel-positioning cover, bundled into one namedtuple rather than three
+    bare same-typed floats, PR #225 review) -- deliberately NOT a
+    ``FootingInputs`` field, since Sec 4 states it is "read live ... and
+    passed in as plain arguments alongside inputs", keeping this function
+    unit-testable with a plain ``ColumnSection`` (or ``None``) and no
+    Revit object ever required. Defaults to ``None`` so every caller that
+    predates #222 (this file's own callers that build no dowel array) is
+    unchanged; see ``_build_dowel_plan`` for exactly which combination of
+    ``column_section`` plus ``inputs.dowel_count_b_face``/``dowel_count_
+    h_face``/``dowel_tie_dia_mm`` is required to build a real array.
     """
     bottom_mesh = _build_mesh_mat_plan(
         BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode,
@@ -518,7 +555,7 @@ def build_footing_plan(inputs, Cw_mm=None, Cd_mm=None, Ccover_mm=None):
     dowel = None
     if (inputs.dowel_bar_dia_mm is not None
             and inputs.dowel_ld_multiplier is not None):
-        dowel = _build_dowel_plan(inputs, Cw_mm, Cd_mm, Ccover_mm)
+        dowel = _build_dowel_plan(inputs, column_section)
 
     dowel_ties = None
     if (inputs.dowel_tie_dia_mm is not None

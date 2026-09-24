@@ -124,3 +124,37 @@ def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
     bottom_hook = BarEndpoints(start=hook_far_end, end=bend)
     vertical = BarEndpoints(start=bend, end=top)
     return DowelBarGeometry(bottom_hook=bottom_hook, vertical=vertical)
+
+
+def translate_dowel_bar_geometry(geometry, u_mm=0.0, v_mm=0.0):
+    """Shift a ``DowelBarGeometry`` (built by :func:`local_dowel_bar_geometry`
+    at the footing's own plan centroid, ``x_mm == y_mm == 0``) sideways to a
+    real footing-local ``(u, v)`` dowel position.
+
+    #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): "this story
+    changes WHERE dowels are and HOW MANY there are, not how any single
+    dowel's own vertical geometry is sized." Only the plan (x/y) coordinates
+    move; ``z_mm`` (the bend-corner/top elevation :func:`local_dowel_bar_
+    geometry` already computed) and every embedment length are untouched,
+    so this is a translation, never a re-sizing.
+
+    This module owns ``DowelBarGeometry``'s own field structure, so it is
+    the one place that reaches into ``bottom_hook``/``vertical`` -- callers
+    (``rft.core.footing_plan``) only ever assemble the result into a plan,
+    never touch the namedtuple's own fields directly (found in review,
+    PR #225).
+
+    Defaults to a no-op shift (``u_mm=v_mm=0.0``) so the single
+    representative bar #202 always built can be produced by the same call
+    shape a real array position uses.
+    """
+    def _shift(point):
+        return LocalPoint(point.x_mm + u_mm, point.y_mm + v_mm, point.z_mm)
+
+    return DowelBarGeometry(
+        bottom_hook=BarEndpoints(
+            start=_shift(geometry.bottom_hook.start),
+            end=_shift(geometry.bottom_hook.end)),
+        vertical=BarEndpoints(
+            start=_shift(geometry.vertical.start),
+            end=_shift(geometry.vertical.end)))

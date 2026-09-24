@@ -109,6 +109,13 @@ def place_dowel_bar(document, footing, dowel_plan, bar_type):
     Returns the created ``Rebar`` element.
     """
     origin_x, origin_y, origin_z = _footing_origin(footing)
+    # Intentionally tracer-bullet-scoped to bars[0] ONLY (PR #225 review):
+    # if a caller ever builds a real multi-bar DowelArrayPlan (#222 --
+    # inputs.dowel_count_b_face/dowel_count_h_face/dowel_tie_dia_mm plus a
+    # live ColumnSection) and passes it here before #223 wires the real
+    # per-bar placement loop, every bar except the first is silently
+    # dropped -- no warning, no partial-placement error. Do not treat this
+    # as "the array already places" just because it does not crash.
     curves = _dowel_curves(
         origin_x, origin_y, origin_z, dowel_plan.bars[0])
     return Rebar.CreateFromCurves(
