@@ -262,24 +262,37 @@ and then confirmed correct by Essam — recorded as **R3** in
   (`docs/footing/HANDOVER-2026-09-24.md` item 6) -- unblocked now that a
   real dowel-bar array exists and places (#222/#223), but not built.
 - Any modeless Review window -- inputs are asked one at a time with
-  `pyrevit.forms` for now (spec-named #205, not started).
-- Multi-footing / batch placement (F1, spec Sec 0) -- blocked on #228
-  (done, this session) having landed; #226 itself (the batch mechanism)
-  is not yet started.
+  `pyrevit.forms` for now (spec-named #205, not started). The batch flow
+  (#226) confirms with a plain-text `forms.alert` report for the same
+  reason -- no WPF grid exists yet to show groups/exclusions/replacements
+  the way ColumnRFT's own batch tab does.
+- Batch placement's own live-host tracer bullet (an N-FOOTING loop inside
+  one transaction, mirroring #223's own N-bar proof) -- `rft.revit.
+  footing_batch` is built and unit-tested (`docs/footing/reuse-audit.md`
+  §9) but not yet run against `ColumnRFT.Trail.rvt`.
+- `dowel_tie`'s own closed-loop shape/placement and `perimeter_tie`
+  placement remain out of the batch too (spec Ref: `specs/
+  isolated-footing-batch.md` §7) -- a batch cannot place what the
+  single-footing path does not place either.
 
 **Now DONE, no longer a gap (2026-09-24 session):** the dowel array
 (#220-#223 -- auto-detect the column, read its Cw/Cd/cover live, compute
-the full array, place every bar) and the footing's own plan
+the full array, place every bar), the footing's own plan
 dimensions/thickness/three covers (#228 -- read live off the picked
 `FamilyInstance`'s `STRUCTURAL_FOUNDATION_LENGTH`/`_WIDTH`/`_THICKNESS`
 type parameters and `CLEAR_COVER_BOTTOM`/`_TOP`/`_OTHER` instance
-parameters, never typed) are both wired into
-`IsolatedFootingRFT.pushbutton/script.py` and placed inside its one
-transaction. `x_offset_mm`/`y_offset_mm`/`ld_multiplier` and the dowel
-array's own bar-type/LD-multiplier/count-per-face inputs remain typed
-`pyrevit.forms` prompts -- see `docs/footing/reuse-audit.md` §6-§8 and
+parameters, never typed), and multi-footing batch placement (#226,
+`specs/isolated-footing-batch.md` -- collect by footing+column type
+pair, group by R9's live-read tuple, plan/refuse/report, one
+all-or-nothing transaction, `RFT-FTG-` ownership tagging via new
+`rft.revit.footing_ownership`) are all wired into `IsolatedFootingRFT.
+pushbutton/script.py`. `x_offset_mm`/`y_offset_mm`/`ld_multiplier` and
+the dowel array's own bar-type/LD-multiplier/count-per-face inputs
+remain typed `pyrevit.forms` prompts, shared across the whole batch when
+one is run -- see `docs/footing/reuse-audit.md` §6-§9 and
 `docs/footing/verification/issue-22{0,3}-*.md` /
-`issue-228-footing-dimension-read.md` for the live-host proof.
+`issue-228-footing-dimension-read.md` for the live-host proof landed so
+far (#226's own live-host step is still outstanding, see above).
 
 ## Open gap: rotated footings refuse rather than place wrong
 

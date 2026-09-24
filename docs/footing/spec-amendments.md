@@ -306,3 +306,56 @@ reads `FootingInputs.a_mm`/`b_mm`/`footing_thickness_mm` as plain numbers
 `footing_plan.py`) is unchanged — #228 only changes WHERE those numbers
 come from (a live Revit read instead of a `pyrevit.forms` prompt), not
 what any core formula does with them once supplied.
+
+---
+
+## R9 — Footing batch grouping key: the full live-read tuple (footing geometry + column section), not the column section alone
+
+**Spec Ref:** ticket #226 (Footing #14, batch placement)'s own "Open
+question," section 2 — resolved now that #228 (R8) has landed and both
+readings the question offered are informed by a real prerequisite rather
+than a hypothetical one.
+
+**Context:** #226's own ticket body offered two readings for the
+grouping key once a live-read prerequisite existed: (1) key on the FULL
+live-read tuple — the footing's own geometry (#228) plus the auto-
+detected column's own section/cover (#221) — or (2) key on the column
+section alone, assuming footing-type match already guarantees identical
+footing geometry (since `a_mm`/`b_mm`/`footing_thickness_mm` are TYPE
+parameters, fixed by definition for a given family type).
+
+**Ruling (Essam, 2026-09-24, via AskUserQuestion):** Reading 1 — the
+grouping key is the FULL live-read tuple: `(a_mm, b_mm,
+footing_thickness_mm, cover_mm, bottom_cover_mm, top_cover_mm)` from
+`footing_host.read_footing_geometry_mm` (#228), plus `(Cw_mm, Cd_mm,
+Ccover_mm)` from `footing_host.read_dowel_column_section_mm` (#221) — nine
+fields total, all already live-read by existing, independently-verified
+functions. No new derivation, no new parameter read invented for this
+ticket alone.
+
+**Why not reading 2 (column section alone):** Reading 2 would ASSUME two
+footings of the same family type always measure identically rather than
+MEASURE it — the exact category of mistake `specs/column-batch-
+placement.md` §0 itself exists to warn against (a type match that looks
+safe but silently hides a per-instance difference). Since #228 already
+reads the footing's own geometry live, there is no reason left to fall
+back to an assumption when the real measurement is one function call
+away — R8's own text ("if same footing so do share same rft, no worries
+for no.02 run") already implies the geometry itself is part of what
+"same" means, not just the column above it.
+
+**Mirrors `column_batch.group_key` exactly in spirit, not in shape:**
+column batch keys on two fields read off ONE function's output
+(`read_column`'s `ColumnExtent`); footing batch keys on nine fields read
+off TWO functions' outputs (`read_footing_geometry_mm` +
+`read_dowel_column_section_mm`), because the footing tool's own live-read
+surface is split across two adapters where the column tool's is one.
+Neither key is re-derived from a parameter or a second geometry read —
+both are read exactly once, by the functions the single-run path already
+calls and already has live-host verification for (#220/#221/#228).
+
+**Why this doesn't touch anything else:** no existing `read_footing_
+geometry_mm`/`read_dowel_column_section_mm` call site changes — #226's
+own new `rft.core.footing_batch.group_key` is the only new consumer of
+both return values together, and it only reads their fields, never
+recomputes them.
