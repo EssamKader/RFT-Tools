@@ -26,41 +26,46 @@ needs only `a`/`b`/`cover` -- already carried by `FootingInputs` since
 #198, with no missing prerequisite. See `docs/footing/reuse-audit.md`
 Sec 4 for the full verdict table.
 
-**Explicitly NOT in #204, flagged as open questions for Essam, not
-guessed past (REUSE_GUIDELINES.md Sec 3):**
+**Resolved after #204 merged (R4/R5, `docs/footing/spec-amendments.md`):**
 
-1. **The vertical ladder / array.** Spec Sec 10 states diameter, spacing
-   and quantity are direct user inputs, and gives "one loop every 200mm
-   vertically" only as an EXAMPLE -- unlike Sec 9's `dowel_tie`, it gives
-   no starting-offset or array-position formula (no "50mm from the
-   bottom" equivalent) for where the first/only `perimeter_tie` loop
-   sits, or how `quantity` loops are spread between a start and end.
-   `FootingInputs.perimeter_tie_spacing_mm`/`perimeter_tie_quantity` are
-   carried on the composing module for a future ticket to consume once
-   Essam states that formula; no Z-ladder is computed here.
-2. **The splice's own per-bar cut lengths.** Sec 10 says a split loop is
-   "overlapped by lap length `Ls` at the joint" (singular), which this
-   ticket reads as the perimeter treated as one long unrolled length cut
-   once (not a true closed loop's two joints) -- consistent with "no
-   restricted splice zone... may be placed anywhere". `Ls` itself is a
-   direct user input (Sec 8, reused by name in Sec 10), so it is NOT the
-   open question. What Sec 10 does not state is how the total
-   ("length + one lap") divides into the TWO bars' own individual cut
-   lengths for a BOQ/cut-list -- `perimeter_tie_splice` reports the
-   bar-count decision and the total steel length only; see
-   `rft.core.footing_perimeter_tie`'s own docstring, "The splice's own
-   open question".
-3. **Revit placement.** No `rft.revit.footing_perimeter_tie` adapter is
-   built by this ticket -- it would need item 1's Z-elevations to build
-   curves from, and `docs/footing/verification/issue-197-footing-tracer-
-   bullet.md` Sec 4 lists closed-loop shapes as still unverified against
-   a live footing host (only straight, unhooked curves were tested).
-   Once items 1 is resolved, the placement adapter should follow
-   `rft.revit.column_place_ties`'s own `norm = XYZ.BasisZ` convention for
-   a closed loop lying in a horizontal plane (perpendicular to the loop's
-   own plane) -- NOT `rft.revit.footing_dowels`'s `XYZ.BasisY`, which is
-   specific to a bent bar's vertical bend plane; a `perimeter_tie` loop is
-   horizontal, geometrically the same case column ties already are.
+1. **The vertical ladder / array (R4).** The first `perimeter_tie` sits
+   250mm above the bottom mesh's own top face
+   (`rft.core.footing_perimeter_tie.PERIMETER_TIE_START_OFFSET_ABOVE_
+   BOTTOM_MESH_MM`, using the SAME "top of the bottom mesh" datum
+   `footing_dowels`'s bend corner already uses). Every subsequent loop (up
+   to `FootingInputs.perimeter_tie_quantity`) steps upward at
+   `perimeter_tie_spacing_mm` -- both already-existing direct user inputs.
+   `perimeter_tie_ladder_mm` computes this and refuses
+   (`PerimeterTieLadderExceedsFootingError`) if the ladder would place a
+   loop above the footing's own top face.
+2. **The splice's own per-bar cut lengths (R5).** Not a formula: the
+   engineer types the two individual bar lengths directly
+   (`FootingInputs.perimeter_tie_first_bar_length_mm`/`perimeter_tie_
+   second_bar_length_mm` -- e.g. a 13m total as 8m + 5m, or 7m + 6m, any
+   split). `perimeter_tie_bar_lengths_mm` validates the two typed lengths
+   sum to the total `perimeter_tie_splice` already computes
+   (`length_mm + lap_mm`); it never derives the split itself. Only
+   meaningful when the loop needed splitting in the first place
+   (`PerimeterTieBarLengthsNotApplicableError` otherwise).
+
+Both are wired into `FootingPlan.perimeter_tie.ladder`/`.bar_lengths`
+(`rft.core.footing_plan._build_perimeter_tie_plan`) -- the one composing
+module both a future report and the placement adapter below will read
+from, not called independently.
+
+**Still NOT in #204/R4/R5, flagged as open (REUSE_GUIDELINES.md Sec 3):**
+
+- **Revit placement.** No `rft.revit.footing_perimeter_tie` adapter is
+  built yet -- R4's Z-elevations now exist to build curves from, but
+  `docs/footing/verification/issue-197-footing-tracer-bullet.md` Sec 4
+  lists closed-loop shapes as still unverified against a live footing
+  host (only straight, unhooked curves were tested). The placement
+  adapter should follow `rft.revit.column_place_ties`'s own
+  `norm = XYZ.BasisZ` convention for a closed loop lying in a horizontal
+  plane (perpendicular to the loop's own plane) -- NOT
+  `rft.revit.footing_dowels`'s `XYZ.BasisY`, which is specific to a bent
+  bar's vertical bend plane; a `perimeter_tie` loop is horizontal,
+  geometrically the same case column ties already are.
 
 ## Scope, as of #203
 

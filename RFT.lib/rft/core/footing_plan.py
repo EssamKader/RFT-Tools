@@ -24,7 +24,11 @@ from collections import namedtuple
 
 from .footing_dowels import dowel_embedment, local_dowel_bar_geometry
 from .footing_dowel_ties import dowel_tie_ladder
-from .footing_perimeter_tie import perimeter_tie_geometry
+from .footing_perimeter_tie import (
+    perimeter_tie_bar_lengths_mm,
+    perimeter_tie_geometry,
+    perimeter_tie_ladder_mm,
+)
 from .footing_mesh import (
     bar_hook_plan_for_mat,
     local_mesh_bar_endpoints,
@@ -99,6 +103,18 @@ from .footing_mesh import (
 #: being supplied) so every existing caller that predates #204 keeps
 #: building a plan with no ``perimeter_tie`` unchanged -- same trailing-
 #: defaults pattern #200-#203 already established.
+#: R4/R5 (`docs/footing/spec-amendments.md`), added after #204 merged:
+#: ``perimeter_tie_first_bar_length_mm``/``perimeter_tie_second_bar_
+#: length_mm`` are the engineer's own two individual cut lengths for a
+#: split ``perimeter_tie`` (R5 -- a direct two-field input, not a formula;
+#: only meaningful when the loop must be split, validated against the
+#: total ``perimeter_tie_splice`` computes by
+#: ``footing_perimeter_tie.perimeter_tie_bar_lengths_mm``). Both default
+#: to ``None``; the ladder itself (R4) needs no new ``FootingInputs``
+#: fields -- it is built from ``footing_thickness_mm``/``bottom_cover_mm``/
+#: ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm`` (all already present) plus
+#: the already-existing ``perimeter_tie_spacing_mm``/
+#: ``perimeter_tie_quantity``.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -109,7 +125,9 @@ FootingInputs = namedtuple(
      "dowel_bar_dia_mm", "dowel_ld_multiplier",
      "dowel_tie_dia_mm", "dowel_tie_spacing_mm",
      "perimeter_tie_dia_mm", "perimeter_tie_spacing_mm",
-     "perimeter_tie_quantity", "perimeter_tie_lap_mm"],
+     "perimeter_tie_quantity", "perimeter_tie_lap_mm",
+     "perimeter_tie_first_bar_length_mm",
+     "perimeter_tie_second_bar_length_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -123,7 +141,7 @@ TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
 FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
-    None, None, None, None)
+    None, None, None, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -163,13 +181,24 @@ DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm"])
 
 #: #204 (Sec 3 Story 7, Sec 10): ``geometry`` is a
 #: ``footing_perimeter_tie.PerimeterTieGeometry`` (inner dimensions,
-#: length, splice decision, footing-local plan corners -- no Z, per that
-#: module's own "Scope this ticket does NOT cover" note). ``dia_mm``/
+#: length, splice decision, footing-local plan corners). ``dia_mm``/
 #: ``spacing_mm``/``quantity`` are carried straight off ``inputs`` for a
 #: future placement adapter, unread by this ticket's own math -- same
 #: reasoning ``DowelTiePlan.tie_dia_mm`` is carried unread by #203.
+#: ``ladder`` (R4, added after #204 merged) is
+#: ``footing_perimeter_tie.PerimeterTieLadder`` -- built from
+#: ``spacing_mm``/``quantity`` plus the footing's own geometry, always
+#: present once ``perimeter_tie`` itself is (spacing/quantity were
+#: already required opt-in inputs). ``bar_lengths`` (R5) is
+#: ``footing_perimeter_tie.PerimeterTieBarLengths`` when both
+#: ``perimeter_tie_first_bar_length_mm``/``perimeter_tie_second_bar_
+#: length_mm`` are supplied AND the loop needed splitting, else ``None``
+#: (an unsplit loop, or a split loop whose two lengths the engineer
+#: hasn't typed yet).
 PerimeterTiePlan = namedtuple(
-    "PerimeterTiePlan", ["geometry", "dia_mm", "spacing_mm", "quantity"])
+    "PerimeterTiePlan",
+    ["geometry", "dia_mm", "spacing_mm", "quantity", "ladder",
+     "bar_lengths"])
 
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
@@ -302,24 +331,42 @@ def _build_dowel_tie_plan(inputs):
 
 
 def _build_perimeter_tie_plan(inputs):
-    """#204 (Sec 3 Story 7, Sec 10): the one place
-    ``footing_perimeter_tie.perimeter_tie_geometry`` is called from, so a
-    future placement adapter reads the SAME ``PerimeterTiePlan`` rather
-    than calling ``footing_perimeter_tie`` independently (Sec 4's "one
-    composing module" rule, already applied above to the mesh mats, the
-    dowel bar and the dowel ties).
+    """#204 (Sec 3 Story 7, Sec 10), extended by R4/R5 after #204 merged:
+    the one place ``footing_perimeter_tie.perimeter_tie_geometry``/
+    ``perimeter_tie_ladder_mm``/``perimeter_tie_bar_lengths_mm`` are
+    called from, so a future placement adapter reads the SAME
+    ``PerimeterTiePlan`` rather than calling ``footing_perimeter_tie``
+    independently (Sec 4's "one composing module" rule, already applied
+    above to the mesh mats, the dowel bar and the dowel ties).
 
     Reads ``a_mm``/``b_mm``/``cover_mm`` straight off ``inputs`` -- the
     SAME fields ``mesh_bar_lengths`` already reads for the bottom mat,
-    never a second, independently-named copy of them.
+    never a second, independently-named copy of them. The R4 ladder reads
+    ``footing_thickness_mm``/``bottom_cover_mm``/``mesh_bar_x_dia_mm``/
+    ``mesh_bar_y_dia_mm`` the same way -- the SAME fields the bottom mesh
+    and the dowel bar already read, never re-derived.
     """
     geometry = perimeter_tie_geometry(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.perimeter_tie_lap_mm)
+    ladder = perimeter_tie_ladder_mm(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
+
+    bar_lengths = None
+    if (geometry.splice.bar_count == 2
+            and inputs.perimeter_tie_first_bar_length_mm is not None
+            and inputs.perimeter_tie_second_bar_length_mm is not None):
+        bar_lengths = perimeter_tie_bar_lengths_mm(
+            geometry.splice, inputs.perimeter_tie_first_bar_length_mm,
+            inputs.perimeter_tie_second_bar_length_mm)
+
     return PerimeterTiePlan(
         geometry=geometry, dia_mm=inputs.perimeter_tie_dia_mm,
         spacing_mm=inputs.perimeter_tie_spacing_mm,
-        quantity=inputs.perimeter_tie_quantity)
+        quantity=inputs.perimeter_tie_quantity, ladder=ladder,
+        bar_lengths=bar_lengths)
 
 
 def build_footing_plan(inputs):

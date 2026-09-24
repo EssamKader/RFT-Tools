@@ -101,7 +101,7 @@ this ticket is **not** blocked the same way #203 was.
 | Module / member | Status | Reason |
 |---|---|---|
 | `rft.core.column_ties.resolve_tie` / `TieSubset` | ❌ Not reused (different situation from `dowel_tie`) | `resolve_tie` takes a `ColumnLayout`/`layout.bars` — named bar positions — and grows a bounding box around ≥2 of them. `perimeter_tie` wraps the footing's OWN plan perimeter (offset inward by `cover` from `a`/`b`), not a bar array — there are no bar positions to name. Calling `resolve_tie` here would mean inventing two fake bar positions purely to hand it a box it would then re-derive, which is less direct (and less honest) than building the same four-corner rectangle straight from `inner_a`/`inner_b` — see `rft.core.footing_perimeter_tie.local_perimeter_tie_corners_mm`, new footing-specific geometry math, hand-tested in `tests/test_footing_perimeter_tie.py` per this ticket's own "Test volume rule" (not duplicating `tests/test_column_ties.py`, since this is not that function). |
-| `rft.core.column_tie_levels` (vertical ladder, as `dowel_tie` reuses it) | ⚠️ Not reused — genuine gap, flagged, not guessed | Spec §10 gives no starting-offset/array-position formula for `perimeter_tie`'s vertical ladder analogous to §9's "50mm from the bottom" / "50mm below T.O.F." for `dowel_tie` — only that spacing and quantity are user inputs, with "every 200mm vertically" given as an EXAMPLE, not a rule. Building a ladder here would mean inventing where the first (or only) loop sits, which REUSE_GUIDELINES.md §3 forbids. See `IsolatedFooting.extension/CONTEXT.md`'s "Scope, as of #204" note — flagged to Essam as an open question, not filled in by analogy to `dowel_tie`. |
+| `rft.core.column_tie_levels` (vertical ladder, as `dowel_tie` reuses it) | ❌ Not reused — genuinely different ladder, not a gap any more (R4) | Spec §10 gave no starting-offset/array-position formula for `perimeter_tie`'s vertical ladder analogous to §9's "50mm from the bottom" / "50mm below T.O.F." for `dowel_tie`. **R4** (`docs/footing/spec-amendments.md`) resolved this: the first loop sits 250mm above the bottom mesh's own top face, then every subsequent loop (up to `quantity`) steps upward at the user's own `spacing_mm` — a single fixed start plus one constant step, unlike `dowel_tie`'s two-anchor-plus-equal-division shape, so `column_tie_levels.tie_levels` genuinely does not apply here (there is no second anchor to divide a middle zone between). `rft.core.footing_perimeter_tie.perimeter_tie_ladder_mm` implements this directly. See `IsolatedFooting.extension/CONTEXT.md`'s "Scope, as of #204" note. |
 | `rft.revit.column_place_ties.place_ties` | ❌ Not reused (this ticket) | Same reason as `resolve_tie` above (no `ColumnLayout` to place against), compounded by the missing vertical-ladder formula immediately above. No Revit placement adapter is built by #204 — see CONTEXT.md. |
 
 ### `perimeter_tie` is NOT blocked the way `dowel_tie` was — and the geometry/splice math IS built now
@@ -116,10 +116,11 @@ perimeter_tie_geometry` — `inner_a`/`inner_b`, `perimeter_tie_length`, the
 plan corners — and wires it into `rft.core.footing_plan.FootingPlan.
 perimeter_tie` (opt-in, gated on `FootingInputs.perimeter_tie_dia_mm`).
 
-What #204 does defer, for the specific reasons in the table above: the
-vertical ladder (no spec formula) and the Revit placement adapter (which
-would need that ladder's Z-elevations to build curves from — and per
-`docs/footing/verification/issue-197-footing-tracer-bullet.md` §4, a
-closed-loop shape's host acceptance is itself still unverified against a
-live footing host). Both are recorded as open items, not silently
+What #204 deferred, the vertical ladder (no spec formula at the time),
+was resolved by **R4** shortly after merge — see the table row above and
+`docs/footing/spec-amendments.md`. What remains deferred is the Revit
+placement adapter, which now has R4's Z-elevations to build curves from,
+but per `docs/footing/verification/issue-197-footing-tracer-bullet.md`
+§4, a closed-loop shape's host acceptance is itself still unverified
+against a live footing host. Recorded as an open item, not silently
 skipped.
