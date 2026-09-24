@@ -20,6 +20,7 @@ from fake_revit_api import FakeBoundingBox, FakeXYZ
 from rft.core.footing_plan import FootingInputs, build_footing_plan
 from rft.revit.footing_mesh import (
     FootingRotationUnsupportedError,
+    place_bottom_mesh_bars,
     place_straight_bottom_mesh,
 )
 from rft.revit.units import mm_to_internal
@@ -62,13 +63,16 @@ def footing():
     return _FakeFootingHost(min_xyz, max_xyz)
 
 
-def _plan(x_offset_mm, y_offset_mm):
+def _plan(x_offset_mm, y_offset_mm, mesh_bar_x_spacing_mm=None,
+         mesh_bar_y_spacing_mm=None):
     inputs = FootingInputs(
         a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
         footing_thickness_mm=450.0, bottom_cover_mm=50.0,
         top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
         mesh_bar_y_dia_mm=12.0, x_offset_mm=x_offset_mm,
-        y_offset_mm=y_offset_mm, ld_multiplier=40.0)
+        y_offset_mm=y_offset_mm, ld_multiplier=40.0,
+        mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
+        mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm)
     return build_footing_plan(inputs)
 
 
@@ -273,3 +277,59 @@ def test_a_rotated_footing_refuses_instead_of_placing_bars_wrong(plan):
         place_straight_bottom_mesh(
             object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
             _FakeBarType("12M"))
+
+
+# --------------------------------------------------------------------------
+# #232 (R11) -- place_bottom_mesh_bars, the array-loop wiring ONLY. The
+# per-bar bent-geometry/norm mechanics are already covered above via
+# place_straight_bottom_mesh / #229's own tracer bullet; this section only
+# proves the LOOP.
+# --------------------------------------------------------------------------
+
+
+def test_place_bottom_mesh_bars_falls_back_to_one_bar_per_direction_with_no_array(
+        footing, plan):
+    """No spacing supplied (every caller that predates #232) -- the SAME
+    single-bar-per-direction shape place_straight_bottom_mesh always
+    placed, now returned as one-item lists."""
+    bars_x, bars_y = place_bottom_mesh_bars(
+        object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    assert len(bars_x) == 1
+    assert len(bars_y) == 1
+
+
+def test_place_bottom_mesh_bars_places_every_bar_in_a_real_array(footing):
+    """Z2=1100mm at 200mm spacing -> 7 mesh_bar_x bars (same hand-computed
+    count tests/test_footing_mesh.py's own array tests already prove)."""
+    plan = _plan(x_offset_mm=300.0, y_offset_mm=150.0,
+                mesh_bar_x_spacing_mm=200.0)
+    bars_x, bars_y = place_bottom_mesh_bars(
+        object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    assert len(bars_x) == 7
+    assert len(bars_y) == 1  # no mesh_bar_y_spacing_mm -> fallback
+
+
+def test_place_bottom_mesh_bars_hosts_every_bar_on_the_same_footing(footing):
+    plan = _plan(x_offset_mm=300.0, y_offset_mm=150.0,
+                mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0)
+    document = object()
+    bars_x, bars_y = place_bottom_mesh_bars(
+        document, footing, plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    for bar in bars_x + bars_y:
+        assert bar.args[5] is footing
+        assert bar.args[0] is document
+
+
+def test_place_bottom_mesh_bars_gives_each_bar_x_a_distinct_y_offset(footing):
+    """The array's own reason for existing: consecutive bars must not sit
+    on top of each other."""
+    plan = _plan(x_offset_mm=300.0, y_offset_mm=150.0,
+                mesh_bar_x_spacing_mm=200.0)
+    bars_x, _bars_y = place_bottom_mesh_bars(
+        object(), footing, plan.bottom_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    ys = [bar.args[7][0].GetEndPoint(0).Y for bar in bars_x]
+    assert len(set(ys)) == len(ys)

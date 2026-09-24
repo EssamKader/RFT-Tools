@@ -228,13 +228,15 @@
                     <StackPanel Margin="10">
 
                         <TextBlock Style="{StaticResource SectionHeading}"
-                                   Text="Bottom mesh (#198)"/>
+                                   Text="Bottom mesh (#198, array -- #232)"/>
                         <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="220"/>
                                 <ColumnDefinition Width="140"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -283,6 +285,18 @@
                                 <ComboBoxItem Content="U-Shape (both ends hooked)"/>
                                 <ComboBoxItem Content="L-Shape, alternating"/>
                             </ComboBox>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0"
+                                       Text="mesh_bar_x spacing (across Y), mm"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="6" Grid.Column="1"
+                                     x:Name="mesh_bar_x_spacing_tb" Text="200"/>
+
+                            <TextBlock Grid.Row="7" Grid.Column="0"
+                                       Text="mesh_bar_y spacing (across X), mm"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="7" Grid.Column="1"
+                                     x:Name="mesh_bar_y_spacing_tb" Text="200"/>
                         </Grid>
 
                         <TextBlock Style="{StaticResource SectionHeading}"

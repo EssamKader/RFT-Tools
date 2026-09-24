@@ -70,6 +70,45 @@ def test_the_plan_carries_exactly_what_mesh_bar_lengths_would_compute():
     assert plan.bottom_mesh.lengths == expected_lengths
 
 
+def test_bottom_mesh_bar_array_is_none_by_default():
+    """#232 (R11): every caller that predates this ticket -- no
+    mesh_bar_x_spacing_mm/mesh_bar_y_spacing_mm supplied -- keeps building
+    a plan with no array, unchanged."""
+    plan = build_footing_plan(_inputs())
+    assert plan.bottom_mesh.bar_x_array is None
+    assert plan.bottom_mesh.bar_y_array is None
+
+
+def test_build_footing_plan_builds_the_bottom_mesh_array_when_spacing_is_given():
+    """Hand-computed counts, per R11's own axis convention: mesh_bar_x is
+    spaced across Z2=1100mm (bottom_cover=50, mesh dia 16/12, cover=50,
+    a=1800, b=1200 -> Z2 = 1200 - 100 = 1100) at 200mm -> 7 bars; mesh_bar_y
+    is spaced across Z=1700mm at 200mm -> ceil(1700/200)=9 spaces, 10 bars.
+    """
+    plan = build_footing_plan(_inputs(
+        mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0))
+    assert len(plan.bottom_mesh.bar_x_array) == 7
+    assert len(plan.bottom_mesh.bar_y_array) == 10
+
+
+def test_build_footing_plan_builds_the_array_only_for_the_direction_given_spacing():
+    plan = build_footing_plan(_inputs(mesh_bar_x_spacing_mm=200.0))
+    assert plan.bottom_mesh.bar_x_array is not None
+    assert plan.bottom_mesh.bar_y_array is None
+
+
+def test_top_mesh_never_gets_a_bottom_style_array():
+    """#232's own scope: the array builder is bottom-mat-only (Story 4's
+    top mat has no placement adapter yet, same reasoning #229's bent
+    geometry stayed bottom-only)."""
+    plan = build_footing_plan(_inputs(
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0))
+    assert plan.top_mesh.bar_x_array is None
+    assert plan.top_mesh.bar_y_array is None
+    assert plan.bottom_mesh.bar_x_array is not None
+
+
 def test_the_plan_carries_the_primary_direction_from_the_given_offsets():
     plan = build_footing_plan(_inputs(x_offset_mm=300.0, y_offset_mm=150.0))
     assert plan.bottom_mesh.primary_direction == DIRECTION_X

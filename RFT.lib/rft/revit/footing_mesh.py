@@ -196,3 +196,58 @@ def place_straight_bottom_mesh(document, footing, bottom_mesh,
     bar_x = _place_one_bar(document, footing, curves_x, norm_x, bar_x_type)
     bar_y = _place_one_bar(document, footing, curves_y, norm_y, bar_y_type)
     return bar_x, bar_y
+
+
+def place_bottom_mesh_bars(document, footing, bottom_mesh, bar_x_type,
+                           bar_y_type):
+    """#232 (R11, docs/footing/spec-amendments.md): places EVERY bar in
+    ``bottom_mesh.bar_x_array``/``bar_y_array`` -- the same
+    ``_place_one_bar`` call ``place_straight_bottom_mesh`` makes for its
+    one representative bar per direction, looped once per array position.
+    Not a new shape: #229's own tracer bullet already proved this call is
+    a KEPT write on a footing host for a bent bar's connected curves; an
+    N-bar array repeats it N times per direction, mirroring exactly the
+    "loop the existing single-bar call" precedent #223 already set for
+    the dowel array (``rft.revit.footing_dowels.place_dowel_bars`` over
+    #202's one representative dowel).
+
+    Works unchanged whether ``bottom_mesh.bar_x_array``/``bar_y_array``
+    holds a real N-position array (``inputs.mesh_bar_x_spacing_mm``/
+    ``mesh_bar_y_spacing_mm`` supplied) or is ``None`` (no spacing
+    supplied -- every caller that predates #232) -- that direction then
+    falls back to the SAME single ``bar_x_geometry``/``bar_y_geometry``
+    bar ``place_straight_bottom_mesh`` always placed, wrapped in a
+    one-item list so this function's own return shape never depends on
+    which path a given footing took.
+
+    ``norm`` is derived per axis, not per bar (unchanged from
+    ``place_straight_bottom_mesh`` -- every bar sharing a direction bends
+    in the SAME plane, only its own Y/X offset differs, per R11).
+
+    Returns ``(bars_x, bars_y)`` -- two lists of the created ``Rebar``
+    elements, in array order.
+    """
+    origin_x, origin_y, origin_z = _footing_origin(footing)
+    norm_x = _norm_for_bar(bottom_mesh.bar_x_hooks, XYZ.BasisY)
+    norm_y = _norm_for_bar(bottom_mesh.bar_y_hooks, XYZ.BasisX)
+
+    bar_x_geometries = bottom_mesh.bar_x_array
+    if bar_x_geometries is None:
+        bar_x_geometries = (bottom_mesh.bar_x_geometry,)
+    bar_y_geometries = bottom_mesh.bar_y_array
+    if bar_y_geometries is None:
+        bar_y_geometries = (bottom_mesh.bar_y_geometry,)
+
+    bars_x = [
+        _place_one_bar(
+            document, footing,
+            _bent_bar_curves(origin_x, origin_y, origin_z, geometry),
+            norm_x, bar_x_type)
+        for geometry in bar_x_geometries]
+    bars_y = [
+        _place_one_bar(
+            document, footing,
+            _bent_bar_curves(origin_x, origin_y, origin_z, geometry),
+            norm_y, bar_y_type)
+        for geometry in bar_y_geometries]
+    return bars_x, bars_y

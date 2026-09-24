@@ -26,10 +26,12 @@ from rft.core.footing_mesh import (
     bar_end_hook_decision,
     bar_hook_plan,
     bar_hook_plan_for_mat,
+    bottom_mesh_bar_array_geometry,
     bottom_mesh_bar_geometry,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
+    mesh_bar_offsets_mm,
     primary_reinforcement_direction,
 )
 
@@ -507,3 +509,141 @@ def test_bar_y_uses_z2_and_n2_not_bar_x_own_z_and_n():
     assert points[2] == pytest.approx((0.0, half_z2, elevation_y), rel=1e-9)
     assert points[3] == pytest.approx(
         (0.0, half_z2, elevation_y + lengths.n2_mm), rel=1e-9)
+
+
+# --------------------------------------------------------------------------
+# #232 (R11, docs/footing/spec-amendments.md) -- the bottom-mesh bar ARRAY:
+# direct spacing input per direction, count derived. Genuinely new math, so
+# these assert hand-computed numbers (Essam's velocity rule 3), same
+# discipline as this file's own #198 tests above.
+# --------------------------------------------------------------------------
+
+
+def test_mesh_bar_offsets_mm_evenly_fills_a_width_with_a_remainder():
+    # width=1100 (Z2), spacing=200 -> n_spaces = ceil(1100/200) = ceil(5.5)
+    # = 6; achieved_spacing = 1100/6 = 183.3333...; 7 offsets total
+    # (n_spaces + 1), first/last exactly at the width's own two edges.
+    offsets = mesh_bar_offsets_mm(width_mm=1100.0, spacing_mm=200.0)
+    assert len(offsets) == 7
+    assert offsets[0] == pytest.approx(-550.0)
+    assert offsets[-1] == pytest.approx(550.0)
+    achieved = 1100.0 / 6.0
+    for index, offset in enumerate(offsets):
+        assert offset == pytest.approx(-550.0 + index * achieved)
+
+
+def test_mesh_bar_offsets_mm_exact_division_has_no_remainder():
+    # width=1000, spacing=250 -> n_spaces = ceil(1000/250) = 4 exactly;
+    # achieved_spacing stays 250.0 (no redistribution needed); 5 offsets.
+    offsets = mesh_bar_offsets_mm(width_mm=1000.0, spacing_mm=250.0)
+    assert offsets == pytest.approx([-500.0, -250.0, 0.0, 250.0, 500.0])
+
+
+def test_mesh_bar_offsets_mm_a_width_narrower_than_spacing_still_gets_two_bars():
+    # width=100, spacing=200 -> n_spaces = max(1, ceil(100/200)) = 1;
+    # achieved_spacing = 100.0; exactly two bars, one at each edge.
+    offsets = mesh_bar_offsets_mm(width_mm=100.0, spacing_mm=200.0)
+    assert offsets == pytest.approx([-50.0, 50.0])
+
+
+def test_mesh_bar_offsets_mm_refuses_a_non_positive_width():
+    with pytest.raises(ValueError):
+        mesh_bar_offsets_mm(width_mm=0.0, spacing_mm=200.0)
+
+
+def test_mesh_bar_offsets_mm_refuses_a_non_positive_spacing():
+    with pytest.raises(ValueError):
+        mesh_bar_offsets_mm(width_mm=1100.0, spacing_mm=0.0)
+
+
+def _straight_hooks(ld_mm):
+    return BarHookPlan(
+        start=BarEndHook(ld_mm=ld_mm, needs_hook=False),
+        end=BarEndHook(ld_mm=ld_mm, needs_hook=False), shape=SHAPE_L)
+
+
+def test_bottom_mesh_bar_array_geometry_returns_none_per_direction_when_no_spacing_given():
+    lengths = _lengths()
+    hooks = _straight_hooks(640.0)
+    bar_x_array, bar_y_array = bottom_mesh_bar_array_geometry(
+        lengths, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, bar_x_hooks=hooks, bar_y_hooks=hooks,
+        bar_x_spacing_mm=None, bar_y_spacing_mm=None)
+    assert bar_x_array is None
+    assert bar_y_array is None
+
+
+def test_bottom_mesh_bar_array_geometry_builds_only_the_direction_given_spacing():
+    lengths = _lengths()
+    hooks = _straight_hooks(640.0)
+    bar_x_array, bar_y_array = bottom_mesh_bar_array_geometry(
+        lengths, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, bar_x_hooks=hooks, bar_y_hooks=hooks,
+        bar_x_spacing_mm=200.0, bar_y_spacing_mm=None)
+    assert bar_x_array is not None
+    assert bar_y_array is None
+    # Z2 = 1100mm at 200mm spacing -> 7 bars (same hand-computed count as
+    # test_mesh_bar_offsets_mm_evenly_fills_a_width_with_a_remainder).
+    assert len(bar_x_array) == 7
+
+
+def test_bottom_mesh_bar_array_spaces_bar_x_along_y_across_z2_not_z():
+    """R11's own reading of local_mesh_bar_endpoints' axis convention:
+    mesh_bar_x bars run along local X and are spaced along Y across
+    Z2/b's own extent -- checked by hand against Z2=1100mm, NOT Z=1700mm
+    (the swap this ruling explicitly warns against)."""
+    lengths = _lengths()
+    hooks = _straight_hooks(640.0)
+    bar_x_array, _ = bottom_mesh_bar_array_geometry(
+        lengths, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, bar_x_hooks=hooks, bar_y_hooks=hooks,
+        bar_x_spacing_mm=200.0, bar_y_spacing_mm=None)
+
+    y_offsets = [bar.points[0].y_mm for bar in bar_x_array]
+    assert y_offsets[0] == pytest.approx(-lengths.z2_mm / 2.0)
+    assert y_offsets[-1] == pytest.approx(lengths.z2_mm / 2.0)
+    # Every bar's own X extent is unchanged (still spans Z, centred at 0),
+    # only Y (the offset) differs bar to bar.
+    for bar in bar_x_array:
+        xs = [point.x_mm for point in bar.points]
+        assert min(xs) == pytest.approx(-lengths.z_mm / 2.0)
+        assert max(xs) == pytest.approx(lengths.z_mm / 2.0)
+
+
+def test_bottom_mesh_bar_array_spaces_bar_y_along_x_across_z_not_z2():
+    """The mirrored half of R11's axis convention: mesh_bar_y bars run
+    along local Y and are spaced along X across Z/a's own extent."""
+    lengths = _lengths()
+    hooks = _straight_hooks(480.0)
+    _, bar_y_array = bottom_mesh_bar_array_geometry(
+        lengths, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, bar_x_hooks=hooks, bar_y_hooks=hooks,
+        bar_x_spacing_mm=None, bar_y_spacing_mm=200.0)
+
+    x_offsets = [bar.points[0].x_mm for bar in bar_y_array]
+    assert x_offsets[0] == pytest.approx(-lengths.z_mm / 2.0)
+    assert x_offsets[-1] == pytest.approx(lengths.z_mm / 2.0)
+    for bar in bar_y_array:
+        ys = [point.y_mm for point in bar.points]
+        assert min(ys) == pytest.approx(-lengths.z2_mm / 2.0)
+        assert max(ys) == pytest.approx(lengths.z2_mm / 2.0)
+
+
+def test_bottom_mesh_bar_array_every_bar_shares_the_identical_hook_shape():
+    """This ticket's own scope: every bar in the array reuses the SAME
+    per-bar hook decision (no per-bar-index L-alternating over a real
+    array -- that is separate, unbuilt scope), so every bar's own point
+    COUNT (2 for straight, 3/4 for hooked) must be identical."""
+    lengths = _lengths()
+    both_hooked = BarHookPlan(
+        start=BarEndHook(ld_mm=640.0, needs_hook=True),
+        end=BarEndHook(ld_mm=640.0, needs_hook=True), shape=SHAPE_U)
+    bar_x_array, _ = bottom_mesh_bar_array_geometry(
+        lengths, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, bar_x_hooks=both_hooked,
+        bar_y_hooks=both_hooked, bar_x_spacing_mm=200.0,
+        bar_y_spacing_mm=None)
+
+    assert len(bar_x_array) == 7
+    for bar in bar_x_array:
+        assert len(bar.points) == 4

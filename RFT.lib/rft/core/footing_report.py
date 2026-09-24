@@ -86,20 +86,30 @@ def _actual_bar_length_mm(geometry):
 
 
 def mesh_section(plan):
-    """The bottom mesh's own two representative bars (#198), plus #229's
-    own per-bar hook shape -- #199/#200 always computed this decision,
-    but nothing reported it until now."""
+    """The bottom mesh's own bars (#198), #229's own per-bar hook shape,
+    and (#232, R11) the real bar COUNT per direction once an array
+    exists -- #229 only ever reported the one representative bar's own
+    length/shape, even after the placer started placing a whole array;
+    this states the count too, read off the SAME ``bar_x_array``/
+    ``bar_y_array`` the placer itself loops (never re-derived)."""
     bottom_mesh = plan.bottom_mesh
+    bar_x_geoms = bottom_mesh.bar_x_array
+    if bar_x_geoms is None:
+        bar_x_geoms = (bottom_mesh.bar_x_geometry,)
+    bar_y_geoms = bottom_mesh.bar_y_array
+    if bar_y_geoms is None:
+        bar_y_geoms = (bottom_mesh.bar_y_geometry,)
     lines = [
-        "mesh_bar_x length = %s -- %s" % (
-            _mm(_actual_bar_length_mm(bottom_mesh.bar_x_geometry)),
+        "mesh_bar_x: %d bar(s), each %s -- %s" % (
+            len(bar_x_geoms), _mm(_actual_bar_length_mm(bar_x_geoms[0])),
             _hook_end_words(bottom_mesh.bar_x_hooks)),
-        "mesh_bar_y length = %s -- %s" % (
-            _mm(_actual_bar_length_mm(bottom_mesh.bar_y_geometry)),
+        "mesh_bar_y: %d bar(s), each %s -- %s" % (
+            len(bar_y_geoms), _mm(_actual_bar_length_mm(bar_y_geoms[0])),
             _hook_end_words(bottom_mesh.bar_y_hooks)),
         "Primary reinforcement direction = %s" % bottom_mesh.primary_direction,
     ]
-    return ReportSection("Bottom mesh (#198, hook shape -- #229)", lines)
+    return ReportSection(
+        "Bottom mesh (#198, hook shape -- #229, array -- #232)", lines)
 
 
 def dowel_array_section(plan):
@@ -138,24 +148,19 @@ def dowel_array_section(plan):
 
 
 def not_yet_placed_section():
-    """R6-R10, #198-#228 and #229 built and placed the bottom mesh (now
-    with its real hook shape) and the dowel array; top mesh (#201),
-    dowel_tie's closed-loop shape (#203) and the perimeter_tie bar (#204)
-    have core math but no Revit placement adapter yet
+    """R6-R10, #198-#228, #229 and #232 built and placed the bottom mesh
+    (now with its real hook shape AND, when spacing is given, its full
+    array -- R11) and the dowel array; top mesh (#201), dowel_tie's
+    closed-loop shape (#203) and the perimeter_tie bar (#204) have core
+    math but no Revit placement adapter yet
     (`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
     stated here rather than exposed as an input this window cannot act
-    on. #229 also left the full multi-bar mesh array (many parallel bars
-    per direction) as its own separate, unbuilt follow-up -- this window
-    still places only ONE representative bar per direction, correctly
-    shaped, not the whole grid."""
+    on."""
     lines = [
         "Top mesh, dowel-tie closed loops and the perimeter-tie bar are "
         "not yet wired to placement -- see IsolatedFooting.extension/"
         "CONTEXT.md. This window does not ask for their inputs, since "
         "there is nothing yet for them to place.",
-        "The bottom mesh places ONE representative bar per direction "
-        "(correctly hooked, #229), not the full array of parallel bars "
-        "a real footing needs -- that array is separate, unbuilt scope.",
     ]
     return ReportSection("Not yet placed by this tool", lines)
 

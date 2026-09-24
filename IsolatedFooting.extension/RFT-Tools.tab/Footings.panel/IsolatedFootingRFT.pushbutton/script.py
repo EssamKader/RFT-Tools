@@ -54,7 +54,7 @@ from rft.revit.footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
     read_footing_geometry_mm,
 )
-from rft.revit.footing_mesh import place_straight_bottom_mesh
+from rft.revit.footing_mesh import place_bottom_mesh_bars
 from rft.revit.units import internal_to_mm
 from rft.ui import footing_persistence as ui_persistence
 from rft.ui.inputs import parse_optional_positive_int, parse_positive_float
@@ -272,6 +272,10 @@ class FootingWindow(forms.WPFWindow):
                 self.ld_multiplier_tb.Text, "LD multiplier (mesh)")
             dowel_ld_multiplier = parse_positive_float(
                 self.dowel_ld_multiplier_tb.Text, "LD multiplier (dowel)")
+            mesh_bar_x_spacing_mm = parse_positive_float(
+                self.mesh_bar_x_spacing_tb.Text, "mesh_bar_x spacing")
+            mesh_bar_y_spacing_mm = parse_positive_float(
+                self.mesh_bar_y_spacing_tb.Text, "mesh_bar_y spacing")
             dowel_count_b_face = parse_optional_positive_int(
                 self.dowel_count_b_face_tb.Text,
                 "Dowel count on each Cw-face")
@@ -328,7 +332,9 @@ class FootingWindow(forms.WPFWindow):
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,
             dowel_count_b_face=dowel_count_b_face,
-            dowel_count_h_face=dowel_count_h_face)
+            dowel_count_h_face=dowel_count_h_face,
+            mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
+            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm)
 
         try:
             plan = build_footing_plan(
@@ -357,7 +363,9 @@ class FootingWindow(forms.WPFWindow):
             dowel_tie_bar_type=dowel_tie_bar_type,
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_count_b_face=dowel_count_b_face,
-            dowel_count_h_face=dowel_count_h_face)
+            dowel_count_h_face=dowel_count_h_face,
+            mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
+            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm)
 
         sections = [
             footing_report.footing_geometry_section(geometry),
@@ -392,7 +400,7 @@ class FootingWindow(forms.WPFWindow):
         transaction = Transaction(doc, TRANSACTION_NAME)
         transaction.Start()
         try:
-            bar_x, bar_y = place_straight_bottom_mesh(
+            bars_x, bars_y = place_bottom_mesh_bars(
                 doc, self.footing, self.plan.bottom_mesh,
                 bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])
             dowel_bars = place_dowel_bars(
@@ -409,8 +417,8 @@ class FootingWindow(forms.WPFWindow):
         transaction.Commit()
 
         message = (
-            "Placed mesh_bar_x (id %s), mesh_bar_y (id %s), and %d dowel "
-            "bar(s)." % (bar_x.Id, bar_y.Id, len(dowel_bars)))
+            "Placed %d mesh_bar_x bar(s), %d mesh_bar_y bar(s), and %d "
+            "dowel bar(s)." % (len(bars_x), len(bars_y), len(dowel_bars)))
         self.review_status_tb.Text = message
         self.status_tb.Text = message
         forms.alert(message, title="Isolated Footing RFT")
