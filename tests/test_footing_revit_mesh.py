@@ -244,11 +244,12 @@ def test_bar_y_sits_above_bar_x_by_the_mesh_bar_x_diameter(footing, plan):
     assert (z_y - z_x) == pytest.approx(expected_gap_internal)
 
 
-@pytest.mark.parametrize("rotation_deg", [0.0, 90.0, 180.0, 270.0, 360.0])
+@pytest.mark.parametrize("rotation_deg", [0.0, 180.0, 360.0])
 def test_axis_aligned_rotations_still_place_bars(rotation_deg, plan):
     """Regression: the rotation guard must not false-refuse an
-    axis-aligned footing at any of the four quarter-turns (or a full
-    turn, which is numerically 0 mod 90deg).
+    axis-aligned footing at 0/180 deg (or a full turn, numerically 0 mod
+    180 deg). Issue #246: 90/270 deg moved OUT of this accepted set --
+    see the dedicated refusal test below.
     """
     footing = _FakeFootingHost(
         FakeXYZ(0.0, 0.0, 0.0),
@@ -264,17 +265,22 @@ def test_axis_aligned_rotations_still_place_bars(rotation_deg, plan):
     assert bar_y.args[5] is footing
 
 
-def test_a_rotated_footing_refuses_instead_of_placing_bars_wrong(plan):
+@pytest.mark.parametrize("rotation_deg", [30.0, 90.0, 270.0])
+def test_a_rotated_footing_refuses_instead_of_placing_bars_wrong(
+        rotation_deg, plan):
     """Spec has no rotation model, and _to_world_point has no rotation
     transform -- a rotated footing must REFUSE (Explicit Refusals,
     REUSE_GUIDELINES.md Sec 3), never silently place bars along world
-    X/Y instead of the footing's own a/b directions.
+    X/Y instead of the footing's own a/b directions. Issue #246: 90/270
+    deg used to be wrongly accepted as "axis-aligned" -- this now must
+    refuse there exactly the same as any other non-multiple-of-180 angle
+    (30 deg, kept as a regression check for that pre-existing case).
     """
     footing = _FakeFootingHost(
         FakeXYZ(0.0, 0.0, 0.0),
         FakeXYZ(mm_to_internal(1800.0), mm_to_internal(1200.0),
                 mm_to_internal(450.0)),
-        rotation_rad=math.radians(30.0))
+        rotation_rad=math.radians(rotation_deg))
 
     with pytest.raises(FootingRotationUnsupportedError):
         place_straight_bottom_mesh(

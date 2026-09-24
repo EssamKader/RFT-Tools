@@ -33,13 +33,21 @@ world XYZ using only the footing's bounding-box centre -- no rotation
 transform is applied. Issue #69 already documented this exact trap for
 columns: "``get_BoundingBox(null)`` is axis-aligned in model coordinates
 and degenerates to the correct answer only at rotations of 0/90/180/270
-deg". A footing rotated at any other angle would get its bars placed along
-world X/Y instead of its own a/b directions. Rather than repeat that
-silently, ``_footing_origin`` REFUSES (``FootingRotationUnsupportedError``)
-when the footing is not axis-aligned, per REUSE_GUIDELINES.md Sec 3's
-"Explicit Refusals" rule. Supporting a rotated footing needs a live-host
-check of ``footing.GetTransform()`` against the plan centroid and the
-family's own a/b axes -- unverified, and out of this ticket's scope.
+deg" -- but that degeneracy only actually maps the footing's own a/b axes
+onto world X/Y at 0/180 deg. At 90/270 deg the footing's Length (a_mm)
+axis runs along world Y, not X, so ``_to_world_point``'s unconditional
+local-x -> world-X / local-y -> world-Y mapping is WRONG there too, not
+safe -- issue #246 confirmed this live (rebar placed outside the footing
+solid at 90 deg from world axes). Rather than repeat that silently,
+``_footing_origin`` REFUSES (``FootingRotationUnsupportedError``) at
+ANY rotation that is not a multiple of 180 deg -- 0 and 180 deg are the
+only angles this module accepts; 90 and 270 deg now raise the same
+refusal as any other non-axis-aligned angle, per REUSE_GUIDELINES.md
+Sec 3's "Explicit Refusals" rule. Supporting a 90/270-deg (or any other)
+rotated footing needs a live-host check of ``footing.GetTransform()``
+against the plan centroid and the family's own a/b axes, including an
+actual axis swap in ``_to_world_point`` -- unverified, and out of this
+ticket's scope (follow-up, not guessed at here).
 """
 
 import math
@@ -49,7 +57,7 @@ from Autodesk.Revit.DB.Structure import Rebar, RebarHookOrientation, RebarStyle
 
 from .units import mm_to_internal
 
-#: How close to an exact quarter turn counts as "axis-aligned" -- Revit
+#: How close to an exact half turn counts as "axis-aligned" -- Revit
 #: rotation reads (per issue #69's column measurements) are exact doubles
 #: for an intentionally-set 0 deg, so a tight tolerance catches genuine
 #: rotation without false-refusing on floating-point noise.
@@ -58,16 +66,27 @@ _AXIS_ALIGNED_TOLERANCE_RAD = 1e-6
 
 class FootingRotationUnsupportedError(NotImplementedError):
     """Raised by ``_footing_origin`` when the footing host is not
-    axis-aligned (0/90/180/270 deg). See this module's own docstring,
-    "Known limitation", for why this refuses rather than guesses.
+    axis-aligned (0/180 deg only -- issue #246 tightened this from the
+    original, WRONG 0/90/180/270 acceptance: ``_to_world_point`` has no
+    rotation transform, and that mapping is only actually correct at
+    0/180 deg). See this module's own docstring, "Known limitation", for
+    why this refuses rather than guesses.
     """
 
 
 def _is_axis_aligned(rotation_rad):
-    quarter_turn = math.pi / 2.0
-    remainder = rotation_rad % quarter_turn
+    """Issue #246: only 0/180 deg (mod 180) is "safe" -- 90/270 deg used
+    to pass this check, but ``_to_world_point`` maps footing-local x/y
+    onto world X/Y unconditionally, which is only correct when the
+    footing's own a/b axes actually line up with world X/Y (0/180 deg).
+    At 90/270 deg the footing's Length (a_mm) axis runs along world Y,
+    not X, so this must now refuse there too -- see the module docstring,
+    "Known limitation".
+    """
+    half_turn = math.pi
+    remainder = rotation_rad % half_turn
     return (remainder <= _AXIS_ALIGNED_TOLERANCE_RAD
-            or (quarter_turn - remainder) <= _AXIS_ALIGNED_TOLERANCE_RAD)
+            or (half_turn - remainder) <= _AXIS_ALIGNED_TOLERANCE_RAD)
 
 
 def _footing_origin(footing):
@@ -85,7 +104,8 @@ def _footing_origin(footing):
     if not _is_axis_aligned(rotation_rad):
         raise FootingRotationUnsupportedError(
             "Footing is rotated %.6f rad; only axis-aligned footings "
-            "(0/90/180/270 deg) are supported -- see "
+            "(0/180 deg) are supported -- 90/270 deg is REFUSED, not "
+            "silently placed wrong (issue #246) -- see "
             "rft.revit.footing_mesh's module docstring, "
             "'Known limitation'." % rotation_rad)
 

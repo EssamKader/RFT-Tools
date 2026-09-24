@@ -243,6 +243,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0"
@@ -250,35 +252,41 @@
                                        Style="{StaticResource InputLabel}"/>
                             <TextBox Grid.Row="0" Grid.Column="1"
                                      x:Name="x_offset_tb" Text="300"/>
-
-                            <TextBlock Grid.Row="1" Grid.Column="0"
-                                       Text="Column-face clear offset Y, mm"
-                                       Style="{StaticResource InputLabel}"/>
-                            <TextBox Grid.Row="1" Grid.Column="1"
-                                     x:Name="y_offset_tb" Text="150"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="Column face -&gt; footing edge, along X (a = 2*X + Cw, spec Sec 3): engineer-typed from the structural calc, not derived."
+                                       Style="{StaticResource ReadOutSource}"/>
 
                             <TextBlock Grid.Row="2" Grid.Column="0"
-                                       Text="LD multiplier (mesh)"
+                                       Text="Column-face clear offset Y, mm"
                                        Style="{StaticResource InputLabel}"/>
                             <TextBox Grid.Row="2" Grid.Column="1"
-                                     x:Name="ld_multiplier_tb" Text="40"/>
-
-                            <TextBlock Grid.Row="3" Grid.Column="0"
-                                       Text="mesh_bar_x type (X-direction)"
-                                       Style="{StaticResource InputLabel}"/>
-                            <ComboBox Grid.Row="3" Grid.Column="1"
-                                      x:Name="mesh_bar_x_type_cb"/>
+                                     x:Name="y_offset_tb" Text="150"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="Column face -&gt; footing edge, along Y (b = 2*Y + Cd, spec Sec 3): engineer-typed from the structural calc, not derived."
+                                       Style="{StaticResource ReadOutSource}"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="0"
-                                       Text="mesh_bar_y type (Y-direction)"
+                                       Text="LD multiplier (mesh)"
                                        Style="{StaticResource InputLabel}"/>
-                            <ComboBox Grid.Row="4" Grid.Column="1"
-                                      x:Name="mesh_bar_y_type_cb"/>
+                            <TextBox Grid.Row="4" Grid.Column="1"
+                                     x:Name="ld_multiplier_tb" Text="40"/>
 
                             <TextBlock Grid.Row="5" Grid.Column="0"
-                                       Text="Hook shape, bottom mat (#229)"
+                                       Text="mesh_bar_x type (X-direction)"
                                        Style="{StaticResource InputLabel}"/>
                             <ComboBox Grid.Row="5" Grid.Column="1"
+                                      x:Name="mesh_bar_x_type_cb"/>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0"
+                                       Text="mesh_bar_y type (Y-direction)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="6" Grid.Column="1"
+                                      x:Name="mesh_bar_y_type_cb"/>
+
+                            <TextBlock Grid.Row="7" Grid.Column="0"
+                                       Text="Hook shape, bottom mat (#229)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="7" Grid.Column="1"
                                       x:Name="bottom_mat_shape_cb"
                                       SelectedIndex="0">
                                 <ComboBoxItem Content="Auto (per-end LD compare)"/>
@@ -286,16 +294,16 @@
                                 <ComboBoxItem Content="L-Shape, alternating"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="6" Grid.Column="0"
+                            <TextBlock Grid.Row="8" Grid.Column="0"
                                        Text="mesh_bar_x spacing (across Y), mm"
                                        Style="{StaticResource InputLabel}"/>
-                            <TextBox Grid.Row="6" Grid.Column="1"
+                            <TextBox Grid.Row="8" Grid.Column="1"
                                      x:Name="mesh_bar_x_spacing_tb" Text="200"/>
 
-                            <TextBlock Grid.Row="7" Grid.Column="0"
+                            <TextBlock Grid.Row="9" Grid.Column="0"
                                        Text="mesh_bar_y spacing (across X), mm"
                                        Style="{StaticResource InputLabel}"/>
-                            <TextBox Grid.Row="7" Grid.Column="1"
+                            <TextBox Grid.Row="9" Grid.Column="1"
                                      x:Name="mesh_bar_y_spacing_tb" Text="200"/>
                         </Grid>
 
