@@ -143,8 +143,10 @@ def test_the_dowel_is_centred_on_the_footing_plan_centroid(footing, plan):
     assert vertical_top.Y == pytest.approx(centre_y_internal)
 
 
-@pytest.mark.parametrize("rotation_deg", [0.0, 90.0, 180.0, 270.0, 360.0])
+@pytest.mark.parametrize("rotation_deg", [0.0, 180.0, 360.0])
 def test_axis_aligned_rotations_still_place_the_dowel(rotation_deg, plan):
+    """Issue #246: 90/270 deg moved OUT of the accepted set -- see the
+    dedicated refusal test below."""
     footing = _FakeFootingHost(
         FakeXYZ(0.0, 0.0, 0.0),
         FakeXYZ(mm_to_internal(1800.0), mm_to_internal(1200.0),
@@ -156,15 +158,19 @@ def test_axis_aligned_rotations_still_place_the_dowel(rotation_deg, plan):
     assert bar.args[5] is footing
 
 
-def test_a_rotated_footing_refuses_instead_of_placing_the_dowel_wrong(plan):
+@pytest.mark.parametrize("rotation_deg", [30.0, 90.0, 270.0])
+def test_a_rotated_footing_refuses_instead_of_placing_the_dowel_wrong(
+        rotation_deg, plan):
     """Same rotation guard the mesh adapter already enforces -- reused,
     not reimplemented (this adapter imports ``_footing_origin`` from
-    ``rft.revit.footing_mesh`` directly)."""
+    ``rft.revit.footing_mesh`` directly). Issue #246: 90/270 deg used to
+    be wrongly accepted as "axis-aligned" -- now refused exactly like any
+    other non-multiple-of-180 angle (30 deg, the pre-existing case)."""
     footing = _FakeFootingHost(
         FakeXYZ(0.0, 0.0, 0.0),
         FakeXYZ(mm_to_internal(1800.0), mm_to_internal(1200.0),
                 mm_to_internal(450.0)),
-        rotation_rad=math.radians(30.0))
+        rotation_rad=math.radians(rotation_deg))
 
     with pytest.raises(FootingRotationUnsupportedError):
         place_dowel_bar(
