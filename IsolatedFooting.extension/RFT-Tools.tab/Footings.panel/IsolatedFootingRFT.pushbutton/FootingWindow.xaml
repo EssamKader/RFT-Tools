@@ -312,6 +312,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0"
@@ -343,6 +344,12 @@
                                        Style="{StaticResource InputLabel}"/>
                             <TextBox Grid.Row="4" Grid.Column="1"
                                      x:Name="dowel_count_h_face_tb" Text="3"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0"
+                                       Text="Splice length Ls (past footing top, into column), mm"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="5" Grid.Column="1"
+                                     x:Name="dowel_splice_length_tb" Text="600"/>
                         </Grid>
 
                         <TextBlock Style="{StaticResource ReadOutSource}"

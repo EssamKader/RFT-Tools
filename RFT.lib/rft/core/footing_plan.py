@@ -172,7 +172,8 @@ FootingInputs = namedtuple(
      "perimeter_tie_first_bar_length_mm",
      "perimeter_tie_second_bar_length_mm",
      "dowel_count_b_face", "dowel_count_h_face",
-     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm"],
+     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
+     "dowel_splice_length_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -184,10 +185,14 @@ FootingInputs = namedtuple(
 TOP_REINFORCEMENT_BTM_ONLY = "BTM_ONLY"
 TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 
+#: R12 (docs/footing/spec-amendments.md): ``dowel_splice_length_mm`` is
+#: append-only at the very end, default ``None`` -- every caller that
+#: predates this ticket keeps building the dowel's vertical leg stopping
+#: exactly at ``footing_thickness_mm``, unchanged.
 FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
     None, None, None, None, None, None,
-    None, None, None, None)
+    None, None, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -481,6 +486,14 @@ def _build_dowel_plan(inputs, column_section):
     plan with no dowel array unchanged (see ``DowelArrayPlan``'s own
     docstring).
 
+    R12 (docs/footing/spec-amendments.md): ``inputs.dowel_splice_length_mm``
+    is passed straight through to ``positioned_dowel_bar_geometry``/
+    ``local_dowel_bar_geometry`` for every bar built here -- the SAME
+    value for every bar in the array (Sec 8 gives no per-bar splice
+    variation), never re-derived or defaulted here (``None`` already
+    means "no splice, stop at the footing's own top face exactly as
+    before", handled entirely inside ``footing_dowels``).
+
     ``perimeter_bar_positions``' own ``(u, v)`` is used directly as this
     footing's own local ``(x, y)`` with NO rotation transform for a column
     whose axes are not parallel to the footing's own a/b axes --
@@ -537,11 +550,13 @@ def _build_dowel_plan(inputs, column_section):
             bars.append(positioned_dowel_bar_geometry(
                 embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
                 inputs.mesh_bar_y_dia_mm, bar.u_mm, bar.v_mm,
-                direction_u, direction_v))
+                direction_u, direction_v,
+                splice_length_mm=inputs.dowel_splice_length_mm))
     else:
         bars = [local_dowel_bar_geometry(
             embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
-            inputs.mesh_bar_y_dia_mm)]
+            inputs.mesh_bar_y_dia_mm,
+            splice_length_mm=inputs.dowel_splice_length_mm)]
 
     # Issue #230: Sec 8's own b_dowel formula has no clamp against the
     # footing's own plan size -- flag, once, here (the one composing

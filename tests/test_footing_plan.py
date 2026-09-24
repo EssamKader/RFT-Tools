@@ -329,6 +329,46 @@ def test_the_plan_defaults_dowel_fields_to_none_with_no_dowel_plan():
     assert plan.dowel is None
 
 
+def test_dowel_splice_length_defaults_to_none_and_stops_at_the_footing_top():
+    """R12 (docs/footing/spec-amendments.md), append-only field: every
+    caller that predates this ticket (this file's own ``_inputs`` helper)
+    keeps building the SAME dowel top elevation as before -- exactly
+    ``footing_thickness_mm``."""
+    inputs = _inputs(dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0)
+    assert inputs.dowel_splice_length_mm is None
+    plan = build_footing_plan(inputs)
+    assert plan.dowel.bars[0].vertical.end.z_mm == pytest.approx(
+        inputs.footing_thickness_mm)
+
+
+def test_dowel_splice_length_extends_the_one_bar_fallback_past_the_top():
+    """R12: the composing module (``build_footing_plan``/
+    ``_build_dowel_plan``) is the ONE place ``inputs.dowel_splice_
+    length_mm`` is read from -- threaded straight to ``local_dowel_bar_
+    geometry`` for the no-array fallback path."""
+    inputs = _inputs(
+        dowel_bar_dia_mm=25.0, dowel_ld_multiplier=55.0,
+        dowel_splice_length_mm=600.0)
+    plan = build_footing_plan(inputs)
+    assert plan.dowel.bars[0].vertical.end.z_mm == pytest.approx(
+        inputs.footing_thickness_mm + 600.0)
+
+
+def test_dowel_splice_length_extends_every_bar_in_a_real_array():
+    """R12: every bar in a real N-position array shares the SAME splice
+    length (Sec 8 gives no per-bar variation) -- threaded through
+    ``positioned_dowel_bar_geometry`` for each bar ``perimeter_bar_
+    positions`` produced."""
+    inputs, column_section = _array_inputs()
+    inputs = inputs._replace(dowel_splice_length_mm=350.0)
+    plan = build_footing_plan(inputs, column_section=column_section)
+
+    assert len(plan.dowel.bars) == 4
+    for bar in plan.dowel.bars:
+        assert bar.vertical.end.z_mm == pytest.approx(
+            inputs.footing_thickness_mm + 350.0)
+
+
 def test_supplying_dowel_inputs_with_no_array_counts_falls_back_to_one_bar():
     """#222: when the two count-per-face inputs (and column_section) are
     not supplied, ``DowelArrayPlan.bars`` must carry exactly the SAME

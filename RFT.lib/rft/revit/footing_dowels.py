@@ -66,6 +66,22 @@ verification this repo has for a bent dowel's ``normal``
 covers that case; the per-bar generalisation itself is unverified until
 its own tracer bullet runs.
 
+**SHAPE UNVERIFIED (R12, issue #234)** -- when ``inputs.dowel_splice_
+length_mm`` is supplied, the vertical leg's own ``top`` point
+(``rft.core.footing_dowels.positioned_dowel_bar_geometry``) now sits PAST
+``footing_thickness_mm``, into open space above the footing and
+potentially through/past the column's own solid geometry. This is a
+DIFFERENT combination from #197 Sec 2's own kept-write proof -- that proof
+covers a bar hosted on a footing extending beyond the footing's own top
+face roughly to the column base (this module's own #202-era note above),
+NOT continuing further through the column's own solid volume. No
+verification doc exists yet for this specific extension; do not treat this
+module's other, already-kept-write facts as covering it. No shape/API-call
+change is needed here regardless -- the SAME two-curve ``Rebar.
+CreateFromCurves`` call as before, just a longer second curve -- but this
+combination itself needs its own tracer bullet before it is trusted
+live.
+
 Per this repo's hard rule, this module does not open, commit or roll back
 a transaction -- the caller owns the one transaction for the whole footing
 (so a failure here leaves the model exactly as it was).

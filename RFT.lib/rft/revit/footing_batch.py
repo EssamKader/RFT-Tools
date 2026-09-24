@@ -90,14 +90,22 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: rather than silently reverting every one back to the one-bar fallback.
 #: Both default to ``None`` so every caller that predates #232 keeps
 #: building a batch with no array, unchanged.
+#: R12 (issue #234): ``dowel_splice_length_mm`` is the SAME direct ``Ls``
+#: input ``FootingInputs`` already accepts for the single-footing path,
+#: carried here too so a batch run extends every footing's own dowel
+#: array by the SAME splice length rather than silently reverting every
+#: one back to stopping at the footing's own top face. Append-only,
+#: default ``None`` -- every caller that predates this ticket keeps
+#: building a batch with no splice, unchanged.
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
      "bar_x_type", "bar_y_type",
      "dowel_bar_type", "dowel_tie_bar_type", "dowel_ld_multiplier",
      "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode",
-     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm"])
-BatchInputs.__new__.__defaults__ = (None, None, None)
+     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
+     "dowel_splice_length_mm"])
+BatchInputs.__new__.__defaults__ = (None, None, None, None)
 
 
 class FootingBatchError(Exception):
@@ -271,7 +279,8 @@ def plan_candidates(doc, host_footing, inputs):
             dowel_count_b_face=inputs.dowel_count_b_face,
             dowel_count_h_face=inputs.dowel_count_h_face,
             mesh_bar_x_spacing_mm=inputs.mesh_bar_x_spacing_mm,
-            mesh_bar_y_spacing_mm=inputs.mesh_bar_y_spacing_mm)
+            mesh_bar_y_spacing_mm=inputs.mesh_bar_y_spacing_mm,
+            dowel_splice_length_mm=inputs.dowel_splice_length_mm)
         try:
             plan = build_footing_plan(
                 footing_inputs, column_section=column_section)

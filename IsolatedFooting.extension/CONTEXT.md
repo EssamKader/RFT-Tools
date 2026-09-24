@@ -399,3 +399,42 @@ code follows the API pattern
 `docs/footing/verification/issue-197-footing-tracer-bullet.md` proved with
 a kept write, but #198 itself has not yet been run against a live host --
 see that gap named in the PR that introduced this file.
+
+## Dowel splice length into the column (R12, issue #234)
+
+A dowel that stopped exactly at the footing's own top face (Sec 8's
+`bend_z_mm + a_dowel_mm`, an algebraic identity always equal to
+`footing_thickness_mm`) was found unusable on a real project -- no splice
+into the column above. `FootingInputs.dowel_splice_length_mm` (append-only,
+`None` default) is a new, direct `Ls` input, DISTINCT from `LD`/`dowel_
+ld_multiplier` (which still only sizes the footing-side embedment/hook,
+untouched by this ticket). When supplied, `rft.core.footing_dowels.
+positioned_dowel_bar_geometry`/`local_dowel_bar_geometry` extend the
+vertical leg's own `top` point PAST `footing_thickness_mm` by `Ls` mm,
+purely additive, applied AFTER the existing `a_dowel`/`b_dowel`/`ld_mm`
+math -- never folded into it. `None` reproduces the exact pre-R12 top
+elevation unchanged.
+
+This narrows Sec 0 F3's "hands off at 50mm below Top of Footing" boundary
+for THIS ONE bar only -- `dowel_tie` (Story 6, `footing_dowel_ties.py`)
+still stops 50mm below T.O.F. unchanged, and this tool still details
+nothing about the column's own longitudinal bars or ties above T.O.F.
+
+Threaded through the one composing module
+(`footing_plan._build_dowel_plan`/`build_footing_plan`), the Mesh & Dowels
+tab (`dowel_splice_length_tb`, parsed with `rft.ui.inputs.
+parse_optional_positive_float` -- blank means `None`, not zero), the batch
+path (`footing_batch.BatchInputs.dowel_splice_length_mm`, same append-only
+pattern), and `footing_report.dowel_array_section` (states `Ls` and the
+real total top elevation, or explicitly says none was given).
+
+**SHAPE UNVERIFIED:** a dowel hosted on a footing whose geometry extends
+past the footing's own top face into open space above it, potentially
+through/past the column's own solid geometry, is a NEW combination beyond
+#197 Sec 2's own kept-write proof (that proof covers extending to roughly
+the column base, not further) -- see `rft/revit/footing_dowels.py`'s own
+"SHAPE UNVERIFIED (R12, issue #234)" docstring note. No shape/API-call
+change was needed in the adapter -- same two-curve `Rebar.CreateFromCurves`
+call, just a longer second curve -- but this specific combination has not
+been run against a live host and needs its own tracer bullet before it is
+trusted.
