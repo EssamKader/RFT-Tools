@@ -112,6 +112,28 @@ def mesh_section(plan):
         "Bottom mesh (#198, hook shape -- #229, array -- #232)", lines)
 
 
+def top_mesh_section(plan):
+    """#233 (R13): the top mat's own bar length/hook shape, once one
+    exists (``plan.top_mesh`` is not ``None`` -- ``inputs.top_reinforcement
+    == TOP_REINFORCEMENT_TOP_AND_BTM``). Mirrors ``mesh_section``'s own
+    wording; no array yet for the top mat (see ``TopMeshPlan``'s own
+    docstring), so this always states exactly one bar per direction,
+    never a count read off ``bar_x_array``/``bar_y_array``.
+    """
+    top_mesh = plan.top_mesh
+    lines = [
+        "mesh_bar_x: 1 bar, %s -- %s" % (
+            _mm(_actual_bar_length_mm(top_mesh.bar_x_geometry)),
+            _hook_end_words(top_mesh.bar_x_hooks)),
+        "mesh_bar_y: 1 bar, %s -- %s" % (
+            _mm(_actual_bar_length_mm(top_mesh.bar_y_geometry)),
+            _hook_end_words(top_mesh.bar_y_hooks)),
+        "Primary reinforcement direction = %s" % top_mesh.primary_direction,
+        "Hook direction: DOWNWARD, toward the bottom mat (R13).",
+    ]
+    return ReportSection("Top mesh (#201/#233, hook shape -- R13)", lines)
+
+
 def dowel_array_section(plan):
     """The dowel array (#202/#222): embedment sizing plus how many bars
     the live column section produced -- one representative bar when no
@@ -168,17 +190,18 @@ def dowel_array_section(plan):
 def not_yet_placed_section():
     """R6-R10, #198-#228, #229 and #232 built and placed the bottom mesh
     (now with its real hook shape AND, when spacing is given, its full
-    array -- R11) and the dowel array; top mesh (#201), dowel_tie's
-    closed-loop shape (#203) and the perimeter_tie bar (#204) have core
-    math but no Revit placement adapter yet
+    array -- R11) and the dowel array; #233 (R13) does the same for the
+    top mat (one representative bar per direction, no array yet).
+    dowel_tie's closed-loop shape (#203) and the perimeter_tie bar (#204)
+    still have core math but no Revit placement adapter
     (`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
     stated here rather than exposed as an input this window cannot act
     on."""
     lines = [
-        "Top mesh, dowel-tie closed loops and the perimeter-tie bar are "
-        "not yet wired to placement -- see IsolatedFooting.extension/"
-        "CONTEXT.md. This window does not ask for their inputs, since "
-        "there is nothing yet for them to place.",
+        "Dowel-tie closed loops and the perimeter-tie bar are not yet "
+        "wired to placement -- see IsolatedFooting.extension/CONTEXT.md. "
+        "This window does not ask for their inputs, since there is "
+        "nothing yet for them to place.",
     ]
     return ReportSection("Not yet placed by this tool", lines)
 

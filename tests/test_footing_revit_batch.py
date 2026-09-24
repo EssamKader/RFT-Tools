@@ -37,7 +37,12 @@ from fake_revit_api import (
 
 import rft.revit.footing_batch as footing_batch_module
 from rft.core.footing_batch import Exclusion
-from rft.core.footing_plan import DowelColumnSection, FootingInputs, build_footing_plan
+from rft.core.footing_plan import (
+    TOP_REINFORCEMENT_TOP_AND_BTM,
+    DowelColumnSection,
+    FootingInputs,
+    build_footing_plan,
+)
 from rft.revit.column_host import ColumnHostError
 from rft.revit.footing_batch import (
     BatchInputs, BatchPlan, FootingBatchError, FootingCandidate,
@@ -345,6 +350,32 @@ def test_plan_candidates_threads_the_shared_splice_length_to_every_survivor(
         plan.inputs.footing_thickness_mm + 600.0)
 
 
+def test_plan_candidates_threads_the_shared_top_reinforcement_choice(
+        monkeypatch):
+    """#233 (R13): ``BatchInputs.top_reinforcement``/``top_mat_shape_mode``
+    (the SAME shared value the engineer states once) must reach every
+    candidate's own ``FootingInputs`` -- never silently reverted to
+    BTM-only for a batch run."""
+    symbol = FakeFamilySymbol(
+        "1800 x 1200 x 450mm", family_name="M_Footing-Rectangular")
+    ftg_a = _FakeFootingElement(1, symbol=symbol)
+    FakeFilteredElementCollector._ITEMS = [ftg_a]
+    _install_reads(
+        monkeypatch,
+        column_by_footing_id={1: _column_for(1, symbol)},
+        section_by_footing_id={1: _column_section()},
+        geometry_by_footing_id={1: _geometry()})
+
+    shared_inputs = _shared_inputs()._replace(
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    result = plan_candidates(FakeDocument({}), ftg_a, shared_inputs)
+
+    assert len(result.candidates) == 1
+    plan = result.candidates[0].plan
+    assert plan.inputs.top_reinforcement == TOP_REINFORCEMENT_TOP_AND_BTM
+    assert plan.top_mesh is not None
+
+
 def test_plan_candidates_excludes_a_find_column_above_refusal_before_planning(
         monkeypatch):
     symbol = FakeFamilySymbol(
@@ -407,6 +438,27 @@ def _candidate(element_id, cw_mm=300.0):
         element=element, geometry=_geometry(),
         column_section=_column_section(cw_mm=cw_mm),
         plan=_plan(cw_mm=cw_mm))
+
+
+def _plan_with_top_mesh(cw_mm=300.0, cd_mm=600.0, ccover_mm=40.0):
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, dowel_bar_dia_mm=25.0, dowel_ld_multiplier=20.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=3, dowel_count_h_face=3,
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    return build_footing_plan(
+        inputs, column_section=_column_section(cw_mm, cd_mm, ccover_mm))
+
+
+def _candidate_with_top_mesh(element_id, cw_mm=300.0):
+    element = _FakeFootingElement(element_id)
+    return FootingCandidate(
+        element=element, geometry=_geometry(),
+        column_section=_column_section(cw_mm=cw_mm),
+        plan=_plan_with_top_mesh(cw_mm=cw_mm))
 
 
 def test_apply_batch_refuses_the_whole_run_without_opening_a_transaction():
@@ -474,6 +526,29 @@ def test_a_failure_placing_one_footing_rolls_back_the_WHOLE_batch(
     remaining_ids = set(
         item.Id.IntegerValue for item in FakeFilteredElementCollector._ITEMS)
     assert 900 in remaining_ids
+
+
+def test_apply_batch_places_the_top_mesh_when_the_plan_carries_one():
+    """#233 (R13): a candidate whose OWN plan carries a top_mesh gets its
+    top mat placed inside the SAME transaction, tagged like every other
+    bar this run places -- and a candidate with no top_mesh (BTM-only, the
+    default) places none, unchanged."""
+    doc = FakeDocument({})
+    with_top = _candidate_with_top_mesh(501)
+    without_top = _candidate(502)
+    batch = BatchPlan(groups=[], exclusions=[],
+                      candidates=[with_top, without_top])
+    read_existing(doc, batch)
+
+    result = apply_batch(doc, batch, object(), object(), object())
+
+    results_by_id = dict(result.per_footing)
+    assert results_by_id[501].top_bar_x is not None
+    assert results_by_id[501].top_bar_y is not None
+    assert results_by_id[502].top_bar_x is None
+    assert results_by_id[502].top_bar_y is None
+    assert results_by_id[501].top_bar_x.LookupParameter(
+        "Partition").AsString() == partition_tag(501)
 
 
 def test_apply_batch_refuses_when_read_existing_was_never_run():

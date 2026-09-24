@@ -46,6 +46,7 @@ from .footing_mesh import (
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
+    top_mesh_bar_geometry,
 )
 
 #: ``MAT_SHAPE_L_ALTERNATING``/``MAT_SHAPE_U`` (imported above) are
@@ -232,11 +233,15 @@ BottomMeshPlan.__new__.__defaults__ = (None, None, None, None)
 #: -- the top mat is the same per-mat geometry/hook decision as the bottom
 #: mat, just built with the top mat's own ``top_mat_shape_mode``, so it
 #: carries exactly the same shape rather than inventing a differently-
-#: shaped plan for what is not new math. ``bar_x_geometry``/
-#: ``bar_y_geometry``/``bar_x_array``/``bar_y_array`` stay ``None`` here
-#: (#229/#232's own bent-geometry/array builders are bottom-mat-only, see
-#: ``footing_mesh.bottom_mesh_bar_geometry``/
-#: ``bottom_mesh_bar_array_geometry``).
+#: shaped plan for what is not new math. #233 (R13): ``bar_x_geometry``/
+#: ``bar_y_geometry`` are now populated too, by
+#: ``footing_mesh.top_mesh_bar_geometry`` -- the mirror image of
+#: ``bottom_mesh_bar_geometry`` (hook leg subtracted, not added).
+#: ``bar_x_array``/``bar_y_array`` stay ``None`` here -- #232's own array
+#: builder is still bottom-mat-only; the top mat's array is separate,
+#: unbuilt follow-up scope (this ticket's own PR description), the same
+#: "single representative bar first" step the bottom mat itself went
+#: through between #229 and #232.
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 TopMeshPlan.__new__.__defaults__ = (None, None, None, None)
 
@@ -690,6 +695,20 @@ def build_footing_plan(inputs, column_section=None):
         top_mesh = _build_mesh_mat_plan(
             TopMeshPlan, inputs, inputs.top_mat_shape_mode,
             _top_mat_endpoints)
+        # #233 (R13, docs/footing/spec-amendments.md): the top mat's own
+        # real bent centreline -- the mirror image of the bottom mat's
+        # own #229 step just above, built from this SAME plan's own
+        # lengths/hook-plan, never re-derived independently. No array
+        # (bar_x_array/bar_y_array) for the top mat yet -- see
+        # TopMeshPlan's own docstring and this ticket's PR description.
+        top_bar_x_geometry, top_bar_y_geometry = top_mesh_bar_geometry(
+            top_mesh.lengths, inputs.top_cover_mm,
+            inputs.footing_thickness_mm, inputs.mesh_bar_x_dia_mm,
+            inputs.mesh_bar_y_dia_mm, top_mesh.bar_x_hooks,
+            top_mesh.bar_y_hooks)
+        top_mesh = top_mesh._replace(
+            bar_x_geometry=top_bar_x_geometry,
+            bar_y_geometry=top_bar_y_geometry)
     else:
         raise ValueError(
             "Unknown top_reinforcement %r; expected "

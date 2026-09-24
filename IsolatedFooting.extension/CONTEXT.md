@@ -3,6 +3,45 @@
 Per `docs/token-efficient-expansion.md` Sec 2: repo-root `CONTEXT.md` carries
 only rules true for every element. Anything footing-specific lives here.
 
+## Scope, as of #233 (R13, docs/footing/spec-amendments.md)
+
+**In:** the top mat (Sec 3 Story 4, Sec 7) is now fully wired: its own
+bent-centreline geometry (`rft.core.footing_mesh.top_mesh_bar_geometry`
+-- the mirror image of #229's `bottom_mesh_bar_geometry`, hook leg
+SUBTRACTED from each hooked end's own elevation instead of added, per
+R13's ruling that the top mat's hook bends DOWNWARD toward the bottom
+mat), populated onto `FootingPlan.top_mesh.bar_x_geometry`/
+`bar_y_geometry` by `build_footing_plan` (never computed a second time by
+any other caller), a Revit placement adapter
+(`rft.revit.footing_mesh.place_straight_top_mesh`, hosted on the SAME
+footing element as the bottom mesh), a UI toggle (`top_reinforcement_cb`/
+`top_mat_shape_cb` on the Mesh & Dowels tab, reusing the SAME
+`mesh_bar_x`/`mesh_bar_y` bar-type combos as the bottom mat -- Sec 7 names
+no top-mat-specific bar type), the batch path
+(`rft.revit.footing_batch.BatchInputs.top_reinforcement`/
+`top_mat_shape_mode`, append-only, placed inside the SAME one
+all-or-nothing transaction as every other batch survivor's steel), and a
+Review report section (`rft.core.footing_report.top_mesh_section`).
+
+**Deliberately NOT in #233, left as separate, unbuilt follow-up:** the
+top mat's own bar ARRAY (many parallel bars, mirroring #232's bottom-mesh
+array). `FootingPlan.top_mesh.bar_x_array`/`bar_y_array` stay `None`
+always -- only ONE representative bar per direction is built and placed
+for the top mat, the same "single representative bar first" step the
+bottom mat itself went through between #229 and #232. A future ticket
+that wants a real top-mesh array should mirror
+`bottom_mesh_bar_array_geometry`/`place_bottom_mesh_bars`'s own shape,
+parametrized the same way this ticket's own `top_mesh_bar_geometry`
+mirrors `bottom_mesh_bar_geometry`.
+
+**SHAPE UNVERIFIED:** `place_straight_top_mesh` is the SAME footing-host
+bent-multi-curve `Rebar.CreateFromCurves` combination #229's own
+docstring already flags as unverified (issue #236) -- placing at the top
+mat's own (different) elevation is not a new API shape, but has not
+itself been run against a live host either. See
+`rft/revit/footing_mesh.py`'s own docstring note on `place_straight_top_
+mesh`.
+
 ## Scope, as of #204
 
 **In:** `perimeter_tie` geometry and splice -- Story 7, spec Sec 10.
@@ -224,19 +263,14 @@ formula the way Sec 4's N/N2 do for the bottom mat) was proposed in code
 and then confirmed correct by Essam — recorded as **R3** in
 `docs/footing/spec-amendments.md`, same discipline as R1/R2.
 
+**Now DONE, no longer a gap (#233, see this file's own "Scope, as of
+#233" section above):** wiring #201's `top_mesh` into the pushbutton UI
+and into a Revit placement adapter (`rft.revit.footing_mesh.place_
+straight_top_mesh`) -- R13 resolved the hook-direction question this
+paragraph originally flagged (DOWNWARD, toward the bottom mat).
+
 **Not yet in** (spec Sec 11's tracer-bullet order, followed as-is):
 
-- Wiring #201's `top_mesh` into the pushbutton UI (asking
-  `top_reinforcement`/`top_mat_shape_mode` via `pyrevit.forms`) or into a
-  Revit placement adapter that places the top mat's bars -- same
-  core-before-UI/adapter precedent #199/#200 already set. `rft.revit.
-  footing_mesh.place_straight_bottom_mesh` only knows how to place the
-  bottom mat's two representative bars today. #229 deliberately did NOT
-  extend this to the top mat -- its own hook direction (up, toward the
-  bottom mat, or down, toward the top face?) is not stated anywhere in
-  the spec, and guessing it now with no placement adapter to verify
-  against would be exactly the guessing `REUSE_GUIDELINES.md` Sec 3
-  refuses.
 - Full mesh bar count/spacing/quantity for either direction -- this
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the

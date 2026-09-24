@@ -112,6 +112,7 @@ VERSION_FILE = "SimpleBeamRFT.extension/VERSION"
 FOOTING_SCRIPT = ("IsolatedFooting.extension/RFT-Tools.tab/"
                    "Footings.panel/IsolatedFootingRFT.pushbutton/script.py")
 TFP = "tests/test_footing_plan.py::"
+TFW = "tests/test_footing_window.py::"
 
 # Read the CURRENT version rather than naming one. This case broke on the
 # very first release after it was written (VERSION had moved to rc3 while
@@ -1879,6 +1880,71 @@ CASES = [
      TFP + "test_the_pushbutton_script_reads_the_composing_plan_not_bare_footing_mesh",
      "the script importing rft.core.footing_mesh directly instead of "
      "going through the one composing module"),
+
+    # ---- #233 (R13): the top mat is placed in the SAME transaction as
+    # ---- the bottom mesh/dowels, gated on the plan actually carrying one.
+    (FOOTING_SCRIPT,
+     "            dowel_splice_length_mm=dowel_splice_length_mm,\n"
+     "            top_reinforcement=self._selected_top_reinforcement(),\n"
+     "            top_mat_shape_mode=self._selected_top_mat_shape_mode())\n"
+     "\n"
+     "        sections = [",
+     "            dowel_splice_length_mm=dowel_splice_length_mm)\n"
+     "\n"
+     "        sections = [",
+     TFW + "test_on_build_report_click_threads_top_reinforcement_into_footing_inputs",
+     "#233 -- the batch path's own FootingInputs/BatchInputs construction "
+     "dropped the top_reinforcement/top_mat_shape_mode threading, so a "
+     "batch run would silently revert every footing back to BTM-only "
+     "regardless of what the engineer chose on the Mesh & Dowels tab"),
+
+    (FOOTING_SCRIPT,
+     '            top_bar_x, top_bar_y = None, None\n'
+     '            if self.plan.top_mesh is not None:\n'
+     '                top_bar_x, top_bar_y = place_straight_top_mesh(\n'
+     '                    doc, self.footing, self.plan.top_mesh,\n'
+     '                    bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])\n'
+     '        except Exception as ex:\n'
+     '            transaction.RollBack()\n'
+     '            message = "Placement FAILED and was rolled back -- {}: {}".format(\n'
+     '                type(ex).__name__, ex)\n'
+     '            logger.error(message)\n'
+     '            self._refuse_on_tab(self.review_status_tb, message)\n'
+     '            forms.alert(message, title="Placement failed -- rolled back")\n'
+     '            return\n'
+     '        transaction.Commit()',
+     '        except Exception as ex:\n'
+     '            transaction.RollBack()\n'
+     '            message = "Placement FAILED and was rolled back -- {}: {}".format(\n'
+     '                type(ex).__name__, ex)\n'
+     '            logger.error(message)\n'
+     '            self._refuse_on_tab(self.review_status_tb, message)\n'
+     '            forms.alert(message, title="Placement failed -- rolled back")\n'
+     '            return\n'
+     '        transaction.Commit()\n'
+     '        top_bar_x, top_bar_y = None, None\n'
+     '        if self.plan.top_mesh is not None:\n'
+     '            top_bar_x, top_bar_y = place_straight_top_mesh(\n'
+     '                doc, self.footing, self.plan.top_mesh,\n'
+     '                bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])',
+     TFW + "test_single_footing_placement_places_the_top_mat_before_commit",
+     "#233 -- the top mat's own placement call moved to AFTER "
+     "transaction.Commit(), outside the one transaction this repo's hard "
+     "rule requires, so a failure placing it could not be rolled back "
+     "with the rest of the footing's steel"),
+
+    (FOOTING_SCRIPT,
+     "            top_bar_x, top_bar_y = None, None\n"
+     "            if self.plan.top_mesh is not None:\n"
+     "                top_bar_x, top_bar_y = place_straight_top_mesh(",
+     "            top_bar_x, top_bar_y = None, None\n"
+     "            if True:\n"
+     "                top_bar_x, top_bar_y = place_straight_top_mesh(",
+     TFW + "test_single_footing_placement_gates_the_top_mat_on_plan_top_mesh",
+     "#233 -- the top mat placed UNCONDITIONALLY instead of only when "
+     "self.plan.top_mesh is not None, so a BTM-only footing would still "
+     "get top_mesh_bar_geometry called against a plan with no top mat "
+     "(bar_x_geometry/bar_y_geometry both None) and crash"),
 
 ]
 

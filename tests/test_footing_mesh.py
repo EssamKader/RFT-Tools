@@ -33,6 +33,7 @@ from rft.core.footing_mesh import (
     mesh_bar_lengths,
     mesh_bar_offsets_mm,
     primary_reinforcement_direction,
+    top_mesh_bar_geometry,
 )
 
 
@@ -627,6 +628,127 @@ def test_bottom_mesh_bar_array_spaces_bar_y_along_x_across_z_not_z2():
         ys = [point.y_mm for point in bar.points]
         assert min(ys) == pytest.approx(-lengths.z2_mm / 2.0)
         assert max(ys) == pytest.approx(lengths.z2_mm / 2.0)
+
+
+# --------------------------------------------------------------------------
+# #233 (R13, docs/footing/spec-amendments.md) -- the TOP mat's own bent
+# centreline: the mirror image of #229's bottom-mat builder above (hook leg
+# SUBTRACTED from each hooked end's own elevation, not added). Genuinely new
+# math (the sign flip is the whole point of this ticket), so these assert
+# hand-computed numbers, same discipline as #229's own tests above.
+# --------------------------------------------------------------------------
+
+
+def test_top_mesh_neither_end_hooked_is_a_plain_two_point_straight_run():
+    lengths = _lengths()
+    no_hook = BarHookPlan(
+        start=BarEndHook(ld_mm=640.0, needs_hook=False),
+        end=BarEndHook(ld_mm=640.0, needs_hook=False), shape=SHAPE_L)
+    bar_x, _bar_y = top_mesh_bar_geometry(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        bar_x_hooks=no_hook, bar_y_hooks=no_hook)
+
+    assert len(bar_x.points) == 2
+    half_z = lengths.z_mm / 2.0
+    elevation = 450.0 - 50.0 - 16.0 / 2.0
+    assert bar_x.points[0] == pytest.approx(
+        (-half_z, 0.0, elevation), rel=1e-9)
+    assert bar_x.points[1] == pytest.approx(
+        (half_z, 0.0, elevation), rel=1e-9)
+
+
+def test_top_mesh_both_ends_hooked_is_a_four_point_shape_dropping_by_n():
+    """R13: the hook leg SUBTRACTS from the base elevation -- the mirror
+    image of the bottom mat's own #229 test
+    (test_both_ends_hooked_is_a_four_point_u_shape_rising_by_n), which
+    ADDS n_mm instead."""
+    lengths = _lengths()
+    both_hooked = BarHookPlan(
+        start=BarEndHook(ld_mm=640.0, needs_hook=True),
+        end=BarEndHook(ld_mm=640.0, needs_hook=True), shape=SHAPE_U)
+    bar_x, _bar_y = top_mesh_bar_geometry(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        bar_x_hooks=both_hooked, bar_y_hooks=both_hooked)
+
+    half_z = lengths.z_mm / 2.0
+    elevation = 450.0 - 50.0 - 16.0 / 2.0
+    points = bar_x.points
+    assert len(points) == 4
+    assert points[0] == pytest.approx(
+        (-half_z, 0.0, elevation - lengths.n_mm), rel=1e-9)
+    assert points[1] == pytest.approx((-half_z, 0.0, elevation), rel=1e-9)
+    assert points[2] == pytest.approx((half_z, 0.0, elevation), rel=1e-9)
+    assert points[3] == pytest.approx(
+        (half_z, 0.0, elevation - lengths.n_mm), rel=1e-9)
+
+
+def test_top_mesh_only_the_start_end_hooked_is_a_three_point_l_shape():
+    lengths = _lengths()
+    l_shape = BarHookPlan(
+        start=BarEndHook(ld_mm=640.0, needs_hook=True),
+        end=BarEndHook(ld_mm=640.0, needs_hook=False), shape=SHAPE_L)
+    straight_y = BarHookPlan(
+        start=BarEndHook(ld_mm=480.0, needs_hook=False),
+        end=BarEndHook(ld_mm=480.0, needs_hook=False), shape=SHAPE_L)
+    bar_x, _bar_y = top_mesh_bar_geometry(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        bar_x_hooks=l_shape, bar_y_hooks=straight_y)
+
+    half_z = lengths.z_mm / 2.0
+    elevation = 450.0 - 50.0 - 16.0 / 2.0
+    points = bar_x.points
+    assert len(points) == 3
+    assert points[0] == pytest.approx(
+        (-half_z, 0.0, elevation - lengths.n_mm), rel=1e-9)
+    assert points[1] == pytest.approx((-half_z, 0.0, elevation), rel=1e-9)
+    assert points[2] == pytest.approx((half_z, 0.0, elevation), rel=1e-9)
+
+
+def test_top_mesh_bar_y_uses_z2_and_n2_and_its_own_top_mat_elevation():
+    """mesh_bar_y must use ITS OWN Z2/N2 and R3's own top-mat elevation
+    (one mesh_bar_x diameter further into the footing FROM THE TOP), never
+    bar_x's Z/N or the bottom mat's elevation."""
+    lengths = _lengths()
+    both_hooked = BarHookPlan(
+        start=BarEndHook(ld_mm=480.0, needs_hook=True),
+        end=BarEndHook(ld_mm=480.0, needs_hook=True), shape=SHAPE_U)
+    _bar_x, bar_y = top_mesh_bar_geometry(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        bar_x_hooks=both_hooked, bar_y_hooks=both_hooked)
+
+    half_z2 = lengths.z2_mm / 2.0
+    elevation_y = 450.0 - 50.0 - 16.0 - 12.0 / 2.0
+    points = bar_y.points
+    assert len(points) == 4
+    assert points[0] == pytest.approx(
+        (0.0, -half_z2, elevation_y - lengths.n2_mm), rel=1e-9)
+    assert points[1] == pytest.approx((0.0, -half_z2, elevation_y), rel=1e-9)
+    assert points[2] == pytest.approx((0.0, half_z2, elevation_y), rel=1e-9)
+    assert points[3] == pytest.approx(
+        (0.0, half_z2, elevation_y - lengths.n2_mm), rel=1e-9)
+
+
+def test_top_mesh_bar_geometry_matches_local_top_mesh_bar_endpoints_elevations():
+    """R3's own top-mat elevation formula (local_top_mesh_bar_endpoints)
+    and this ticket's bent-centreline builder must agree on the BASE
+    elevation for both bars -- a mutation that re-derives the elevation
+    independently here, drifting from R3, must fail this."""
+    lengths = _lengths()
+    hooks = _straight_hooks(640.0)
+    bar_x_endpoints, bar_y_endpoints = local_top_mesh_bar_endpoints(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0)
+    bar_x, bar_y = top_mesh_bar_geometry(
+        lengths, top_cover_mm=50.0, footing_thickness_mm=450.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        bar_x_hooks=hooks, bar_y_hooks=hooks)
+
+    assert bar_x.points[0].z_mm == pytest.approx(bar_x_endpoints.start.z_mm)
+    assert bar_y.points[0].z_mm == pytest.approx(bar_y_endpoints.start.z_mm)
 
 
 def test_bottom_mesh_bar_array_every_bar_shares_the_identical_hook_shape():

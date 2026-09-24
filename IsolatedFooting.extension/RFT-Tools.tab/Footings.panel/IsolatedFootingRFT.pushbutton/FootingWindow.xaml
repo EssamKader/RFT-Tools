@@ -300,6 +300,40 @@
                         </Grid>
 
                         <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Top mesh (#201/#233) -- hooks bend DOWN toward the bottom mat, R13"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Reinforcement"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="top_reinforcement_cb"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="Bottom only (BTM)"/>
+                                <ComboBoxItem Content="Top + Bottom (TOP+BTM)"/>
+                            </ComboBox>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Hook shape, top mat (#201/#233)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="top_mat_shape_cb"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="Auto (per-end LD compare)"/>
+                                <ComboBoxItem Content="U-Shape (both ends hooked)"/>
+                                <ComboBoxItem Content="L-Shape, alternating"/>
+                            </ComboBox>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SectionHeading}"
                                    Text="Dowel array (#202/#222) -- hooks bend outward, R10"/>
                         <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
@@ -354,7 +388,7 @@
 
                         <TextBlock Style="{StaticResource ReadOutSource}"
                                    Margin="0,10,0,0"
-                                   Text="Top mesh, dowel-tie closed loops and the perimeter-tie bar are not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for them here."/>
+                                   Text="Dowel-tie closed loops and the perimeter-tie bar are not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for them here."/>
 
                         <Button x:Name="build_report_btn" Margin="0,12,0,0"
                                 HorizontalAlignment="Left" Padding="12,5,12,5"
