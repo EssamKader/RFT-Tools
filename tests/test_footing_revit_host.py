@@ -45,6 +45,7 @@ from fake_revit_api import (
 from rft.core.footing_plan import DowelColumnSection
 from rft.revit.column_host import ColumnHostError
 from rft.revit.footing_host import (
+    FootingAxisMismatchError,
     FootingGeometry,
     FootingHostError,
     find_column_above,
@@ -304,20 +305,27 @@ FOOTING_COVER_ID = 998877
 
 class _FakeFootingGeometryHost(object):
     """Only what ``read_footing_geometry_mm`` reads: ``Symbol`` (TYPE
-    dimensions), ``get_Parameter`` (INSTANCE covers) and ``Document`` (to
-    resolve a cover parameter's ``ElementId`` to a ``RebarCoverType``)."""
+    dimensions), ``get_Parameter`` (INSTANCE covers), ``Document`` (to
+    resolve a cover parameter's ``ElementId`` to a ``RebarCoverType``) and,
+    since #249, ``get_BoundingBox`` (to measure which world axis Length/
+    Width actually runs along)."""
 
-    def __init__(self, document, symbol, cover_parameters):
+    def __init__(self, document, symbol, cover_parameters, box):
         self.Document = document
         self.Symbol = symbol
         self._cover_parameters = dict(cover_parameters)
+        self._box = box
 
     def get_Parameter(self, built_in):
         return self._cover_parameters.get(built_in)
 
+    def get_BoundingBox(self, _view):
+        return self._box
+
 
 def _footing_with_geometry(missing_type_param=None, missing_cover_param=None,
-                           unset_cover_param=None):
+                           unset_cover_param=None, x_extent_mm=1800.0,
+                           y_extent_mm=1200.0):
     document = FakeDocument({
         FOOTING_COVER_ID: FakeRebarCoverType(
             mm(40.0), name="Interior (framing, columns)",
@@ -351,16 +359,44 @@ def _footing_with_geometry(missing_type_param=None, missing_cover_param=None,
     if unset_cover_param is not None:
         cover_params[unset_cover_param] = FakeElementIdParameter(None)
 
-    return _FakeFootingGeometryHost(document, symbol, cover_params)
+    box = FakeBoundingBox(
+        FakeXYZ(0.0, 0.0, 0.0),
+        FakeXYZ(mm(x_extent_mm), mm(y_extent_mm), mm(450.0)))
+
+    return _FakeFootingGeometryHost(document, symbol, cover_params, box)
 
 
 def test_returns_the_footing_geometry_from_the_live_reads():
+    """Same-as-before case (#249): the measured bounding box agrees with
+    the naive Length=X/Width=Y assumption, so a_mm/b_mm come out unchanged.
+    """
     geometry = read_footing_geometry_mm(_footing_with_geometry())
     assert geometry == FootingGeometry(
         a_mm=pytest.approx(1800.0), b_mm=pytest.approx(1200.0),
         footing_thickness_mm=pytest.approx(450.0),
         cover_mm=pytest.approx(40.0), bottom_cover_mm=pytest.approx(40.0),
         top_cover_mm=pytest.approx(40.0))
+
+
+def test_derives_a_mm_from_the_measured_extent_when_length_runs_along_y():
+    """#249's own bug: a footing whose Length (1800) actually runs along
+    world Y and Width (1200) along world X -- a_mm must come out as the
+    dimension that MATCHES the measured X-extent (1200), not the type's
+    Length value blindly.
+    """
+    geometry = read_footing_geometry_mm(
+        _footing_with_geometry(x_extent_mm=1200.0, y_extent_mm=1800.0))
+    assert geometry.a_mm == pytest.approx(1200.0)
+    assert geometry.b_mm == pytest.approx(1800.0)
+
+
+def test_neither_dimension_matches_the_measured_extents_refuses():
+    with pytest.raises(FootingAxisMismatchError) as caught:
+        read_footing_geometry_mm(
+            _footing_with_geometry(x_extent_mm=900.0, y_extent_mm=900.0))
+    message = str(caught.value)
+    assert "900.0" in message
+    assert "1800.0" in message and "1200.0" in message
 
 
 def test_a_missing_type_dimension_refuses_naming_the_parameter():
