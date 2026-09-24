@@ -454,8 +454,8 @@ class FootingWindow(forms.WPFWindow):
         # that is actually required once this feature is requested"
         # pattern the dowel-count check above already uses, rather than
         # letting that generic core-layer ValueError surface instead.
-        if (perimeter_tie_bar_type is not None
-                and perimeter_tie_quantity is None):
+        if (perimeter_tie_quantity is None
+                and perimeter_tie_bar_type is not None):
             self._refuse_on_tab(
                 self.mesh_dowels_status_tb,
                 "A perimeter tie quantity must be given too (#244).")
