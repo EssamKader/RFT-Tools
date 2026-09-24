@@ -113,6 +113,7 @@ FOOTING_SCRIPT = ("IsolatedFooting.extension/RFT-Tools.tab/"
                    "Footings.panel/IsolatedFootingRFT.pushbutton/script.py")
 TFP = "tests/test_footing_plan.py::"
 TFW = "tests/test_footing_window.py::"
+TFPT = "tests/test_footing_perimeter_tie_window.py::"
 
 # Read the CURRENT version rather than naming one. This case broke on the
 # very first release after it was written (VERSION had moved to rc3 while
@@ -1886,12 +1887,10 @@ CASES = [
     (FOOTING_SCRIPT,
      "            dowel_splice_length_mm=dowel_splice_length_mm,\n"
      "            top_reinforcement=self._selected_top_reinforcement(),\n"
-     "            top_mat_shape_mode=self._selected_top_mat_shape_mode())\n"
-     "\n"
-     "        sections = [",
-     "            dowel_splice_length_mm=dowel_splice_length_mm)\n"
-     "\n"
-     "        sections = [",
+     "            top_mat_shape_mode=self._selected_top_mat_shape_mode(),\n"
+     "            perimeter_tie_dia_mm=perimeter_tie_dia_mm,",
+     "            dowel_splice_length_mm=dowel_splice_length_mm,\n"
+     "            perimeter_tie_dia_mm=perimeter_tie_dia_mm,",
      TFW + "test_on_build_report_click_threads_top_reinforcement_into_footing_inputs",
      "#233 -- the batch path's own FootingInputs/BatchInputs construction "
      "dropped the top_reinforcement/top_mat_shape_mode threading, so a "
@@ -1916,6 +1915,20 @@ CASES = [
      '                    doc, self.footing, self.plan.dowel_ties,\n'
      '                    bar_types["dowel_tie_bar_type"],\n'
      '                    bar_types["dowel_tie_hook_type"])\n'
+     '            # #244 (R14): the perimeter_tie shape, same transaction, same\n'
+     '            # footing host -- only when the plan actually carries one\n'
+     '            # (bar type selected) AND, for a split loop, both R5 bar\n'
+     '            # lengths are already typed (split_bars is not None) -- see\n'
+     '            # PerimeterTiePlan\'s own docstring.\n'
+     '            perimeter_ties = []\n'
+     '            if self.plan.perimeter_tie is not None:\n'
+     '                splice = self.plan.perimeter_tie.geometry.splice\n'
+     '                if (splice.bar_count == 1\n'
+     '                        or self.plan.perimeter_tie.split_bars is not None):\n'
+     '                    perimeter_ties = place_perimeter_ties(\n'
+     '                        doc, self.footing, self.plan.perimeter_tie,\n'
+     '                        bar_types["perimeter_tie_bar_type"],\n'
+     '                        bar_types["perimeter_tie_hook_type"])\n'
      '        except Exception as ex:\n'
      '            transaction.RollBack()\n'
      '            message = "Placement FAILED and was rolled back -- {}: {}".format(\n'
@@ -1937,6 +1950,20 @@ CASES = [
      '                    doc, self.footing, self.plan.dowel_ties,\n'
      '                    bar_types["dowel_tie_bar_type"],\n'
      '                    bar_types["dowel_tie_hook_type"])\n'
+     '            # #244 (R14): the perimeter_tie shape, same transaction, same\n'
+     '            # footing host -- only when the plan actually carries one\n'
+     '            # (bar type selected) AND, for a split loop, both R5 bar\n'
+     '            # lengths are already typed (split_bars is not None) -- see\n'
+     '            # PerimeterTiePlan\'s own docstring.\n'
+     '            perimeter_ties = []\n'
+     '            if self.plan.perimeter_tie is not None:\n'
+     '                splice = self.plan.perimeter_tie.geometry.splice\n'
+     '                if (splice.bar_count == 1\n'
+     '                        or self.plan.perimeter_tie.split_bars is not None):\n'
+     '                    perimeter_ties = place_perimeter_ties(\n'
+     '                        doc, self.footing, self.plan.perimeter_tie,\n'
+     '                        bar_types["perimeter_tie_bar_type"],\n'
+     '                        bar_types["perimeter_tie_hook_type"])\n'
      '        except Exception as ex:\n'
      '            transaction.RollBack()\n'
      '            message = "Placement FAILED and was rolled back -- {}: {}".format(\n'
@@ -1969,6 +1996,45 @@ CASES = [
      "self.plan.top_mesh is not None, so a BTM-only footing would still "
      "get top_mesh_bar_geometry called against a plan with no top mat "
      "(bar_x_geometry/bar_y_geometry both None) and crash"),
+
+    # ---- #244 (R14): a split perimeter_tie must not be placed until both
+    # ---- R5 bar lengths are typed (split_bars is not None) -- placing it
+    # ---- unconditionally the moment bar_count == 2 is decided would build
+    # ---- a wrong/guessed shape rather than refuse.
+    (FOOTING_SCRIPT,
+     "            if self.plan.perimeter_tie is not None:\n"
+     "                splice = self.plan.perimeter_tie.geometry.splice\n"
+     "                if (splice.bar_count == 1\n"
+     "                        or self.plan.perimeter_tie.split_bars is not None):\n"
+     "                    perimeter_ties = place_perimeter_ties(",
+     "            if self.plan.perimeter_tie is not None:\n"
+     "                splice = self.plan.perimeter_tie.geometry.splice\n"
+     "                if True:\n"
+     "                    perimeter_ties = place_perimeter_ties(",
+     TFPT + "test_single_footing_placement_gates_a_split_loop_on_split_bars",
+     "#244 -- a required split perimeter_tie placed even when split_bars "
+     "is still None (R5's two bar lengths not yet typed), building two "
+     "open bars from a plan that never computed their own points"),
+
+    # ---- #244 (R14): selecting a perimeter_tie bar type without also
+    # ---- selecting its own hook type must refuse, not silently place a
+    # ---- closed loop with no hook shape to resolve.
+    (FOOTING_SCRIPT,
+     "        if (perimeter_tie_bar_type is not None\n"
+     "                and perimeter_tie_hook_type is None):\n"
+     "            self._refuse_on_tab(\n"
+     "                self.mesh_dowels_status_tb,\n"
+     "                \"A perimeter tie hook type must be selected too (#244).\")\n"
+     "            return",
+     "        if False:\n"
+     "            self._refuse_on_tab(\n"
+     "                self.mesh_dowels_status_tb,\n"
+     "                \"A perimeter tie hook type must be selected too (#244).\")\n"
+     "            return",
+     TFPT + "test_on_build_report_click_gates_on_perimeter_tie_bar_type_selection",
+     "#244 -- the perimeter_tie hook-type refusal disabled entirely, so a "
+     "bar type with no hook type would fall through to build_footing_plan "
+     "instead of being refused on the Mesh & Dowels tab"),
 
 ]
 

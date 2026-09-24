@@ -61,6 +61,7 @@ from .footing_host import (
     read_footing_geometry_mm,
 )
 from .footing_mesh import place_bottom_mesh_bars, place_straight_top_mesh
+from .footing_perimeter_tie import place_perimeter_ties
 from .footing_ownership import partition_host_rebar, tag_as_ours
 from .units import internal_to_mm
 
@@ -119,6 +120,17 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: #242 keeps building a batch with no `dowel_tie` loop, unchanged (the
 #: SAME graceful "opt-in, else DowelTiePlan.loop stays None" degrade
 #: `build_footing_plan` itself already applies).
+#: #244 (R14): ``perimeter_tie_bar_type``/``perimeter_tie_spacing_mm``/
+#: ``perimeter_tie_quantity``/``perimeter_tie_lap_mm``/
+#: ``perimeter_tie_first_bar_length_mm``/``perimeter_tie_second_bar_
+#: length_mm`` are the SAME direct `perimeter_tie` inputs the single-
+#: footing path now asks for, carried here too so a batch run builds and
+#: places the SAME `perimeter_tie` shape (closed loop or split, R14) for
+#: every footing in the group. Append-only, all default to ``None`` --
+#: every caller that predates #244 keeps building a batch with no
+#: `perimeter_tie` at all, unchanged (the SAME graceful "opt-in, else
+#: FootingPlan.perimeter_tie stays None" degrade `build_footing_plan`
+#: itself already applies).
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
@@ -127,9 +139,14 @@ BatchInputs = namedtuple(
      "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode",
      "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
      "dowel_splice_length_mm", "top_reinforcement", "top_mat_shape_mode",
-     "dowel_tie_hook_type", "dowel_tie_spacing_mm"])
+     "dowel_tie_hook_type", "dowel_tie_spacing_mm",
+     "perimeter_tie_bar_type", "perimeter_tie_spacing_mm",
+     "perimeter_tie_quantity", "perimeter_tie_lap_mm",
+     "perimeter_tie_first_bar_length_mm",
+     "perimeter_tie_second_bar_length_mm"])
 BatchInputs.__new__.__defaults__ = (
-    None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None)
+    None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None,
+    None, None, None, None, None, None)
 
 
 class FootingBatchError(Exception):
@@ -191,10 +208,18 @@ class FootingPlacementResult(object):
     footing's own plan carries no loop (``plan.dowel_ties`` is ``None``
     or its ``loop`` is, the same graceful degrade the single-footing path
     already applies), never ``None``, so a caller can always ``len()``.
+
+    #244 (R14): ``perimeter_ties`` is the LIST of ``Rebar`` elements
+    placed for this footing's own `perimeter_tie` ladder (one per level
+    for a closed loop, two per level for a split) -- empty when this
+    footing's own plan carries no `perimeter_tie` at all, or a split one
+    whose two bar lengths (R5) are not both typed yet, the SAME graceful
+    degrade the single-footing path already applies.
     """
 
     def __init__(self, bars_x, bars_y, dowel_bars, replaced_count, foreign,
-                top_bar_x=None, top_bar_y=None, dowel_ties=None):
+                top_bar_x=None, top_bar_y=None, dowel_ties=None,
+                perimeter_ties=None):
         self.bars_x = bars_x
         self.bars_y = bars_y
         self.dowel_bars = dowel_bars
@@ -203,6 +228,8 @@ class FootingPlacementResult(object):
         self.top_bar_x = top_bar_x
         self.top_bar_y = top_bar_y
         self.dowel_ties = dowel_ties if dowel_ties is not None else []
+        self.perimeter_ties = (
+            perimeter_ties if perimeter_ties is not None else [])
 
 
 class BatchPlacementResult(object):
@@ -312,6 +339,16 @@ def plan_candidates(doc, host_footing, inputs):
         dowel_tie_bend_diameter_mm = bar_type_bend_diameter_mm(
             inputs.dowel_tie_bar_type, internal_to_mm)
 
+    # #244 (R14): the SAME "opt-in, gated on perimeter_tie_bar_type being
+    # supplied" shape every other optional bar-type-derived diameter here
+    # already uses -- every caller that predates #244 (no perimeter_tie_
+    # bar_type) leaves this None, so build_footing_plan builds no
+    # perimeter_tie for this batch, unchanged.
+    perimeter_tie_dia_mm = None
+    if inputs.perimeter_tie_bar_type is not None:
+        perimeter_tie_dia_mm = bar_type_diameter_mm(
+            inputs.perimeter_tie_bar_type, internal_to_mm)
+
     candidates = []
     for element, geometry, column_section in reads:
         footing_inputs = FootingInputs(
@@ -335,7 +372,15 @@ def plan_candidates(doc, host_footing, inputs):
             mesh_bar_y_spacing_mm=inputs.mesh_bar_y_spacing_mm,
             dowel_splice_length_mm=inputs.dowel_splice_length_mm,
             top_reinforcement=inputs.top_reinforcement,
-            top_mat_shape_mode=inputs.top_mat_shape_mode)
+            top_mat_shape_mode=inputs.top_mat_shape_mode,
+            perimeter_tie_dia_mm=perimeter_tie_dia_mm,
+            perimeter_tie_spacing_mm=inputs.perimeter_tie_spacing_mm,
+            perimeter_tie_quantity=inputs.perimeter_tie_quantity,
+            perimeter_tie_lap_mm=inputs.perimeter_tie_lap_mm,
+            perimeter_tie_first_bar_length_mm=
+                inputs.perimeter_tie_first_bar_length_mm,
+            perimeter_tie_second_bar_length_mm=
+                inputs.perimeter_tie_second_bar_length_mm)
         try:
             plan = build_footing_plan(
                 footing_inputs, column_section=column_section,
@@ -378,7 +423,8 @@ def read_existing(doc, batch_plan):
 
 
 def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
-                dowel_tie_bar_type=None, dowel_tie_hook_type=None):
+                dowel_tie_bar_type=None, dowel_tie_hook_type=None,
+                perimeter_tie_bar_type=None, perimeter_tie_hook_type=None):
     """Spec Sec 5: ONE transaction for the whole batch, all-or-nothing.
     If every candidate was excluded, the run refuses as a whole rather
     than opening an empty transaction -- checked before ``Transaction``
@@ -390,6 +436,19 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
     `dowel_tie` loop, unchanged -- each candidate's own loop is placed
     only when BOTH are supplied AND that candidate's own plan carries one
     (``candidate.plan.dowel_ties.loop is not None``).
+
+    #244 (R14): ``perimeter_tie_bar_type``/``perimeter_tie_hook_type``
+    default to ``None`` the same way -- each candidate's own
+    `perimeter_tie` shape is placed only when
+    ``perimeter_tie_bar_type`` is supplied AND that candidate's own plan
+    carries a ladder (``candidate.plan.perimeter_tie.ladder is not
+    None`` -- always true once the plan exists) AND, for a split loop,
+    ``split_bars`` is already built (R5's two bar lengths typed).
+    ``perimeter_tie_hook_type`` is only used for the CLOSED-loop case
+    (``RebarStyle.StirrupTie``); the split, open-bar case needs no hook
+    type at all (see ``rft.revit.footing_perimeter_tie``'s own
+    docstring) -- passed through regardless, since
+    ``place_perimeter_ties`` itself decides whether to use it.
     """
     if not batch_plan.candidates:
         raise FootingBatchError(
@@ -443,10 +502,27 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
                 dowel_ties = place_dowel_ties(
                     doc, candidate.element, candidate.plan.dowel_ties,
                     dowel_tie_bar_type, dowel_tie_hook_type)
+            # #244 (R14): the perimeter_tie shape, same transaction, same
+            # footing host -- only when a bar type was supplied AND this
+            # candidate's own plan carries a perimeter_tie at all (its own
+            # ladder gate; a split loop additionally needs split_bars,
+            # which place_perimeter_ties itself refuses on if missing --
+            # every OTHER candidate in the batch must not be blocked by
+            # one still-unsplit footing, so this is checked per candidate).
+            perimeter_ties = []
+            if (perimeter_tie_bar_type is not None
+                    and candidate.plan.perimeter_tie is not None
+                    and (candidate.plan.perimeter_tie.geometry.splice.
+                         bar_count == 1
+                         or candidate.plan.perimeter_tie.split_bars
+                         is not None)):
+                perimeter_ties = place_perimeter_ties(
+                    doc, candidate.element, candidate.plan.perimeter_tie,
+                    perimeter_tie_bar_type, perimeter_tie_hook_type)
 
             host_id = candidate.element.Id.IntegerValue
             all_rebar = (list(bars_x) + list(bars_y) + list(dowel_bars)
-                        + list(dowel_ties))
+                        + list(dowel_ties) + list(perimeter_ties))
             if top_bar_x is not None:
                 all_rebar.append(top_bar_x)
             if top_bar_y is not None:
@@ -458,7 +534,7 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
                 bars_x=bars_x, bars_y=bars_y, dowel_bars=dowel_bars,
                 replaced_count=len(ours), foreign=foreign,
                 top_bar_x=top_bar_x, top_bar_y=top_bar_y,
-                dowel_ties=dowel_ties)))
+                dowel_ties=dowel_ties, perimeter_ties=perimeter_ties)))
     except Exception:
         transaction.RollBack()
         raise

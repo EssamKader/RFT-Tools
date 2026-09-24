@@ -35,6 +35,7 @@ from .footing_perimeter_tie import (
     perimeter_tie_bar_lengths_mm,
     perimeter_tie_geometry,
     perimeter_tie_ladder_mm,
+    perimeter_tie_split_bar_points_mm,
 )
 from .footing_mesh import (
     MAT_SHAPE_L_ALTERNATING,
@@ -341,10 +342,21 @@ DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm", "loop"])
 #: length_mm`` are supplied AND the loop needed splitting, else ``None``
 #: (an unsplit loop, or a split loop whose two lengths the engineer
 #: hasn't typed yet).
+#: R14 (`docs/footing/spec-amendments.md`), added after #204/R4/R5
+#: merged: ``split_bars`` is a ``footing_perimeter_tie.
+#: PerimeterTieSplitBars`` (``bar1_points``/``bar2_points``, each a tuple
+#: of footing-local plan points) built from THIS plan's own ``geometry``/
+#: ``bar_lengths`` -- present only when the loop needed splitting AND
+#: ``bar_lengths`` itself is already populated (both engineer-typed
+#: lengths supplied); ``None`` otherwise (an unsplit loop, or a split
+#: loop whose two lengths are not typed yet), the same gating
+#: ``bar_lengths`` itself already uses. The placement adapter reads THIS
+#: field rather than calling ``perimeter_tie_split_bar_points_mm``
+#: directly (Sec 4, "one composing module").
 PerimeterTiePlan = namedtuple(
     "PerimeterTiePlan",
     ["geometry", "dia_mm", "spacing_mm", "quantity", "ladder",
-     "bar_lengths"])
+     "bar_lengths", "split_bars"])
 
 #: ``top_mesh`` is ``None`` when ``inputs.top_reinforcement ==
 #: TOP_REINFORCEMENT_BTM_ONLY`` (Sec 7's "BTM only" option -- no top mat
@@ -643,24 +655,42 @@ def _build_perimeter_tie_plan(inputs):
     geometry = perimeter_tie_geometry(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.perimeter_tie_lap_mm)
-    ladder = perimeter_tie_ladder_mm(
-        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
-        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
-        inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
+    # Found in review (PR #245): perimeter_tie_ladder_mm hard-requires
+    # spacing_mm/quantity (Sec 10: no default) and raises a bare
+    # ValueError otherwise -- gate on both being supplied and degrade to
+    # ladder=None, the SAME graceful-optional-piece pattern every other
+    # plan section already uses (bar_x_array/bar_y_array stay None with
+    # no spacing, DowelTiePlan.loop stays None with no bend diameter).
+    # rft.revit.footing_perimeter_tie.place_perimeter_ties already
+    # anticipates and refuses cleanly on ladder is None
+    # (PerimeterTieNotPlaceableError) -- this is the gate that error path
+    # was always meant to be reached through, not a bare core exception.
+    ladder = None
+    if (inputs.perimeter_tie_spacing_mm is not None
+            and inputs.perimeter_tie_quantity is not None):
+        ladder = perimeter_tie_ladder_mm(
+            inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+            inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+            inputs.perimeter_tie_spacing_mm, inputs.perimeter_tie_quantity)
 
     bar_lengths = None
+    split_bars = None
     if (geometry.splice.bar_count == 2
             and inputs.perimeter_tie_first_bar_length_mm is not None
             and inputs.perimeter_tie_second_bar_length_mm is not None):
         bar_lengths = perimeter_tie_bar_lengths_mm(
             geometry.splice, inputs.perimeter_tie_first_bar_length_mm,
             inputs.perimeter_tie_second_bar_length_mm)
+        # R14: the two open bars' own point chains, built from THIS SAME
+        # geometry/bar_lengths -- never re-derived by the placement
+        # adapter (Sec 4, "one composing module").
+        split_bars = perimeter_tie_split_bar_points_mm(geometry, bar_lengths)
 
     return PerimeterTiePlan(
         geometry=geometry, dia_mm=inputs.perimeter_tie_dia_mm,
         spacing_mm=inputs.perimeter_tie_spacing_mm,
         quantity=inputs.perimeter_tie_quantity, ladder=ladder,
-        bar_lengths=bar_lengths)
+        bar_lengths=bar_lengths, split_bars=split_bars)
 
 
 def build_footing_plan(inputs, column_section=None,

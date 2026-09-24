@@ -411,9 +411,69 @@
                                       x:Name="dowel_tie_hook_type_cb"/>
                         </Grid>
 
+                        <TextBlock Style="{StaticResource SectionHeading}"
+                                   Text="Perimeter tie (#204/#244) -- wraps the footing's own plan perimeter, R4/R5/R14"/>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Perimeter tie bar type"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="perimeter_tie_bar_type_cb"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Tie hook type (closed loop only, Stirrup/Tie family)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="perimeter_tie_hook_type_cb"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Tie spacing, mm (Sec 10, no default)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1"
+                                     x:Name="perimeter_tie_spacing_tb" Text="200"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Quantity (Sec 10, no default)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1"
+                                     x:Name="perimeter_tie_quantity_tb" Text="1"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="Lap length Ls, mm (only if split)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1"
+                                     x:Name="perimeter_tie_lap_tb" Text=""/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0"
+                                       Text="Bar 1 length, mm (R5, only if split)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="5" Grid.Column="1"
+                                     x:Name="perimeter_tie_first_bar_length_tb" Text=""/>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0"
+                                       Text="Bar 2 length, mm (R5, only if split)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <TextBox Grid.Row="6" Grid.Column="1"
+                                     x:Name="perimeter_tie_second_bar_length_tb" Text=""/>
+                        </Grid>
+
                         <TextBlock Style="{StaticResource ReadOutSource}"
                                    Margin="0,10,0,0"
-                                   Text="The perimeter-tie bar is not yet wired to placement -- see IsolatedFooting.extension/CONTEXT.md. Nothing is asked for it here."/>
+                                   Text="Leave the perimeter tie's bar type unselected to skip it entirely. A loop over the 12m stock length (R14) splits into two open bars -- Bar 1/Bar 2 lengths must both be given, and must sum to the total (R5), before Place will build them."/>
 
                         <Button x:Name="build_report_btn" Margin="0,12,0,0"
                                 HorizontalAlignment="Left" Padding="12,5,12,5"

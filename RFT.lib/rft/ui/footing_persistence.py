@@ -44,7 +44,11 @@ SETTINGS_SLOT = "IsolatedFootingRFT_inputs"
 # joined TEXT_FIELDS below, per this module's own rule.
 # #242: bumped to 3 -- dowel_tie_spacing_tb joined TEXT_FIELDS and
 # dowel_tie_hook_type joined TYPE_FIELDS below.
-SETTINGS_VERSION = 3
+# #244 (R14): bumped to 4 -- perimeter_tie_spacing_tb/perimeter_tie_
+# quantity_tb/perimeter_tie_lap_tb/perimeter_tie_first_bar_length_tb/
+# perimeter_tie_second_bar_length_tb joined TEXT_FIELDS and
+# perimeter_tie_bar_type joined TYPE_FIELDS below.
+SETTINGS_VERSION = 4
 
 # Free-text inputs (TextBox contents, stored verbatim as typed) -- the
 # window's own parsers (rft.ui.inputs) already turn text into values and
@@ -60,6 +64,11 @@ TEXT_FIELDS = (
     "mesh_bar_x_spacing_tb",
     "mesh_bar_y_spacing_tb",
     "dowel_tie_spacing_tb",
+    "perimeter_tie_spacing_tb",
+    "perimeter_tie_quantity_tb",
+    "perimeter_tie_lap_tb",
+    "perimeter_tie_first_bar_length_tb",
+    "perimeter_tie_second_bar_length_tb",
 )
 
 # No plain-choice ComboBoxes in this window (every picker is a Revit
@@ -77,6 +86,7 @@ TYPE_FIELDS = (
     "dowel_bar_type",
     "dowel_tie_bar_type",
     "dowel_tie_hook_type",
+    "perimeter_tie_bar_type",
 )
 
 # Footing/column-scoped, read from the model every run, never remembered

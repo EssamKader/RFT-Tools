@@ -219,20 +219,61 @@ def dowel_tie_section(plan):
     return ReportSection("Dowel tie (#203/#242)", lines)
 
 
+def perimeter_tie_section(plan):
+    """#244 (R14): the `perimeter_tie` vertical ladder plus its own
+    closed-loop/split shape -- reads ONLY off ``plan.perimeter_tie``,
+    never re-deriving the splice decision or the split geometry (Sec 4,
+    "one composing module")."""
+    perimeter_tie = plan.perimeter_tie
+    geometry = perimeter_tie.geometry
+    ladder = perimeter_tie.ladder
+    lines = [
+        "Diameter = %s, spacing = %s, quantity = %d" % (
+            _mm(perimeter_tie.dia_mm), _mm(perimeter_tie.spacing_mm),
+            perimeter_tie.quantity),
+        "Perimeter length = %s (inner_a=%s, inner_b=%s)" % (
+            _mm(geometry.length_mm), _mm(geometry.inner_a_mm),
+            _mm(geometry.inner_b_mm)),
+        "Starter level at %s above the footing's own bottom face, "
+        "%d level(s) at %s spacing (R4)" % (
+            _mm(ladder.start_z_mm), len(ladder.levels_mm),
+            _mm(ladder.spacing_mm)),
+    ]
+    if geometry.splice.bar_count == 1:
+        lines.append(
+            "One continuous closed loop per level (%s, at or under the "
+            "12m stock length)." % _mm(geometry.splice.total_length_mm))
+    else:
+        lines.append(
+            "Splits into TWO bars per level (R14) -- total steel %s "
+            "(%s length + %s lap)." % (
+                _mm(geometry.splice.total_length_mm),
+                _mm(geometry.length_mm), _mm(geometry.splice.lap_mm)))
+        if perimeter_tie.bar_lengths is not None:
+            lines.append(
+                "Bar 1 = %s, Bar 2 = %s (engineer-typed, R5)." % (
+                    _mm(perimeter_tie.bar_lengths.first_bar_length_mm),
+                    _mm(perimeter_tie.bar_lengths.second_bar_length_mm)))
+        else:
+            lines.append(
+                "Bar 1/Bar 2 individual cut lengths not typed yet (R5) -- "
+                "nothing will be placed until both are given.")
+    return ReportSection("Perimeter tie (#204/#244, R4/R5/R14)", lines)
+
+
 def not_yet_placed_section():
     """R6-R10, #198-#228, #229 and #232 built and placed the bottom mesh
     (now with its real hook shape AND, when spacing is given, its full
     array -- R11) and the dowel array; #233 (R13) does the same for the
     top mat (one representative bar per direction, no array yet); #242
-    does the same for the `dowel_tie` closed loop. The perimeter_tie bar
-    (#204) still has core math but no Revit placement adapter
-    (`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
-    stated here rather than exposed as an input this window cannot act
-    on."""
+    does the same for the `dowel_tie` closed loop; #244 does the same for
+    `perimeter_tie` (closed loop or split, R14). Nothing in this tool's own
+    scope remains unplaced as of #244 -- kept as an explicit empty-line
+    section rather than removed outright, so a reviewer scanning past
+    reports for this heading finds it still there, now saying so."""
     lines = [
-        "The perimeter-tie bar is not yet wired to placement -- see "
-        "IsolatedFooting.extension/CONTEXT.md. This window does not ask "
-        "for its inputs, since there is nothing yet for it to place.",
+        "Every named element of this footing (bottom/top mesh, dowels, "
+        "dowel_tie, perimeter_tie) now has a placement adapter (#244).",
     ]
     return ReportSection("Not yet placed by this tool", lines)
 

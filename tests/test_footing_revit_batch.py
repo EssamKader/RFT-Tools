@@ -376,6 +376,34 @@ def test_plan_candidates_threads_the_shared_top_reinforcement_choice(
     assert plan.top_mesh is not None
 
 
+def test_plan_candidates_threads_the_shared_perimeter_tie_inputs(
+        monkeypatch):
+    """#244 (R14): ``BatchInputs.perimeter_tie_bar_type``/``_spacing_mm``/
+    ``_quantity`` must reach every candidate's own ``FootingInputs`` --
+    never silently dropped back to no `perimeter_tie` for a batch run."""
+    symbol = FakeFamilySymbol(
+        "1800 x 1200 x 450mm", family_name="M_Footing-Rectangular")
+    ftg_a = _FakeFootingElement(1, symbol=symbol)
+    FakeFilteredElementCollector._ITEMS = [ftg_a]
+    _install_reads(
+        monkeypatch,
+        column_by_footing_id={1: _column_for(1, symbol)},
+        section_by_footing_id={1: _column_section()},
+        geometry_by_footing_id={1: _geometry()})
+
+    shared_inputs = _shared_inputs()._replace(
+        perimeter_tie_bar_type=FakeRebarBarType(bar_nominal_diameter=mm(10.0)),
+        perimeter_tie_spacing_mm=50.0, perimeter_tie_quantity=1)
+    result = plan_candidates(FakeDocument({}), ftg_a, shared_inputs)
+
+    assert len(result.candidates) == 1
+    plan = result.candidates[0].plan
+    assert plan.perimeter_tie is not None
+    assert plan.perimeter_tie.dia_mm == pytest.approx(10.0)
+    assert plan.perimeter_tie.spacing_mm == pytest.approx(50.0)
+    assert plan.perimeter_tie.quantity == 1
+
+
 def test_plan_candidates_excludes_a_find_column_above_refusal_before_planning(
         monkeypatch):
     symbol = FakeFamilySymbol(
@@ -549,6 +577,56 @@ def test_apply_batch_places_the_top_mesh_when_the_plan_carries_one():
     assert results_by_id[502].top_bar_y is None
     assert results_by_id[501].top_bar_x.LookupParameter(
         "Partition").AsString() == partition_tag(501)
+
+
+def _plan_with_perimeter_tie(cw_mm=300.0, cd_mm=600.0, ccover_mm=40.0):
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=1500.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, dowel_bar_dia_mm=25.0, dowel_ld_multiplier=20.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=3, dowel_count_h_face=3,
+        perimeter_tie_dia_mm=10.0, perimeter_tie_spacing_mm=200.0,
+        perimeter_tie_quantity=2)
+    return build_footing_plan(
+        inputs, column_section=_column_section(cw_mm, cd_mm, ccover_mm))
+
+
+def _candidate_with_perimeter_tie(element_id, cw_mm=300.0):
+    element = _FakeFootingElement(element_id)
+    element._box = FakeBoundingBox(
+        FakeXYZ(0.0, 0.0, 0.0),
+        FakeXYZ(mm(1800.0), mm(1200.0), mm(1500.0)))
+    return FootingCandidate(
+        element=element, geometry=_geometry(footing_thickness_mm=1500.0),
+        column_section=_column_section(cw_mm=cw_mm),
+        plan=_plan_with_perimeter_tie(cw_mm=cw_mm))
+
+
+def test_apply_batch_places_the_perimeter_tie_when_the_plan_carries_one():
+    """#244 (R14): a candidate whose own plan carries a `perimeter_tie`
+    gets its own closed-loop shape placed inside the SAME transaction,
+    tagged like every other bar this run places -- a candidate with no
+    `perimeter_tie` places none, unchanged."""
+    doc = FakeDocument({})
+    with_tie = _candidate_with_perimeter_tie(601)
+    without_tie = _candidate(602)
+    batch = BatchPlan(groups=[], exclusions=[],
+                      candidates=[with_tie, without_tie])
+    read_existing(doc, batch)
+
+    result = apply_batch(
+        doc, batch, object(), object(), object(),
+        perimeter_tie_bar_type=object(),
+        perimeter_tie_hook_type=object())
+
+    results_by_id = dict(result.per_footing)
+    assert len(results_by_id[601].perimeter_ties) == (
+        len(with_tie.plan.perimeter_tie.ladder.levels_mm))
+    assert results_by_id[602].perimeter_ties == []
+    assert results_by_id[601].perimeter_ties[0].LookupParameter(
+        "Partition").AsString() == partition_tag(601)
 
 
 def test_apply_batch_refuses_when_read_existing_was_never_run():
