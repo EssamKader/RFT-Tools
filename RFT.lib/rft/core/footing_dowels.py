@@ -9,11 +9,31 @@ millimetres (REUSE_GUIDELINES.md Sec 1, "Strict Core/Adapter Split").
 from the SAME ``FootingInputs.mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm``
 fields #198's mesh geometry already carries -- never hardcoded, never
 re-derived independently here (this ticket's own instruction).
+
+R10 (docs/footing/spec-amendments.md, found by Essam on a live-model
+screenshot): a dowel's hook must bend OUTWARD from the column's own
+centroid, never toward it -- a face bar straight out perpendicular to
+its face, a corner bar along the 45-degree diagonal, the same
+"outward-from-centroid" reasoning ``rft.core.column_ties.
+_outward_bisector`` already uses for triangular ties (read as a pattern,
+not imported -- that function solves the harder three-arbitrary-points
+case; a rectangle's own faces are axis-aligned, so the direction is
+derived directly from each bar's own ``(u, v)`` against the column's own
+``half_u``/``half_v``, not via a bisector construction).
 """
 
+import math
 from collections import namedtuple
 
 from .footing_mesh import BarEndpoints, LocalPoint
+
+#: How close a bar's own coordinate must sit to a face's half-dimension
+#: to count as "on that face" for :func:`dowel_outward_direction` -- the
+#: two values are computed by the exact same deterministic arithmetic
+#: (``column_layout.perimeter_bar_positions``' own ``half_u``/``half_v``,
+#: recomputed here from the same inputs), so this only absorbs floating-
+#: point noise, never a genuine ambiguity.
+_FACE_TOLERANCE_MM = 1.0e-6
 
 #: Sec 8's default b_dowel before any LD-driven hook upgrade.
 DEFAULT_B_DOWEL_MM = 200.0
@@ -93,10 +113,13 @@ def dowel_embedment(footing_thickness_mm, bottom_cover_mm,
     return DowelEmbedment(a_dowel_mm=a_mm, b_dowel_mm=b_mm, ld_mm=ld_mm)
 
 
-def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
-                              mesh_bar_y_dia_mm):
-    """The dowel bar's footing-local centreline geometry (mm), centred on
-    the footing's own plan centroid.
+def positioned_dowel_bar_geometry(embedment, bottom_cover_mm,
+                                  mesh_bar_x_dia_mm, mesh_bar_y_dia_mm,
+                                  u_mm, v_mm, direction_u, direction_v):
+    """The dowel bar's footing-local centreline geometry (mm), at real
+    footing-local position ``(u_mm, v_mm)``, with the hook bending along
+    ``(direction_u, direction_v)`` -- a unit vector, R10's own per-bar
+    outward direction (:func:`dowel_outward_direction`).
 
     Spec Ref: Sec 8 -- "hooked horizontally at the bottom, resting on top
     of the bottom mesh". The bend corner sits at the SAME elevation
@@ -107,54 +130,73 @@ def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
     (already in ``FootingInputs``) are needed, matching how ``a_dowel``
     itself is computed from the same fields.
 
-    Placement direction (which horizontal axis the hook leg runs along)
-    is NOT stated anywhere in Sec 8 -- the spec names only the two
-    lengths, not a plan direction for the hook. This picks +X arbitrarily
-    and documents it as an engineering placement choice, the same way
-    #201's top-mat elevation formula was flagged rather than silently
-    assumed to be settled: **flag to Essam before this runs against a
-    live host** if a specific hook direction (e.g. toward the column's
-    own Primary Reinforcement direction) is intended instead.
+    Only the PLAN position and hook direction vary between bars; ``z_mm``
+    (the bend-corner/top elevation) and every embedment length are the
+    same for every bar in the array (#222 Sec 3 Story 3: "this story
+    changes WHERE dowels are and HOW MANY there are, not how any single
+    dowel's own vertical geometry is sized").
     """
     bend_z_mm = bottom_cover_mm + mesh_bar_x_dia_mm + mesh_bar_y_dia_mm
-    bend = LocalPoint(0.0, 0.0, bend_z_mm)
-    hook_far_end = LocalPoint(embedment.b_dowel_mm, 0.0, bend_z_mm)
-    top = LocalPoint(0.0, 0.0, bend_z_mm + embedment.a_dowel_mm)
+    bend = LocalPoint(u_mm, v_mm, bend_z_mm)
+    hook_far_end = LocalPoint(
+        u_mm + direction_u * embedment.b_dowel_mm,
+        v_mm + direction_v * embedment.b_dowel_mm,
+        bend_z_mm)
+    top = LocalPoint(u_mm, v_mm, bend_z_mm + embedment.a_dowel_mm)
 
     bottom_hook = BarEndpoints(start=hook_far_end, end=bend)
     vertical = BarEndpoints(start=bend, end=top)
     return DowelBarGeometry(bottom_hook=bottom_hook, vertical=vertical)
 
 
-def translate_dowel_bar_geometry(geometry, u_mm=0.0, v_mm=0.0):
-    """Shift a ``DowelBarGeometry`` (built by :func:`local_dowel_bar_geometry`
-    at the footing's own plan centroid, ``x_mm == y_mm == 0``) sideways to a
-    real footing-local ``(u, v)`` dowel position.
+def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
+                              mesh_bar_y_dia_mm):
+    """The single-representative-bar shape #202 always built, centred on
+    the footing's own plan centroid -- unchanged output, now a thin call
+    into :func:`positioned_dowel_bar_geometry` at the origin with the
+    legacy ``+X`` hook direction.
 
-    #222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): "this story
-    changes WHERE dowels are and HOW MANY there are, not how any single
-    dowel's own vertical geometry is sized." Only the plan (x/y) coordinates
-    move; ``z_mm`` (the bend-corner/top elevation :func:`local_dowel_bar_
-    geometry` already computed) and every embedment length are untouched,
-    so this is a translation, never a re-sizing.
-
-    This module owns ``DowelBarGeometry``'s own field structure, so it is
-    the one place that reaches into ``bottom_hook``/``vertical`` -- callers
-    (``rft.core.footing_plan``) only ever assemble the result into a plan,
-    never touch the namedtuple's own fields directly (found in review,
-    PR #225).
-
-    Defaults to a no-op shift (``u_mm=v_mm=0.0``) so the single
-    representative bar #202 always built can be produced by the same call
-    shape a real array position uses.
+    This fallback path (no live column/array inputs supplied, #202's own
+    tracer-bullet scope) has no column shape to be "outward" relative to
+    -- there is no real perimeter, so R10's per-bar direction rule does
+    not apply here, and the original, already-tested `+X` direction is
+    kept exactly as before.
     """
-    def _shift(point):
-        return LocalPoint(point.x_mm + u_mm, point.y_mm + v_mm, point.z_mm)
+    return positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm, mesh_bar_x_dia_mm, mesh_bar_y_dia_mm,
+        u_mm=0.0, v_mm=0.0, direction_u=1.0, direction_v=0.0)
 
-    return DowelBarGeometry(
-        bottom_hook=BarEndpoints(
-            start=_shift(geometry.bottom_hook.start),
-            end=_shift(geometry.bottom_hook.end)),
-        vertical=BarEndpoints(
-            start=_shift(geometry.vertical.start),
-            end=_shift(geometry.vertical.end)))
+
+def dowel_outward_direction(u_mm, v_mm, half_u_mm, half_v_mm, is_corner):
+    """R10's own rule, as a unit ``(direction_u, direction_v)``:
+
+    - **Corner bar** (``is_corner``): the 45-degree diagonal away from the
+      centroid -- ``normalize(sign(u), sign(v))``.
+    - **Face bar**: straight outward, perpendicular to whichever face its
+      own coordinate sits at (``|v| == half_v`` -> the top/bottom face,
+      direction along v only; ``|u| == half_u`` -> the left/right face,
+      direction along u only). Exactly one of the two is true for a
+      genuine face-interior bar -- the definition of "not a corner".
+
+    ``half_u_mm``/``half_v_mm`` are the BAR's own half-dimensions
+    (``Cw_mm/2 - offset``/``Cd_mm/2 - offset``, the same ``half_u``/
+    ``half_v`` ``column_layout.perimeter_bar_positions`` computes
+    internally) -- recomputed by the caller from ``PerimeterLayout.
+    bar_offset_mm`` and the column's own ``Cw_mm``/``Cd_mm``, never
+    guessed, since ``perimeter_bar_positions`` does not return them
+    directly (only the TIE's own, different, half-dimensions).
+    """
+    if is_corner:
+        sign_u = 1.0 if u_mm >= 0.0 else -1.0
+        sign_v = 1.0 if v_mm >= 0.0 else -1.0
+        length = math.sqrt(2.0)
+        return sign_u / length, sign_v / length
+    if abs(abs(v_mm) - half_v_mm) <= _FACE_TOLERANCE_MM:
+        return 0.0, (1.0 if v_mm >= 0.0 else -1.0)
+    if abs(abs(u_mm) - half_u_mm) <= _FACE_TOLERANCE_MM:
+        return (1.0 if u_mm >= 0.0 else -1.0), 0.0
+    raise ValueError(
+        "Bar at (u=%.6f, v=%.6f) is not a corner and sits at neither face "
+        "(half_u=%.6f, half_v=%.6f) -- this is not a valid perimeter_bar_"
+        "positions output; the outward direction cannot be determined."
+        % (u_mm, v_mm, half_u_mm, half_v_mm))

@@ -5,6 +5,7 @@ module BEFORE the second consumer exists").
 """
 
 import io
+import math
 import os
 
 import pytest
@@ -300,15 +301,60 @@ def _array_inputs():
     return inputs, column_section
 
 
-def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
-    """#222 (specs/isolated-footing-dowel-array.md Sec 3 Story 3): every
-    ``DowelArrayPlan.bars`` entry must be the representative bar's own
-    bent-bar geometry translated to that bar's own ``perimeter_bar_
-    positions`` ``(u, v)`` -- the footing-specific translation wiring this
-    ticket adds. Corner de-duplication/count is ``perimeter_bar_
-    positions``' OWN behaviour, already proven by
-    ``tests/test_column_layout.py::test_the_four_corner_bars_appear_ONCE_each``
-    -- not re-derived here (Essam's own Test volume rule)."""
+def _independent_outward_direction(u_mm, v_mm, half_u_mm, half_v_mm,
+                                   is_corner):
+    """R10's rule, restated independently of ``rft.core.footing_dowels.
+    dowel_outward_direction`` -- comparing the geometry the plan actually
+    built against THIS, not against the production function's own output,
+    so the test cannot pass merely because a defect in that function
+    agrees with itself."""
+    if is_corner:
+        sign_u = 1.0 if u_mm >= 0.0 else -1.0
+        sign_v = 1.0 if v_mm >= 0.0 else -1.0
+        return sign_u / math.sqrt(2.0), sign_v / math.sqrt(2.0)
+    if abs(abs(v_mm) - half_v_mm) < 1.0e-6:
+        return 0.0, (1.0 if v_mm >= 0.0 else -1.0)
+    assert abs(abs(u_mm) - half_u_mm) < 1.0e-6
+    return (1.0 if u_mm >= 0.0 else -1.0), 0.0
+
+
+def _assert_bar_positioned_and_bent_outward(
+        expected_bar, actual_geometry, representative, half_u_mm,
+        half_v_mm, hook_length_mm):
+    """Position (vertical leg + bend corner) at the bar's own (u, v);
+    hook bent OUTWARD per R10 (docs/footing/spec-amendments.md), not
+    translated from the representative's own fixed +X direction."""
+    assert actual_geometry.vertical.end.x_mm == pytest.approx(
+        representative.vertical.end.x_mm + expected_bar.u_mm)
+    assert actual_geometry.vertical.end.y_mm == pytest.approx(
+        representative.vertical.end.y_mm + expected_bar.v_mm)
+    assert actual_geometry.vertical.end.z_mm == pytest.approx(
+        representative.vertical.end.z_mm)
+    # The bend corner (vertical.start == bottom_hook.end) sits at the
+    # bar's own (u, v) regardless of hook direction.
+    assert actual_geometry.bottom_hook.end.x_mm == pytest.approx(
+        expected_bar.u_mm)
+    assert actual_geometry.bottom_hook.end.y_mm == pytest.approx(
+        expected_bar.v_mm)
+
+    direction_u, direction_v = _independent_outward_direction(
+        expected_bar.u_mm, expected_bar.v_mm, half_u_mm, half_v_mm,
+        expected_bar.is_corner)
+    assert actual_geometry.bottom_hook.start.x_mm == pytest.approx(
+        expected_bar.u_mm + direction_u * hook_length_mm)
+    assert actual_geometry.bottom_hook.start.y_mm == pytest.approx(
+        expected_bar.v_mm + direction_v * hook_length_mm)
+
+
+def test_supplying_the_full_dowel_array_inputs_positions_and_bends_every_bar_outward():
+    """#222 (Sec 3 Story 3) positions every bar at its own ``(u, v)``; R10
+    (docs/footing/spec-amendments.md) bends each bar's own hook OUTWARD
+    from the column centroid, not along the representative's own fixed
+    +X. Corner de-duplication/count is ``perimeter_bar_positions``' OWN
+    behaviour, already proven by ``tests/test_column_layout.py::
+    test_the_four_corner_bars_appear_ONCE_each`` -- not re-derived here
+    (Essam's own Test volume rule). This fixture (2x2-per-face) has ONLY
+    corner bars -- see the next test for a face-interior bar."""
     inputs, column_section = _array_inputs()
     plan = build_footing_plan(inputs, column_section=column_section)
 
@@ -327,6 +373,7 @@ def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
     # even if a future fixture change silently broke the real count.
     assert len(plan.dowel.bars) == 4
     assert len(plan.dowel.bars) == len(expected_layout.bars)
+    assert all(bar.is_corner for bar in expected_layout.bars)
 
     expected_embedment = dowel_embedment(
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
@@ -335,19 +382,60 @@ def test_supplying_the_full_dowel_array_inputs_positions_every_bar():
     representative = local_dowel_bar_geometry(
         expected_embedment, inputs.bottom_cover_mm,
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+    half_u_mm = column_section.Cw_mm / 2.0 - expected_layout.bar_offset_mm
+    half_v_mm = column_section.Cd_mm / 2.0 - expected_layout.bar_offset_mm
 
     for expected_bar, actual_geometry in zip(expected_layout.bars,
                                               plan.dowel.bars):
-        assert actual_geometry.vertical.end.x_mm == pytest.approx(
-            representative.vertical.end.x_mm + expected_bar.u_mm)
-        assert actual_geometry.vertical.end.y_mm == pytest.approx(
-            representative.vertical.end.y_mm + expected_bar.v_mm)
-        assert actual_geometry.vertical.end.z_mm == pytest.approx(
-            representative.vertical.end.z_mm)
-        assert actual_geometry.bottom_hook.start.x_mm == pytest.approx(
-            representative.bottom_hook.start.x_mm + expected_bar.u_mm)
-        assert actual_geometry.bottom_hook.start.y_mm == pytest.approx(
-            representative.bottom_hook.start.y_mm + expected_bar.v_mm)
+        _assert_bar_positioned_and_bent_outward(
+            expected_bar, actual_geometry, representative, half_u_mm,
+            half_v_mm, expected_embedment.b_dowel_mm)
+
+
+def test_a_face_interior_bar_bends_straight_outward_not_diagonally():
+    """R10's other half: a bar in the MIDDLE of a face (not a corner)
+    bends perpendicular to that face, never at the corner's 45 degrees.
+    ``count_b_face=3`` puts one bar at the midpoint of each b-face, in
+    addition to the 4 shared corners."""
+    inputs, column_section = _array_inputs()
+    inputs = inputs._replace(dowel_count_b_face=3)
+    plan = build_footing_plan(inputs, column_section=column_section)
+
+    expected_layout = perimeter_bar_positions(
+        b_mm=column_section.Cw_mm, h_mm=column_section.Cd_mm,
+        cover_mm=column_section.Ccover_mm,
+        tie_dia_mm=inputs.dowel_tie_dia_mm,
+        bar_dia_mm=inputs.dowel_bar_dia_mm,
+        count_b_face=inputs.dowel_count_b_face,
+        count_h_face=inputs.dowel_count_h_face)
+    face_bars = [bar for bar in expected_layout.bars if not bar.is_corner]
+    assert len(face_bars) == 2  # one per b-face (bottom, top)
+
+    expected_embedment = dowel_embedment(
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
+    representative = local_dowel_bar_geometry(
+        expected_embedment, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+    half_u_mm = column_section.Cw_mm / 2.0 - expected_layout.bar_offset_mm
+    half_v_mm = column_section.Cd_mm / 2.0 - expected_layout.bar_offset_mm
+
+    for expected_bar, actual_geometry in zip(expected_layout.bars,
+                                              plan.dowel.bars):
+        _assert_bar_positioned_and_bent_outward(
+            expected_bar, actual_geometry, representative, half_u_mm,
+            half_v_mm, expected_embedment.b_dowel_mm)
+
+    # The direct statement, on the two face-interior bars specifically:
+    # the hook's own u-component is EXACTLY zero (straight along v, not
+    # diagonal) -- a 45-degree hook here would be the corner-bar bug this
+    # ticket exists to prevent.
+    for bar in face_bars:
+        geometry = plan.dowel.bars[bar.index]
+        hook_dx = (geometry.bottom_hook.start.x_mm
+                  - geometry.bottom_hook.end.x_mm)
+        assert hook_dx == pytest.approx(0.0, abs=1e-9)
 
 
 @pytest.mark.parametrize("missing_field", [

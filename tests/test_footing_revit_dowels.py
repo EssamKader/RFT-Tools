@@ -218,6 +218,31 @@ def test_the_array_bars_are_NOT_all_at_the_same_position(footing, array_plan):
     assert len(tops) == len(bars)
 
 
+def test_norm_varies_per_bar_and_stays_perpendicular_to_its_own_hook(
+        footing, array_plan):
+    """R10 (docs/footing/spec-amendments.md): each bar's own hook
+    direction now differs (a face bar bends along one plan axis, a
+    corner bar along the 45-degree diagonal), so the ``norm``
+    ``Rebar.CreateFromCurves`` needs must differ per bar too -- the old
+    single fixed ``XYZ.BasisY`` every bar in the array used to share is
+    gone. For EVERY bar, ``norm`` must still be perpendicular to THAT
+    bar's own hook vector (column_place_bars.py's #183 measurement,
+    applied per bar)."""
+    bars = place_dowel_bars(
+        object(), footing, array_plan, _FakeBarType("25M"))
+    norms = set()
+    for bar, geometry in zip(bars, array_plan.bars):
+        norm = bar.args[6]
+        norms.add((round(norm.X, 6), round(norm.Y, 6), round(norm.Z, 6)))
+        hook = geometry.bottom_hook
+        hook_dx = hook.start.x_mm - hook.end.x_mm
+        hook_dy = hook.start.y_mm - hook.end.y_mm
+        dot = norm.X * hook_dx + norm.Y * hook_dy
+        assert dot == pytest.approx(0.0, abs=1e-6)
+        assert norm.Z == pytest.approx(0.0)
+    assert len(norms) > 1
+
+
 def test_a_mid_loop_failure_propagates_and_places_nothing_further(
         monkeypatch, footing, array_plan):
     """This function opens no transaction of its own (module docstring) --

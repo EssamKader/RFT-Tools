@@ -135,33 +135,31 @@ curves: the horizontal hook leg, then the vertical leg) -- the same
 tracer-bullet-vertical-slice precedent #198 set for the mesh bars, not
 yet an array or a stirrup/tie.
 
-**Placement direction left unspecified by the spec, flagged rather than
-guessed:** Sec 8 names only the dowel's two leg LENGTHS, never which plan
-axis/direction the horizontal hook leg runs along.
-`local_dowel_bar_geometry` places it along local +X arbitrarily -- this
-is an engineering placement choice this code is proposing, not one the
-spec states, the same category of gap #201's own top-mat-elevation note
-already flagged. Confirm the intended hook direction (e.g. toward the
-column's own Primary Reinforcement direction) with Essam before this runs
-against a live host.
+**Resolved by R10 (docs/footing/spec-amendments.md), 2026-09-24 --
+Essam, from a live-model screenshot:** Sec 8 names only the dowel's two
+leg LENGTHS, never a plan direction for the hook, so `local_dowel_bar_
+geometry` originally placed every bar's hook along a single fixed local
++X -- flagged in this file's own earlier text as an unconfirmed
+placement choice, then found visibly wrong once a real array existed
+(#222 widened it from one bar to the whole array, since every bar shared
+the SAME fixed direction regardless of which face it sat on -- a bar on
+the LEFT face bent back into the column instead of away from it).
 
-**#222 widened this open question's blast radius from one bar to the
-whole array, found in review (PR #225):** `rft.core.footing_dowels.
-translate_dowel_bar_geometry` only SHIFTS `(u, v)` -- it never rotates --
-so every dowel in a real `DowelArrayPlan.bars` array keeps the exact same
-+X hook direction the single representative bar above has. Before #222
-this was one unconfirmed choice affecting one bar; now it is the SAME
-single unconfirmed direction applied to every bar on all four column
-faces at once. Concretely: a bar on the LEFT face's hook still points
-+X (back across the column, not outward), and bars on the top/bottom
-faces have their hook leg running tangential to their own face rather
-than radially outward from the column. This is still translate-only by
-design (#222's own scope, per specs/isolated-footing-dowel-array.md Sec 3
-Story 3 -- "changes WHERE dowels are ... not how any single dowel's own
-vertical geometry is sized"), so no rotation was added here; whoever
-confirms the hook direction with Essam needs to know it is now a
-per-face-inconsistent question across the whole array, not a single
-placement choice on one bar.
+**The rule:** a dowel's hook bends OUTWARD from the column centroid, per
+bar position -- a face bar straight out perpendicular to its own face, a
+corner bar along the 45-degree diagonal bisecting the two faces meeting
+there. `rft.core.footing_dowels.translate_dowel_bar_geometry` (shift-
+only, no rotation) is REMOVED -- replaced by `positioned_dowel_bar_
+geometry` (builds each bar directly at its own position AND direction)
+plus `dowel_outward_direction` (the rule itself, pure). `local_dowel_bar_
+geometry` (the single-representative-bar fallback, no live column/array
+inputs) is unchanged, now a thin call into the new function at the
+origin with the legacy `+X` direction. The Revit adapter's own `norm`
+argument (`rft.revit.footing_dowels._create_dowel_rebar`) is derived per
+bar too (a 90-degree in-plane rotation of that bar's own hook vector),
+since a fixed `XYZ.BasisY` was only ever correct for the old fixed +X
+case. See `docs/footing/reuse-audit.md` §10 and
+`docs/footing/verification/issue-222-real-dowel-array-inside-column.md`.
 
 **Combining two already-proven facts into one NOT-yet-proven live
 combination:** `place_dowel_bar` passes TWO connected curves to a single

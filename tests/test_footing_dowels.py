@@ -10,13 +10,17 @@ operator (+ for -, a swapped term, a flipped comparison) changes the
 expected result and the test fails.
 """
 
+import math
+
 import pytest
 
 from rft.core.footing_dowels import (
     DEFAULT_B_DOWEL_MM,
     a_dowel,
     dowel_embedment,
+    dowel_outward_direction,
     local_dowel_bar_geometry,
+    positioned_dowel_bar_geometry,
 )
 
 
@@ -170,3 +174,126 @@ def test_local_dowel_bar_geometry_is_centred_on_the_footing_plan_centroid():
     assert geometry.vertical.end.x_mm == pytest.approx(0.0)
     assert geometry.vertical.end.y_mm == pytest.approx(0.0)
     assert geometry.bottom_hook.end.x_mm == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------- #
+# R10 (docs/footing/spec-amendments.md) -- dowel_outward_direction:
+# corner bars bend 45 degrees diagonal, face bars bend straight out
+# perpendicular to their own face, never toward the column centroid.
+
+HALF_U_MM, HALF_V_MM = 150.0, 300.0
+
+
+def test_a_corner_bar_bends_along_the_45_degree_diagonal():
+    direction_u, direction_v = dowel_outward_direction(
+        HALF_U_MM, HALF_V_MM, HALF_U_MM, HALF_V_MM, is_corner=True)
+    assert direction_u == pytest.approx(1.0 / math.sqrt(2.0))
+    assert direction_v == pytest.approx(1.0 / math.sqrt(2.0))
+    # A unit vector -- CreateFromCurves' norm argument, like every other
+    # direction this module hands to the Revit adapter.
+    assert math.hypot(direction_u, direction_v) == pytest.approx(1.0)
+
+
+def test_all_four_corners_bend_outward_never_toward_the_centroid():
+    """The direct statement of R10's own finding: every corner's hook
+    direction must point AWAY from (0, 0), the column centroid -- a dot
+    product with the corner's own position must be positive."""
+    for sign_u in (-1.0, 1.0):
+        for sign_v in (-1.0, 1.0):
+            u_mm, v_mm = sign_u * HALF_U_MM, sign_v * HALF_V_MM
+            direction_u, direction_v = dowel_outward_direction(
+                u_mm, v_mm, HALF_U_MM, HALF_V_MM, is_corner=True)
+            dot_with_position = (direction_u * u_mm) + (direction_v * v_mm)
+            assert dot_with_position > 0.0
+
+
+def test_a_bottom_face_bar_bends_straight_down_v_not_diagonally():
+    """v = -half_v (the bottom face), u strictly interior -- must bend
+    along (0, -1) ONLY, never picking up a u-component the way a corner
+    bar's 45-degree diagonal would."""
+    direction_u, direction_v = dowel_outward_direction(
+        0.0, -HALF_V_MM, HALF_U_MM, HALF_V_MM, is_corner=False)
+    assert direction_u == pytest.approx(0.0)
+    assert direction_v == pytest.approx(-1.0)
+
+
+def test_a_right_face_bar_bends_straight_out_u_not_toward_the_column():
+    """u = +half_u (the right face), v strictly interior -- the bug R10
+    fixes: the OLD fixed +X direction happened to be correct for THIS
+    one face by coincidence; every other face needs its own direction."""
+    direction_u, direction_v = dowel_outward_direction(
+        HALF_U_MM, 0.0, HALF_U_MM, HALF_V_MM, is_corner=False)
+    assert direction_u == pytest.approx(1.0)
+    assert direction_v == pytest.approx(0.0)
+
+
+def test_a_left_face_bar_bends_away_from_the_column_not_into_it():
+    """The exact scenario Essam's screenshot showed wrong: a bar on the
+    LEFT face (u = -half_u) must bend further NEGATIVE (away), not
+    toward +u (back into the column's own core)."""
+    direction_u, direction_v = dowel_outward_direction(
+        -HALF_U_MM, 0.0, HALF_U_MM, HALF_V_MM, is_corner=False)
+    assert direction_u == pytest.approx(-1.0)
+    assert direction_v == pytest.approx(0.0)
+
+
+def test_a_position_matching_neither_face_nor_corner_refuses():
+    """A defensive guard, not a reachable production path -- a bar this
+    module is handed must always be a genuine perimeter_bar_positions
+    output (on a face or a corner); anything else is refused rather than
+    given an arbitrary direction."""
+    with pytest.raises(ValueError):
+        dowel_outward_direction(10.0, 10.0, HALF_U_MM, HALF_V_MM,
+                                is_corner=False)
+
+
+def test_positioned_dowel_bar_geometry_places_the_bend_at_u_v():
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=92.0, v_mm=-242.0,
+        direction_u=0.0, direction_v=-1.0)
+
+    assert geometry.vertical.start.x_mm == pytest.approx(92.0)
+    assert geometry.vertical.start.y_mm == pytest.approx(-242.0)
+    assert geometry.vertical.end.x_mm == pytest.approx(92.0)
+    assert geometry.vertical.end.y_mm == pytest.approx(-242.0)
+    assert geometry.bottom_hook.end.x_mm == pytest.approx(92.0)
+    assert geometry.bottom_hook.end.y_mm == pytest.approx(-242.0)
+
+
+def test_positioned_dowel_bar_geometry_bends_the_hook_along_direction():
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=92.0, v_mm=-242.0,
+        direction_u=0.0, direction_v=-1.0)
+
+    assert geometry.bottom_hook.start.x_mm == pytest.approx(92.0)
+    assert geometry.bottom_hook.start.y_mm == pytest.approx(
+        -242.0 - embedment.b_dowel_mm)
+
+
+def test_local_dowel_bar_geometry_matches_positioned_at_origin_legacy_direction():
+    """local_dowel_bar_geometry is now a thin call into
+    positioned_dowel_bar_geometry -- pinned equal, so a future edit to
+    either cannot silently drift the fallback single-bar shape #202's own
+    tests already trust."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    via_legacy = local_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0)
+    via_positioned = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=0.0, v_mm=0.0,
+        direction_u=1.0, direction_v=0.0)
+    assert via_legacy == via_positioned

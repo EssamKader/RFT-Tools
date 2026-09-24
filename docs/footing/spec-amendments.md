@@ -359,3 +359,73 @@ geometry_mm`/`read_dowel_column_section_mm` call site changes — #226's
 own new `rft.core.footing_batch.group_key` is the only new consumer of
 both return values together, and it only reads their fields, never
 recomputes them.
+
+---
+
+## R10 — Dowel hook direction: outward from the column centroid, per bar position, never a fixed axis
+
+**Spec Ref:** `rft.core.footing_dowels.local_dowel_bar_geometry`'s own
+docstring, "Placement direction... is NOT stated anywhere in Sec 8...
+This picks +X arbitrarily and documents it as an engineering placement
+choice... **flag to Essam before this runs against a live host** if a
+specific hook direction... is intended instead" — the flag this ruling
+resolves.
+
+**Found by Essam, visual inspection (2026-09-24):** with every dowel's
+hook bent along the SAME fixed +X direction (#222's own implementation,
+inherited unchanged by #223/#226), a dowel positioned on the side of the
+array away from +X had its hook bend back TOWARD the column's own core
+instead of away from it — visibly wrong in a live model screenshot (the
+leftmost of three dowel bars shown bending right, into the column,
+instead of left, away from it).
+
+**Ruling (Essam, 2026-09-24):** A dowel's hook must bend OUTWARD from the
+column's own centroid, never toward it, following the same convention
+per bar POSITION:
+
+- **Face bar** (mid-span of one of the column's four faces, not a
+  corner): hook bends perpendicular to that face, straight outward. In
+  an elevation looking directly at that face, the hook leg points along
+  the view's own depth axis and foreshortens to a point ("shall appear
+  as a dot").
+- **Corner bar**: hook bends along the 45-degree diagonal bisecting the
+  two faces that meet at that corner, outward — the same
+  "outward-from-centroid" reasoning `rft.core.column_ties._outward_
+  bisector` already uses for triangular tie construction (§141), applied
+  here per-bar on a rectangle rather than per-tie on a triangle.
+
+**Why this is a real geometry change, not a tweak:** before this ruling,
+`local_dowel_bar_geometry` built ONE hook shape at the origin (hook along
+local +X) and `translate_dowel_bar_geometry` only SHIFTED it (x/y
+translate, explicitly no rotation — its own docstring said so) to each
+bar's `(u, v)` position. Every bar therefore inherited the identical
+fixed direction regardless of where it actually sat on the perimeter.
+Implementing this ruling replaces that shift-only step with one that
+builds each bar's OWN geometry at its own position AND its own outward
+direction — `rft.core.footing_dowels.positioned_dowel_bar_geometry`
+(new) plus `dowel_outward_direction` (new, pure: corner → 45° diagonal,
+face → perpendicular, derived from the bar's `(u, v)` against the
+column's own `half_u`/`half_v`, never guessed or hardcoded per bar).
+`local_dowel_bar_geometry` itself is kept, unchanged in behaviour, as a
+thin call into the new function at the origin with the legacy `+X`
+direction — the single-representative-bar fallback path (#202, no live
+column/array inputs supplied) has no column shape to be "outward"
+relative to, so it keeps its original, already-tested output exactly.
+
+**The Revit adapter's own `norm` argument must also vary per bar now**
+(`rft.revit.footing_dowels._create_dowel_rebar`) — previously hardcoded
+to `XYZ.BasisY` (correct ONLY for the old fixed +X hook direction, per
+`column_place_bars.py`'s #183 measurement that `norm` must be
+perpendicular to the bend's OWN plane). A bend plane now differs per
+bar, so `norm` is derived from each bar's own hook vector (a 90-degree
+in-plane rotation of the hook direction), not a fixed axis — the exact
+same #183 measurement still governs, just applied per bar instead of
+once for the whole array.
+
+**Why this doesn't touch anything else:** `translate_dowel_bar_geometry`
+is removed — its ONLY caller was `_build_dowel_plan`'s array-building
+loop, which now calls the new direction-aware function instead; nothing
+else in the codebase referenced it. `column_layout.py`/`column_ties.py`
+are read-only reuse targets here (the OUTWARD-FROM-CENTROID reasoning is
+reused, not the code) — neither is modified, per this repo's
+element-isolation rule.

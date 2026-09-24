@@ -126,3 +126,16 @@ pipeline (detect column → read its real section → compute real positions
 → place every bar → tag it) is now verified end-to-end, on a live host,
 with real numbers at every step, for the one real footing+column pair
 this trial model contains.
+
+**Addendum, 2026-09-24 (Essam, second screenshot) — this bullet's own
+check was incomplete, not wrong.** The `insideColumn` check above reads
+each bar's VERTICAL LEG's own `(u, v)` position only -- it never checked
+which way the HOOK bent. This bullet's own C# script still bent every
+one of the 10 hooks along a single fixed world `+X`, the exact same
+un-directional placeholder R10 (`docs/footing/spec-amendments.md`)
+exists to replace -- so several of these 10 bars (on the left/top/bottom
+faces) had their hooks pointing the wrong way, which is what Essam's
+second screenshot caught. The POSITION claim above stands; the
+DIRECTION claim was never made or tested here. See
+`docs/footing/verification/issue-232-dowel-hook-outward-direction.md`
+for the corrected, direction-aware re-verification.

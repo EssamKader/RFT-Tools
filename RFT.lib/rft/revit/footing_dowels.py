@@ -47,19 +47,31 @@ the same value as the straight mesh bars' ``XYZ.BasisZ``.
 MEASURED" section) established that ``normal`` must be PERPENDICULAR to
 the bend's own plane for the bend to actually be carried by the created
 ``Rebar`` -- that is the whole reason #183 called it out as one of
-``normal``'s two roles. This dowel's bend plane is the local X-Z plane
-(the hook leg runs along local X, the vertical leg along local Z, both at
-constant Y=0), so the perpendicular axis is Y, not Z -- ``XYZ.BasisZ``
-would lie IN the bend plane instead of perpendicular to it. Fixed to
-``XYZ.BasisY``. Still unverified against a live host (this ticket's own
-scope, per the SHAPE UNVERIFIED note above), but now consistent with the
-one live measurement this repo has for a bent bar's ``normal``, rather
-than silently reusing the straight-bar value.
+``normal``'s two roles.
+
+R10 (docs/footing/spec-amendments.md): each dowel's own hook now bends
+OUTWARD from the column centroid, a direction that differs PER BAR (a
+face bar bends along one plan axis, a corner bar along the 45-degree
+diagonal) -- so the bend plane differs per bar too, and ``norm`` can no
+longer be the single fixed ``XYZ.BasisY`` #202's own tracer bullet used
+(correct ONLY for that bullet's arbitrary fixed ``+X`` hook direction).
+``_dowel_norm`` below derives it per bar instead: a 90-degree in-plane
+rotation of the hook's own ``(x, y)`` direction, which is always
+perpendicular to both that direction and the vertical (``Z``) axis --
+the same #183 measurement, applied per bar rather than once for the
+whole array. For the legacy fixed ``+X`` case this reduces to exactly
+``(0, 1, 0)`` = the original ``XYZ.BasisY``, so the ONE live-host
+verification this repo has for a bent dowel's ``normal``
+(`docs/footing/verification/issue-223-footing-dowel-array-loop.md`) still
+covers that case; the per-bar generalisation itself is unverified until
+its own tracer bullet runs.
 
 Per this repo's hard rule, this module does not open, commit or roll back
 a transaction -- the caller owns the one transaction for the whole footing
 (so a failure here leaves the model exactly as it was).
 """
+
+import math
 
 from Autodesk.Revit.DB import Line, XYZ
 from Autodesk.Revit.DB.Structure import Rebar, RebarHookOrientation, RebarStyle
@@ -87,6 +99,24 @@ def _dowel_curves(origin_x, origin_y, origin_z, geometry):
     ]
 
 
+def _dowel_norm(geometry):
+    """R10: the bend-plane-perpendicular ``norm`` for THIS bar's own hook
+    direction -- a 90-degree in-plane rotation of the hook vector
+    (``bottom_hook.start - bottom_hook.end``, i.e. far end -> bend
+    corner reversed), which is always perpendicular to both the hook's
+    own direction and the vertical (Z) axis (this module's own docstring,
+    "Found and fixed in review" -> R10). Reduces to exactly
+    ``XYZ.BasisY`` for the legacy fixed ``+X`` hook direction, matching
+    the one live-verified case (#223).
+    """
+    hook = geometry.bottom_hook
+    dx = hook.start.x_mm - hook.end.x_mm
+    dy = hook.start.y_mm - hook.end.y_mm
+    length = math.sqrt(dx * dx + dy * dy)
+    unit_x, unit_y = dx / length, dy / length
+    return XYZ(-unit_y, unit_x, 0.0)
+
+
 def _create_dowel_rebar(document, footing, origin, bar_geometry, bar_type):
     """The single ``Rebar.CreateFromCurves`` call shared by
     ``place_dowel_bar`` and ``place_dowel_bars`` -- one bent bar, at
@@ -105,11 +135,7 @@ def _create_dowel_rebar(document, footing, origin, bar_geometry, bar_type):
         None,  # startHook -- shape is built from curves, not a hook type
         None,  # endHook
         footing,
-        # norm -- perpendicular to the bend's own local X-Z plane, per
-        # column_place_bars.py's #183 measurement (see this module's own
-        # "Found and fixed in review" note above), NOT #197's XYZ.BasisZ,
-        # which was only ever measured for a single straight curve.
-        XYZ.BasisY,
+        _dowel_norm(bar_geometry),
         curves,
         RebarHookOrientation.Left,
         RebarHookOrientation.Left,

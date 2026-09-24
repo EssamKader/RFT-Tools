@@ -25,8 +25,9 @@ from collections import namedtuple
 from .column_layout import perimeter_bar_positions
 from .footing_dowels import (
     dowel_embedment,
+    dowel_outward_direction,
     local_dowel_bar_geometry,
-    translate_dowel_bar_geometry,
+    positioned_dowel_bar_geometry,
 )
 from .footing_dowel_ties import dowel_tie_ladder
 from .footing_perimeter_tie import (
@@ -437,10 +438,6 @@ def _build_dowel_plan(inputs, column_section):
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
         inputs.dowel_bar_dia_mm, inputs.dowel_ld_multiplier)
 
-    representative = local_dowel_bar_geometry(
-        embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
-        inputs.mesh_bar_y_dia_mm)
-
     if (column_section is not None
             and column_section.Cw_mm is not None
             and column_section.Cd_mm is not None
@@ -466,11 +463,26 @@ def _build_dowel_plan(inputs, column_section):
                 "room for a dowel array: %s"
                 % (column_section.Cw_mm, column_section.Cd_mm,
                    column_section.Ccover_mm, exc))
-        bars = [translate_dowel_bar_geometry(representative,
-                                             bar.u_mm, bar.v_mm)
-                for bar in layout.bars]
+        # R10 (docs/footing/spec-amendments.md): each bar's own hook bends
+        # OUTWARD from the column centroid -- never the single fixed
+        # direction every bar used to share. half_u/half_v are the BAR's
+        # own half-dimensions (perimeter_bar_positions' internal values,
+        # not the TIE's different ones PerimeterLayout itself returns),
+        # recomputed here from the SAME two inputs that function used.
+        half_u_mm = column_section.Cw_mm / 2.0 - layout.bar_offset_mm
+        half_v_mm = column_section.Cd_mm / 2.0 - layout.bar_offset_mm
+        bars = []
+        for bar in layout.bars:
+            direction_u, direction_v = dowel_outward_direction(
+                bar.u_mm, bar.v_mm, half_u_mm, half_v_mm, bar.is_corner)
+            bars.append(positioned_dowel_bar_geometry(
+                embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
+                inputs.mesh_bar_y_dia_mm, bar.u_mm, bar.v_mm,
+                direction_u, direction_v))
     else:
-        bars = [representative]
+        bars = [local_dowel_bar_geometry(
+            embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
+            inputs.mesh_bar_y_dia_mm)]
 
     return DowelArrayPlan(embedment=embedment, bars=bars)
 
