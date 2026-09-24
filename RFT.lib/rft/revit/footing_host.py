@@ -270,24 +270,52 @@ class FootingAxisMismatchError(FootingHostError):
     """
 
 
-def _match_dimension_to_extent(candidates, extent_mm):
-    for label, value_mm in candidates:
-        if abs(value_mm - extent_mm) <= _AXIS_MATCH_TOLERANCE_MM:
-            return label, value_mm
-    return None, None
-
-
 def _resolve_world_axes_mm(footing, length_mm, width_mm):
     """Which of the type's Length/Width actually runs along world X (and
     which runs along world Y), derived from the footing's OWN measured
     solid -- issue #249, replacing the old unconditional "Length=X,
     Width=Y" assumption this function's caller used to make.
+
+    Checks BOTH possible assignments (Length=X/Width=Y and Width=X/
+    Length=Y) against the measured extents, rather than testing Length
+    first and accepting the first candidate within tolerance -- a footing
+    whose Length and Width are close to each other (within twice
+    ``_AXIS_MATCH_TOLERANCE_MM``, e.g. a near-square footing) could
+    otherwise have BOTH candidates individually within tolerance of the
+    X-extent, and picking "whichever came first in a fixed list" would
+    silently accept the WRONG assignment exactly as often as the right
+    one -- found in review of this ticket's own first draft. If both
+    assignments fit within tolerance, this refuses (ambiguous) rather
+    than guess; if neither fits, this refuses (mismatch) exactly as
+    before.
     """
     box = footing_bounding_box_internal(footing)
     x_extent_mm = internal_to_mm(box.Max.X - box.Min.X)
     y_extent_mm = internal_to_mm(box.Max.Y - box.Min.Y)
 
-    mismatch_message = (
+    length_is_x = (
+        abs(length_mm - x_extent_mm) <= _AXIS_MATCH_TOLERANCE_MM
+        and abs(width_mm - y_extent_mm) <= _AXIS_MATCH_TOLERANCE_MM)
+    width_is_x = (
+        abs(width_mm - x_extent_mm) <= _AXIS_MATCH_TOLERANCE_MM
+        and abs(length_mm - y_extent_mm) <= _AXIS_MATCH_TOLERANCE_MM)
+
+    if length_is_x and width_is_x:
+        raise FootingAxisMismatchError(
+            "This footing's type Length (%.1fmm) and Width (%.1fmm) are "
+            "close enough to each other, and to the footing's own "
+            "measured plan extents (X=%.1fmm, Y=%.1fmm), that BOTH "
+            "possible axis assignments fit within %.1fmm -- refusing "
+            "rather than guessing which of Length/Width actually runs "
+            "along world X. See rft.revit.footing_host's "
+            "read_footing_geometry_mm docstring."
+            % (length_mm, width_mm, x_extent_mm, y_extent_mm,
+               _AXIS_MATCH_TOLERANCE_MM))
+    if length_is_x:
+        return length_mm, width_mm
+    if width_is_x:
+        return width_mm, length_mm
+    raise FootingAxisMismatchError(
         "This footing's measured plan extents (X=%.1fmm, Y=%.1fmm) match "
         "neither its type's Length (%.1fmm) nor Width (%.1fmm) within "
         "%.1fmm. The tool derives which world axis each dimension runs "
@@ -295,15 +323,6 @@ def _resolve_world_axes_mm(footing, length_mm, width_mm):
         "-- see rft.revit.footing_host's read_footing_geometry_mm "
         "docstring." % (x_extent_mm, y_extent_mm, length_mm, width_mm,
                         _AXIS_MATCH_TOLERANCE_MM))
-
-    candidates = [("Length", length_mm), ("Width", width_mm)]
-    x_label, x_value = _match_dimension_to_extent(candidates, x_extent_mm)
-    if x_label is None:
-        raise FootingAxisMismatchError(mismatch_message)
-    y_candidate_value = width_mm if x_label == "Length" else length_mm
-    if abs(y_candidate_value - y_extent_mm) > _AXIS_MATCH_TOLERANCE_MM:
-        raise FootingAxisMismatchError(mismatch_message)
-    return x_value, y_candidate_value
 
 
 def _require_type_dimension_mm(symbol, built_in, label):
