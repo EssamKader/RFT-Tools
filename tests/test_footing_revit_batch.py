@@ -406,8 +406,8 @@ def test_apply_batch_places_every_candidate_and_tags_it_with_its_own_host_id():
     assert ids == [101, 102]
     for element_id, placement in result.per_footing:
         assert placement.dowel_bars
-        for rebar in [placement.bar_x, placement.bar_y] + list(
-                placement.dowel_bars):
+        for rebar in (list(placement.bars_x) + list(placement.bars_y)
+                     + list(placement.dowel_bars)):
             assert rebar.LookupParameter("Partition").AsString() == (
                 partition_tag(element_id))
 

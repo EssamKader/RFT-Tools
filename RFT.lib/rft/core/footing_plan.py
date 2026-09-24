@@ -40,6 +40,7 @@ from .footing_mesh import (
     MAT_SHAPE_L_ALTERNATING,
     MAT_SHAPE_U,
     bar_hook_plan_for_mat,
+    bottom_mesh_bar_array_geometry,
     bottom_mesh_bar_geometry,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
@@ -148,6 +149,15 @@ from .footing_mesh import (
 #: auto-detected column (a later ticket's own adapter work) and passed
 #: into ``build_footing_plan`` as plain arguments alongside ``inputs``,
 #: never stored here.
+#: #232 (R11, docs/footing/spec-amendments.md): ``mesh_bar_x_spacing_mm``/
+#: ``mesh_bar_y_spacing_mm`` are the direct, per-direction user spacing
+#: inputs the bottom-mesh ARRAY is built from (count derived, never a
+#: separate typed count) -- mirrors ``dowel_tie_spacing_mm``'s own
+#: precedent (a direct number, no default). Appended at the very end,
+#: both defaulting to ``None`` (opt-in) so every caller that predates
+#: #232 keeps building a plan with no array, unchanged -- the SAME
+#: trailing-defaults pattern every field since ``bottom_mat_shape_mode``
+#: has used.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -161,7 +171,8 @@ FootingInputs = namedtuple(
      "perimeter_tie_quantity", "perimeter_tie_lap_mm",
      "perimeter_tie_first_bar_length_mm",
      "perimeter_tie_second_bar_length_mm",
-     "dowel_count_b_face", "dowel_count_h_face"],
+     "dowel_count_b_face", "dowel_count_h_face",
+     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -176,7 +187,7 @@ TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
     None, None, None, None, None, None,
-    None, None)
+    None, None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -193,22 +204,36 @@ FootingInputs.__new__.__defaults__ = (
 #: on ``TopMeshPlan`` (shares this field list, see below) -- the top mat
 #: has no hook-direction ruling and no placement adapter yet, so it is
 #: never computed there; only the BOTTOM mat's own build step fills it in.
+#: #232 (R11): ``bar_x_array``/``bar_y_array`` are each a tuple of
+#: ``footing_mesh.MeshBarGeometry`` -- the FULL bottom-mesh array per
+#: direction, built by the SAME per-bar hook logic ``bar_x_geometry``/
+#: ``bar_y_geometry`` already use, only at ``inputs.mesh_bar_x_spacing_mm``/
+#: ``mesh_bar_y_spacing_mm``-derived positions instead of one bar at the
+#: centroid. ``None`` when that direction's own spacing was not supplied
+#: (every caller that predates #232, and any direction left unspaced) --
+#: the placement adapter falls back to the single ``bar_x_geometry``/
+#: ``bar_y_geometry`` bar in that case, unchanged. Always ``None`` on
+#: ``TopMeshPlan`` (the array, like the bent geometry above, is
+#: bottom-mat-only -- see ``footing_mesh.bottom_mesh_bar_array_geometry``).
 BottomMeshPlan = namedtuple(
     "BottomMeshPlan",
     ["lengths", "primary_direction", "bar_x_endpoints", "bar_y_endpoints",
-     "bar_x_hooks", "bar_y_hooks", "bar_x_geometry", "bar_y_geometry"],
+     "bar_x_hooks", "bar_y_hooks", "bar_x_geometry", "bar_y_geometry",
+     "bar_x_array", "bar_y_array"],
 )
-BottomMeshPlan.__new__.__defaults__ = (None, None)
+BottomMeshPlan.__new__.__defaults__ = (None, None, None, None)
 
 #: #201 (Sec 3 Story 4, Sec 7): mirrors ``BottomMeshPlan`` field-for-field
 #: -- the top mat is the same per-mat geometry/hook decision as the bottom
 #: mat, just built with the top mat's own ``top_mat_shape_mode``, so it
 #: carries exactly the same shape rather than inventing a differently-
 #: shaped plan for what is not new math. ``bar_x_geometry``/
-#: ``bar_y_geometry`` stay ``None`` here (#229's own bent-geometry builder
-#: is bottom-mat-only, see ``footing_mesh.bottom_mesh_bar_geometry``).
+#: ``bar_y_geometry``/``bar_x_array``/``bar_y_array`` stay ``None`` here
+#: (#229/#232's own bent-geometry/array builders are bottom-mat-only, see
+#: ``footing_mesh.bottom_mesh_bar_geometry``/
+#: ``bottom_mesh_bar_array_geometry``).
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
-TopMeshPlan.__new__.__defaults__ = (None, None)
+TopMeshPlan.__new__.__defaults__ = (None, None, None, None)
 
 #: #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"): the
 #: column's own live cross-section width/depth and dowel-positioning
@@ -630,8 +655,19 @@ def build_footing_plan(inputs, column_section=None):
         bottom_mesh.lengths, inputs.bottom_cover_mm,
         inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
         bottom_mesh.bar_x_hooks, bottom_mesh.bar_y_hooks)
+    # #232 (R11): the full array, per direction -- built from the SAME
+    # lengths/hook-plan just computed above (never re-derived), so the
+    # report and the placer read the identical bars. ``None`` per
+    # direction when that direction's own spacing was not supplied (see
+    # ``BottomMeshPlan.bar_x_array``/``bar_y_array``'s own docstring).
+    bar_x_array, bar_y_array = bottom_mesh_bar_array_geometry(
+        bottom_mesh.lengths, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        bottom_mesh.bar_x_hooks, bottom_mesh.bar_y_hooks,
+        inputs.mesh_bar_x_spacing_mm, inputs.mesh_bar_y_spacing_mm)
     bottom_mesh = bottom_mesh._replace(
-        bar_x_geometry=bar_x_geometry, bar_y_geometry=bar_y_geometry)
+        bar_x_geometry=bar_x_geometry, bar_y_geometry=bar_y_geometry,
+        bar_x_array=bar_x_array, bar_y_array=bar_y_array)
 
     if inputs.top_reinforcement == TOP_REINFORCEMENT_BTM_ONLY:
         top_mesh = None

@@ -9,6 +9,7 @@ Pure core: no Revit import, plain numbers in, plain numbers out, in
 millimetres (REUSE_GUIDELINES.md Sec 1, "Strict Core/Adapter Split").
 """
 
+import math
 from collections import namedtuple
 
 #: Spec Ref: Sec 2/3, "Primary Reinforcement" / "Secondary Reinforcement".
@@ -167,7 +168,7 @@ def local_mesh_bar_endpoints(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
 
 
 def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
-                          along_x):
+                          along_x, offset_mm=0.0):
     """One bar's bent centreline (:class:`MeshBarGeometry`'s own
     ``points``), footing-local mm.
 
@@ -180,14 +181,23 @@ def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
     (Sec 5: "bend the bar up") from that end's own elevation -- never
     sideways, so unlike the dowel array (R10) there is no per-bar outward
     direction to derive, only a fixed +Z.
+
+    #232 (R11, docs/footing/spec-amendments.md): ``offset_mm`` is this
+    bar's own position along the axis PERPENDICULAR to its run (Y for a
+    ``mesh_bar_x`` bar, X for a ``mesh_bar_y`` bar) -- defaults to 0.0 so
+    every caller that predates #232 (the one representative bar, centred
+    on the footing's own plan centroid) is unchanged. Parametrizing this
+    existing single-bar builder is the array; the hook-point logic itself
+    is not duplicated anywhere for the array (this ticket's own
+    instruction).
     """
     half = z_mm / 2.0
     if along_x:
-        start_xy = (-half, 0.0)
-        end_xy = (half, 0.0)
+        start_xy = (-half, offset_mm)
+        end_xy = (half, offset_mm)
     else:
-        start_xy = (0.0, -half)
-        end_xy = (0.0, half)
+        start_xy = (offset_mm, -half)
+        end_xy = (offset_mm, half)
 
     def _point(xy, z_mm_value):
         return LocalPoint(xy[0], xy[1], z_mm_value)
@@ -225,6 +235,91 @@ def bottom_mesh_bar_geometry(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
     bar_y = _mesh_bar_hook_points(
         lengths.z2_mm, lengths.n2_mm, z_y_mm, bar_y_hooks, along_x=False)
     return bar_x, bar_y
+
+
+def mesh_bar_offsets_mm(width_mm, spacing_mm):
+    """R11 (docs/footing/spec-amendments.md): how many bars fit across
+    ``width_mm`` at (at most) ``spacing_mm`` apart, evenly redistributed
+    so the width is filled exactly with no remainder -- a direct user
+    spacing, count derived, per R11's own ruling. Returns the list of
+    centreline offsets (mm), symmetric about the mat's own centreline
+    (0.0), first and last exactly at the width's own two edges.
+
+    This is a fresh, footing-specific "how many fit at this spacing
+    across this width" computation, deliberately NOT
+    ``column_layout.perimeter_bar_positions`` -- that function solves a
+    perimeter-LOOP problem (bars shared between two adjacent faces); this
+    is a parallel-array-across-a-RECTANGLE problem, with no shared
+    corners to de-duplicate (R11's own ticket text).
+
+    ``n_spaces = ceil(width / spacing)``, at least 1 (so two bars --
+    one at each edge -- is the minimum a footing this narrow still
+    gets); ``achieved_spacing = width / n_spaces`` (<= ``spacing_mm``,
+    same "redistribute to fill exactly" shape this repo's beam tool uses
+    for `SetLayoutAsMaximumSpacing` zones -- an independently-derived
+    match, not a reuse, per element isolation).
+    """
+    if width_mm <= 0:
+        raise ValueError(
+            "width_mm must be positive, got %r." % (width_mm,))
+    if spacing_mm <= 0:
+        raise ValueError(
+            "spacing_mm must be positive, got %r." % (spacing_mm,))
+    n_spaces = int(math.ceil(width_mm / spacing_mm))
+    if n_spaces < 1:
+        n_spaces = 1
+    achieved_spacing_mm = width_mm / n_spaces
+    half = width_mm / 2.0
+    return [-half + index * achieved_spacing_mm
+            for index in range(n_spaces + 1)]
+
+
+def bottom_mesh_bar_array_geometry(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
+                                   mesh_bar_y_dia_mm, bar_x_hooks, bar_y_hooks,
+                                   bar_x_spacing_mm, bar_y_spacing_mm):
+    """#232 (R11): the FULL bottom-mesh array, per direction -- every bar
+    reuses ``_mesh_bar_hook_points`` (the SAME per-bar hook logic
+    ``bottom_mesh_bar_geometry`` already builds for the one representative
+    bar), only each bar's own offset along the axis perpendicular to its
+    run differs. The hook decision itself (``bar_x_hooks``/``bar_y_hooks``)
+    is IDENTICAL for every bar in a direction's array -- this ticket does
+    not recompute a per-bar-index hook plan (that would be new
+    ``MAT_SHAPE_L_ALTERNATING`` scope over a real array, not named by this
+    ticket).
+
+    Per R11's own reading of ``local_mesh_bar_endpoints``'s axis
+    convention: ``mesh_bar_x`` bars run along local X (straight run =
+    Sec 3's ``Z``, the a-direction) and are spaced along Y across
+    ``Z2``/``b``'s own extent; ``mesh_bar_y`` bars run along local Y
+    (straight run = ``Z2``, the b-direction) and are spaced along X
+    across ``Z``/``a``'s own extent.
+
+    Returns ``(bar_x_array, bar_y_array)``, each a tuple of
+    :class:`MeshBarGeometry` when its own ``spacing_mm`` is supplied, or
+    ``None`` when it is not (that direction keeps using the single
+    representative bar -- ``BottomMeshPlan.bar_x_geometry``/
+    ``bar_y_geometry`` -- every caller that predates #232 already reads).
+    """
+    z_x_mm = bottom_cover_mm + mesh_bar_x_dia_mm / 2.0
+    z_y_mm = bottom_cover_mm + mesh_bar_x_dia_mm + mesh_bar_y_dia_mm / 2.0
+
+    bar_x_array = None
+    if bar_x_spacing_mm is not None:
+        y_offsets = mesh_bar_offsets_mm(lengths.z2_mm, bar_x_spacing_mm)
+        bar_x_array = tuple(
+            _mesh_bar_hook_points(lengths.z_mm, lengths.n_mm, z_x_mm,
+                                 bar_x_hooks, along_x=True, offset_mm=y_mm)
+            for y_mm in y_offsets)
+
+    bar_y_array = None
+    if bar_y_spacing_mm is not None:
+        x_offsets = mesh_bar_offsets_mm(lengths.z_mm, bar_y_spacing_mm)
+        bar_y_array = tuple(
+            _mesh_bar_hook_points(lengths.z2_mm, lengths.n2_mm, z_y_mm,
+                                 bar_y_hooks, along_x=False, offset_mm=x_mm)
+            for x_mm in x_offsets)
+
+    return bar_x_array, bar_y_array
 
 
 def local_top_mesh_bar_endpoints(lengths, top_cover_mm, footing_thickness_mm,

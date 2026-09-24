@@ -57,7 +57,7 @@ from .footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
     read_footing_geometry_mm,
 )
-from .footing_mesh import place_straight_bottom_mesh
+from .footing_mesh import place_bottom_mesh_bars
 from .footing_ownership import partition_host_rebar, tag_as_ours
 from .units import internal_to_mm
 
@@ -83,13 +83,21 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: than silently reverting every OTHER footing in the group back to
 #: "auto". Defaults to ``None`` so every caller that predates #229 keeps
 #: building a batch with no override, unchanged.
+#: #232 (R11): ``mesh_bar_x_spacing_mm``/``mesh_bar_y_spacing_mm`` are the
+#: SAME direct per-direction spacing inputs ``FootingInputs`` already
+#: accepts for the single-footing path, carried here too so a batch run
+#: builds the SAME real bottom-mesh array for every footing in the group
+#: rather than silently reverting every one back to the one-bar fallback.
+#: Both default to ``None`` so every caller that predates #232 keeps
+#: building a batch with no array, unchanged.
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
      "bar_x_type", "bar_y_type",
      "dowel_bar_type", "dowel_tie_bar_type", "dowel_ld_multiplier",
-     "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode"])
-BatchInputs.__new__.__defaults__ = (None,)
+     "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode",
+     "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm"])
+BatchInputs.__new__.__defaults__ = (None, None, None)
 
 
 class FootingBatchError(Exception):
@@ -134,11 +142,17 @@ class BatchPlan(object):
 
 class FootingPlacementResult(object):
     """What one footing's own placement actually built -- the report
-    material Sec 6 needs."""
+    material Sec 6 needs.
 
-    def __init__(self, bar_x, bar_y, dowel_bars, replaced_count, foreign):
-        self.bar_x = bar_x
-        self.bar_y = bar_y
+    #232 (R11): ``bars_x``/``bars_y`` are LISTS -- every bar placed for
+    that direction, one entry when no array was built (spacing not
+    supplied, the SAME single-bar-per-direction shape every caller that
+    predates #232 already got), N entries for a real array.
+    """
+
+    def __init__(self, bars_x, bars_y, dowel_bars, replaced_count, foreign):
+        self.bars_x = bars_x
+        self.bars_y = bars_y
         self.dowel_bars = dowel_bars
         self.replaced_count = replaced_count
         self.foreign = foreign
@@ -255,7 +269,9 @@ def plan_candidates(doc, host_footing, inputs):
             dowel_ld_multiplier=inputs.dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,
             dowel_count_b_face=inputs.dowel_count_b_face,
-            dowel_count_h_face=inputs.dowel_count_h_face)
+            dowel_count_h_face=inputs.dowel_count_h_face,
+            mesh_bar_x_spacing_mm=inputs.mesh_bar_x_spacing_mm,
+            mesh_bar_y_spacing_mm=inputs.mesh_bar_y_spacing_mm)
         try:
             plan = build_footing_plan(
                 footing_inputs, column_section=column_section)
@@ -330,7 +346,7 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
             for element in ours:
                 doc.Delete(element.Id)
 
-            bar_x, bar_y = place_straight_bottom_mesh(
+            bars_x, bars_y = place_bottom_mesh_bars(
                 doc, candidate.element, candidate.plan.bottom_mesh,
                 bar_x_type, bar_y_type)
             dowel_bars = place_dowel_bars(
@@ -338,11 +354,11 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
                 dowel_bar_type)
 
             host_id = candidate.element.Id.IntegerValue
-            for rebar in [bar_x, bar_y] + list(dowel_bars):
+            for rebar in list(bars_x) + list(bars_y) + list(dowel_bars):
                 tag_as_ours(rebar, host_id)
 
             per_footing.append((host_id, FootingPlacementResult(
-                bar_x=bar_x, bar_y=bar_y, dowel_bars=dowel_bars,
+                bars_x=bars_x, bars_y=bars_y, dowel_bars=dowel_bars,
                 replaced_count=len(ours), foreign=foreign)))
     except Exception:
         transaction.RollBack()
