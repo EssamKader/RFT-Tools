@@ -185,17 +185,18 @@ def place_straight_bottom_mesh(document, footing, bottom_mesh,
     the only place ``bar_x_geometry``/``bar_y_geometry`` get populated.
 
     Returns ``(bar_x, bar_y)``, the two created ``Rebar`` elements.
+
+    Found in review (#232): this is now a thin wrapper around
+    ``place_bottom_mesh_bars`` -- that function already handles the no-
+    array case by falling back to a one-item list per direction, so
+    duplicating its origin/norm derivation and per-bar placement call
+    here risked exactly the kind of drift #229's own norm regression
+    already demonstrated (two call sites for the same mechanics, kept in
+    sync by hand instead of by construction).
     """
-    origin_x, origin_y, origin_z = _footing_origin(footing)
-    curves_x = _bent_bar_curves(
-        origin_x, origin_y, origin_z, bottom_mesh.bar_x_geometry)
-    curves_y = _bent_bar_curves(
-        origin_x, origin_y, origin_z, bottom_mesh.bar_y_geometry)
-    norm_x = _norm_for_bar(bottom_mesh.bar_x_hooks, XYZ.BasisY)
-    norm_y = _norm_for_bar(bottom_mesh.bar_y_hooks, XYZ.BasisX)
-    bar_x = _place_one_bar(document, footing, curves_x, norm_x, bar_x_type)
-    bar_y = _place_one_bar(document, footing, curves_y, norm_y, bar_y_type)
-    return bar_x, bar_y
+    bars_x, bars_y = place_bottom_mesh_bars(
+        document, footing, bottom_mesh, bar_x_type, bar_y_type)
+    return bars_x[0], bars_y[0]
 
 
 def place_bottom_mesh_bars(document, footing, bottom_mesh, bar_x_type,
