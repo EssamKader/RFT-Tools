@@ -499,3 +499,29 @@ to #197 Sec 2's "may a footing-hosted bar extend beyond the footing's own
 top face" kept-write proof — that proof covers extending to the column
 base; extending further, through/past the column's own solid geometry, is
 a new combination, unverified until its own tracer bullet runs).
+
+## R13 — Top mat hook direction: bends toward the bottom mat (downward)
+
+**Spec Ref:** `rft.core.footing_mesh.bottom_mesh_bar_geometry`'s own
+docstring named this gap explicitly: "the top mat's own hook direction
+(would it bend up, toward the bottom mat, or down, toward the top face?)
+is not stated anywhere in the spec and the top mat has no placement
+adapter yet... guessing that direction now, with no consumer to verify it
+against, is exactly the guessing REUSE_GUIDELINES.md Sec 3 refuses" —
+issue #233 is that consumer, so the gap is resolved here rather than left
+open again.
+
+**Ruling (Essam, 2026-09-24):** the top mat's hooked ends bend DOWNWARD,
+toward the bottom mat — the mirror image of the bottom mat's own
+"bend the bar up" rule (Sec 5), not a repeat of it. A hooked end's
+vertical leg therefore runs from the top mat's own elevation DOWN by the
+hook leg length, toward the bottom mat, rather than up toward the top
+face.
+
+**Scope this ruling opens (not yet ticketed until #233 lands):** the top
+mat needs its own bent-centreline builder, mirroring
+`bottom_mesh_bar_geometry`/`_mesh_bar_hook_points` but with the hook leg
+subtracted from (not added to) each hooked end's own elevation. The
+straight-run span and elevations themselves are unchanged
+(`local_top_mesh_bar_endpoints`, R3-confirmed) — only the hook leg's
+own sign flips relative to the bottom mat's rule.
