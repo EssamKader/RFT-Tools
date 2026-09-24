@@ -6,12 +6,21 @@ module's own header for what a green run here does and does not prove).
 Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 1.
 
 Per this ticket's own "Test volume rule": this file does NOT re-test the
-``ReferenceIntersector``/``View3D``-selection MECHANICS -- those are
-already covered by ``test_column_mock_adapter.py`` against
-``column_host.find_search_view``. It tests only the footing-specific
-DIRECTION this ticket adds: the ray runs footing -> column, not
-column -> support, and "no column found" refuses with the exact message
-Story 1 names.
+``ReferenceIntersector``/``View3D``-selection MECHANICS themselves --
+those now live in ``rft.revit.ray_search`` (extracted during PR #224
+review, finding 3) and are tested exactly once, generically, in
+``tests/test_ray_search.py``. ``column_host.find_search_view`` still
+carries its own not-yet-migrated copy and is still covered by
+``test_column_mock_adapter.py`` -- see ``ray_search.py``'s own docstring
+for why that migration is a deliberate follow-up, not done here.
+
+What THIS file tests is footing-specific: the ray runs footing -> column,
+not column -> support; "no column found" refuses with the exact message
+Story 1 names; the nearest hit governs multiple hits; and
+``find_search_view``'s translation of a bare ``RaySearchError`` into this
+module's own ``FootingHostError`` actually happens (PR #224 review,
+finding 4 -- this is the one place that translation is new code, not a
+restatement of ``ray_search``'s own mechanics).
 """
 
 import pytest
@@ -183,23 +192,29 @@ def test_a_footing_with_no_bounding_box_is_REFUSED_not_guessed():
 
 
 # --------------------------------------------------------------------- #
-# The view self-test: chosen by BEHAVIOUR, never by name or settings --
-# mirrors test_column_mock_adapter.py's own coverage of this rule, run
-# against the footing instead of a column (the new direction).
+# find_search_view's OWN new code: translating ray_search's generic
+# RaySearchError into this module's FootingHostError. The self-test
+# MECHANICS that produce a RaySearchError in the first place (blind view
+# rejected, every-view-blind, template excluded) are exercised once,
+# generically, in tests/test_ray_search.py -- not repeated here.
 
 
-def test_a_view_that_cannot_see_the_footing_is_REJECTED(monkeypatch):
+def test_a_view_that_can_see_the_footing_is_used(monkeypatch):
     ftg = footing()
-    analytical = FakeView3D("Analytical Model", blind=True)
     plain = FakeView3D("{3D}")
-    monkeypatch.setattr(FakeFilteredElementCollector, "_ITEMS",
-                        [analytical, plain])
+    monkeypatch.setattr(FakeFilteredElementCollector, "_ITEMS", [plain])
     monkeypatch.setattr(FakeReferenceIntersector, "HITS",
                         [(only_if_the_ray_meets_the_footing(ftg), None)])
     assert find_search_view(None, ftg) is plain
 
 
-def test_every_view_blind_is_a_REFUSAL_naming_what_was_tried(monkeypatch):
+def test_no_view_can_see_the_footing_is_a_FootingHostError_not_a_bare_RaySearchError(
+        monkeypatch):
+    """The translation this module adds: ``ray_search`` raises its own
+    generic ``RaySearchError``, and no caller of ``footing_host`` should
+    ever see that type -- only ``FootingHostError``, with this module's
+    own footing-specific wording.
+    """
     ftg = footing()
     monkeypatch.setattr(
         FakeFilteredElementCollector, "_ITEMS",
@@ -209,14 +224,5 @@ def test_every_view_blind_is_a_REFUSAL_naming_what_was_tried(monkeypatch):
     with pytest.raises(FootingHostError) as caught:
         find_search_view(None, ftg)
     message = str(caught.value)
+    assert "the selected footing" in message
     assert "Analytical Model" in message and "{3D}" in message
-
-
-def test_a_template_view_is_never_a_candidate(monkeypatch):
-    ftg = footing()
-    monkeypatch.setattr(FakeFilteredElementCollector, "_ITEMS",
-                        [FakeView3D("Template", is_template=True)])
-    monkeypatch.setattr(FakeReferenceIntersector, "HITS", [])
-    with pytest.raises(FootingHostError) as caught:
-        find_search_view(None, ftg)
-    assert "no non-template 3D view" in str(caught.value)
