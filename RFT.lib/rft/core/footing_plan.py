@@ -194,7 +194,24 @@ TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
 #: type-checks fine and produces a silently mirrored array. A caller now
 #: either constructs this by keyword or gets a ``TypeError`` at
 #: construction, never a silent transposition.
-ColumnSection = namedtuple("ColumnSection", ["Cw_mm", "Cd_mm", "Ccover_mm"])
+#: Deliberately named ``DowelColumnSection``, NOT ``ColumnSection`` --
+#: found in review (PR #227): ``rft.core.column_host_rules`` already
+#: defines its OWN, differently-shaped ``ColumnSection`` (``b_mm h_mm
+#: narrow_mm wide_mm``) for ColumnRFT. Reusing that exact name here would
+#: have replaced this PR's own width/depth-swap fix with an adjacent
+#: same-name/different-shape collision the moment both modules are
+#: imported together -- exactly what #221 will need to do. That existing
+#: type is untouched; this is a new, footing-dowel-specific type.
+#: No construction-time validation: a caller can still build one with a
+#: ``None`` sub-field, and (as of this writing) ``_build_dowel_plan`` is
+#: the ONLY place that checks all three fields are non-``None`` before
+#: using it. A smart constructor (mirroring ``column_host_rules.
+#: section_from_dimensions``'s validate-once pattern) would close this
+#: structurally for every future consumer, but is left out of THIS
+#: ticket's scope (found in review, PR #227) since #222/#227 have exactly
+#: one consumer today; revisit if/when #221 or #223 adds a second one.
+DowelColumnSection = namedtuple(
+    "DowelColumnSection", ["Cw_mm", "Cd_mm", "Ccover_mm"])
 
 #: #202 (Sec 3 Story 5, Sec 8), reshaped by #222 (specs/isolated-footing-
 #: dowel-array.md Sec 3 Story 3): ``embedment`` is a ``footing_dowels.
@@ -205,7 +222,7 @@ ColumnSection = namedtuple("ColumnSection", ["Cw_mm", "Cd_mm", "Ccover_mm"])
 #: mesh, see ``footing_dowels`` docstrings), one entry per dowel position.
 #:
 #: When ``inputs.dowel_count_b_face``/``dowel_count_h_face``/
-#: ``dowel_tie_dia_mm`` and the ``column_section`` (``ColumnSection``)
+#: ``dowel_tie_dia_mm`` and the ``column_section`` (``DowelColumnSection``)
 #: argument to ``build_footing_plan`` are all supplied, ``bars`` holds one
 #: ``DowelBarGeometry`` per position
 #: ``column_layout.perimeter_bar_positions`` returns (corner dowels
@@ -380,7 +397,7 @@ def _build_dowel_plan(inputs, column_section):
 
     A real array (``perimeter_bar_positions``, R6's own reuse target) is
     built only when the caller supplies the live column cross-section
-    (``column_section`` -- a ``ColumnSection``, read live off the
+    (``column_section`` -- a ``DowelColumnSection``, read live off the
     auto-detected column by a later ticket's adapter, never stored on
     ``FootingInputs``, per the addendum spec Sec 4) WITH ALL THREE of its
     own ``Cw_mm``/``Cd_mm``/``Ccover_mm`` fields set (found missing in
@@ -392,9 +409,14 @@ def _build_dowel_plan(inputs, column_section):
     independently opt-in field ``perimeter_bar_positions`` still requires
     as its own ``tie_dia_mm`` argument; found missing from this gate in
     review, PR #225, where its absence produced a bare ``TypeError`` deep
-    in ``rft.core.layout`` instead of the documented fallback). When ANY
-    of these six checks is not satisfied, ``bars`` falls back to the SAME
-    single representative bar #202 always built, at the footing's own
+    in ``rft.core.layout`` instead of the documented fallback). That is
+    FOUR conceptual inputs (``column_section`` as a whole, plus the two
+    count fields, plus ``dowel_tie_dia_mm``), checked by SEVEN ``is not
+    None`` terms (``column_section`` itself plus its own three
+    sub-fields, plus the three remaining fields) -- found miscounted as
+    "five"/"six" in review, PR #227. When ANY of these seven checks is
+    not satisfied, ``bars`` falls back to the SAME single representative
+    bar #202 always built, at the footing's own
     plan centroid -- every caller that predates #222 keeps building a
     plan with no dowel array unchanged (see ``DowelArrayPlan``'s own
     docstring).
@@ -523,13 +545,13 @@ def build_footing_plan(inputs, column_section=None):
     per Sec 7's "set separately, never coupled").
 
     #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"):
-    ``column_section`` is a ``ColumnSection`` (``Cw_mm``/``Cd_mm``/
+    ``column_section`` is a ``DowelColumnSection`` (``Cw_mm``/``Cd_mm``/
     ``Ccover_mm`` -- the column's own live cross-section width/depth and
     dowel-positioning cover, bundled into one namedtuple rather than three
     bare same-typed floats, PR #225 review) -- deliberately NOT a
     ``FootingInputs`` field, since Sec 4 states it is "read live ... and
     passed in as plain arguments alongside inputs", keeping this function
-    unit-testable with a plain ``ColumnSection`` (or ``None``) and no
+    unit-testable with a plain ``DowelColumnSection`` (or ``None``) and no
     Revit object ever required. Defaults to ``None`` so every caller that
     predates #222 (this file's own callers that build no dowel array) is
     unchanged; see ``_build_dowel_plan`` for exactly which combination of
