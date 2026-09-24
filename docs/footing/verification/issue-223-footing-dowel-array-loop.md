@@ -135,3 +135,14 @@ kept-write proof of the bent-bar SHAPE, this closes
 It does **not** authorise assuming the real `perimeter_bar_positions`
 output for a specific column places without incident — that is core math,
 already unit-tested, not a live-host question.
+
+**Addendum, 2026-09-24 (Essam, visual inspection):** this bullet's own
+illustrative dowel positions (`425598`/`425599`, a plain 4-corner square
+at arbitrary ±300/±200mm offsets) landed OUTSIDE the real column
+`425531`'s own footprint in the model — correctly flagged as looking
+wrong on inspection. This was always the finding-4 caveat above, not a
+production defect: the two elements were deleted, and the real
+`perimeter_bar_positions` output for this exact column (`b=300`, `h=600`,
+`cover=40`) was placed and verified to land INSIDE the column's own
+bounding box instead — see
+`docs/footing/verification/issue-222-real-dowel-array-inside-column.md`.

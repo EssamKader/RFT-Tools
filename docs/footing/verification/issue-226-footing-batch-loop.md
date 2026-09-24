@@ -130,3 +130,15 @@ It does **not** authorise assuming the real `find_column_above`/R9
 grouping pipeline runs cleanly end-to-end against two or more GENUINE
 footing+column pairs sharing an identical type — this trial model does
 not currently contain more than one such real pair to test that against.
+
+**Addendum, 2026-09-24 (Essam, visual inspection):** this bullet's own
+illustrative dowel positions on footing `425190` (`425616`/`425617`, at
+arbitrary ±300/±200mm offsets, same shape as #223's own debris) landed
+OUTSIDE the real column `425531`'s own footprint — correctly flagged as
+looking wrong on inspection, and always the finding-4 caveat above, not
+a production defect. Deleted, and replaced by the real
+`perimeter_bar_positions` output for that column, verified inside its
+own bounding box — see `docs/footing/verification/
+issue-222-real-dowel-array-inside-column.md`. Footing `425131`'s own
+illustrative debris (`425618`-`425621`, no real column to check against)
+was deleted in the same pass, since it was equally non-representative.
