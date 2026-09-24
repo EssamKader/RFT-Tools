@@ -115,7 +115,8 @@ def dowel_embedment(footing_thickness_mm, bottom_cover_mm,
 
 def positioned_dowel_bar_geometry(embedment, bottom_cover_mm,
                                   mesh_bar_x_dia_mm, mesh_bar_y_dia_mm,
-                                  u_mm, v_mm, direction_u, direction_v):
+                                  u_mm, v_mm, direction_u, direction_v,
+                                  splice_length_mm=None):
     """The dowel bar's footing-local centreline geometry (mm), at real
     footing-local position ``(u_mm, v_mm)``, with the hook bending along
     ``(direction_u, direction_v)`` -- a unit vector, R10's own per-bar
@@ -135,6 +136,18 @@ def positioned_dowel_bar_geometry(embedment, bottom_cover_mm,
     same for every bar in the array (#222 Sec 3 Story 3: "this story
     changes WHERE dowels are and HOW MANY there are, not how any single
     dowel's own vertical geometry is sized").
+
+    R12 (docs/footing/spec-amendments.md): ``splice_length_mm``, when
+    given, extends ``top`` PAST the footing's own top face
+    (``bend_z_mm + embedment.a_dowel_mm``, an algebraic identity always
+    equal to ``footing_thickness_mm`` -- see :func:`a_dowel`) by that
+    many additional mm, into the column above. This is purely an
+    additive extension applied AFTER the existing embedment math -- it
+    never changes ``a_dowel``/``b_dowel``/``ld_mm`` (Sec 8's own
+    ``dowel_embedment`` formulas), only where the vertical leg's own top
+    point sits. ``None`` (every caller that predates this ticket) keeps
+    the top point exactly at ``bend_z_mm + embedment.a_dowel_mm`` --
+    unchanged behaviour.
     """
     bend_z_mm = bottom_cover_mm + mesh_bar_x_dia_mm + mesh_bar_y_dia_mm
     bend = LocalPoint(u_mm, v_mm, bend_z_mm)
@@ -142,7 +155,9 @@ def positioned_dowel_bar_geometry(embedment, bottom_cover_mm,
         u_mm + direction_u * embedment.b_dowel_mm,
         v_mm + direction_v * embedment.b_dowel_mm,
         bend_z_mm)
-    top = LocalPoint(u_mm, v_mm, bend_z_mm + embedment.a_dowel_mm)
+    extra_mm = splice_length_mm if splice_length_mm is not None else 0.0
+    top = LocalPoint(
+        u_mm, v_mm, bend_z_mm + embedment.a_dowel_mm + extra_mm)
 
     bottom_hook = BarEndpoints(start=hook_far_end, end=bend)
     vertical = BarEndpoints(start=bend, end=top)
@@ -150,7 +165,7 @@ def positioned_dowel_bar_geometry(embedment, bottom_cover_mm,
 
 
 def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
-                              mesh_bar_y_dia_mm):
+                              mesh_bar_y_dia_mm, splice_length_mm=None):
     """The single-representative-bar shape #202 always built, centred on
     the footing's own plan centroid -- unchanged output, now a thin call
     into :func:`positioned_dowel_bar_geometry` at the origin with the
@@ -161,10 +176,15 @@ def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
     -- there is no real perimeter, so R10's per-bar direction rule does
     not apply here, and the original, already-tested `+X` direction is
     kept exactly as before.
+
+    R12: ``splice_length_mm`` is threaded straight through to
+    :func:`positioned_dowel_bar_geometry` -- same additive extension,
+    same ``None`` default, no other change to this fallback path.
     """
     return positioned_dowel_bar_geometry(
         embedment, bottom_cover_mm, mesh_bar_x_dia_mm, mesh_bar_y_dia_mm,
-        u_mm=0.0, v_mm=0.0, direction_u=1.0, direction_v=0.0)
+        u_mm=0.0, v_mm=0.0, direction_u=1.0, direction_v=0.0,
+        splice_length_mm=splice_length_mm)
 
 
 def dowel_hook_exceeds_footing_edge(hook_far_end_x_mm, hook_far_end_y_mm,

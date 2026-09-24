@@ -319,6 +319,32 @@ def test_plan_candidates_groups_by_the_live_read_tuple_and_builds_a_plan_per_sur
     assert plan_a.dowel.bars != plan_b.dowel.bars
 
 
+def test_plan_candidates_threads_the_shared_splice_length_to_every_survivor(
+        monkeypatch):
+    """R12 (issue #234): ``BatchInputs.dowel_splice_length_mm`` (the SAME
+    shared value the engineer states once, per ``BatchInputs``' own
+    docstring) must reach every candidate's own ``FootingInputs`` -- never
+    silently dropped back to ``None`` for a batch run."""
+    symbol = FakeFamilySymbol(
+        "1800 x 1200 x 450mm", family_name="M_Footing-Rectangular")
+    ftg_a = _FakeFootingElement(1, symbol=symbol)
+    FakeFilteredElementCollector._ITEMS = [ftg_a]
+    _install_reads(
+        monkeypatch,
+        column_by_footing_id={1: _column_for(1, symbol)},
+        section_by_footing_id={1: _column_section()},
+        geometry_by_footing_id={1: _geometry()})
+
+    shared_inputs = _shared_inputs()._replace(dowel_splice_length_mm=600.0)
+    result = plan_candidates(FakeDocument({}), ftg_a, shared_inputs)
+
+    assert len(result.candidates) == 1
+    plan = result.candidates[0].plan
+    assert plan.inputs.dowel_splice_length_mm == 600.0
+    assert plan.dowel.bars[0].vertical.end.z_mm == pytest.approx(
+        plan.inputs.footing_thickness_mm + 600.0)
+
+
 def test_plan_candidates_excludes_a_find_column_above_refusal_before_planning(
         monkeypatch):
     symbol = FakeFamilySymbol(

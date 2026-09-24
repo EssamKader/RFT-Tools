@@ -57,7 +57,10 @@ from rft.revit.footing_host import (
 from rft.revit.footing_mesh import place_bottom_mesh_bars
 from rft.revit.units import internal_to_mm
 from rft.ui import footing_persistence as ui_persistence
-from rft.ui.inputs import parse_optional_positive_int, parse_positive_float
+from rft.ui.inputs import (
+    parse_optional_positive_float, parse_optional_positive_int,
+    parse_positive_float,
+)
 from rft.ui.shared_styles import window_xaml
 
 TRANSACTION_NAME = (
@@ -282,6 +285,9 @@ class FootingWindow(forms.WPFWindow):
             dowel_count_h_face = parse_optional_positive_int(
                 self.dowel_count_h_face_tb.Text,
                 "Dowel count on each Cd-face")
+            dowel_splice_length_mm = parse_optional_positive_float(
+                self.dowel_splice_length_tb.Text,
+                "Splice length Ls (dowel)")
         except ValueError as ex:
             self._refuse_on_tab(self.mesh_dowels_status_tb, str(ex))
             return
@@ -334,7 +340,8 @@ class FootingWindow(forms.WPFWindow):
             dowel_count_b_face=dowel_count_b_face,
             dowel_count_h_face=dowel_count_h_face,
             mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
-            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm)
+            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm,
+            dowel_splice_length_mm=dowel_splice_length_mm)
 
         try:
             plan = build_footing_plan(
@@ -365,7 +372,8 @@ class FootingWindow(forms.WPFWindow):
             dowel_count_b_face=dowel_count_b_face,
             dowel_count_h_face=dowel_count_h_face,
             mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
-            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm)
+            mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm,
+            dowel_splice_length_mm=dowel_splice_length_mm)
 
         sections = [
             footing_report.footing_geometry_section(geometry),

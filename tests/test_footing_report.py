@@ -141,6 +141,34 @@ def test_dowel_array_section_has_no_warning_when_nothing_overshoots():
     assert "WARNING" not in lines
 
 
+def test_dowel_array_section_states_no_splice_when_none_given():
+    """R12 (docs/footing/spec-amendments.md): the default ``FootingInputs.
+    dowel_splice_length_mm=None`` case must say so explicitly and state the
+    (unchanged) top elevation, footing_thickness_mm."""
+    plan = _plan()
+    assert plan.inputs.dowel_splice_length_mm is None
+    lines = "\n".join(dowel_array_section(plan).lines)
+    assert "No splice length" in lines
+    assert "450.0 mm" in lines
+
+
+def test_dowel_array_section_states_the_splice_length_and_top_elevation():
+    """R12: a supplied Ls must be named, along with the real total top
+    elevation (footing_thickness_mm + Ls)."""
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, dowel_bar_dia_mm=16.0, dowel_ld_multiplier=40.0,
+        dowel_tie_dia_mm=10.0, dowel_count_b_face=3, dowel_count_h_face=4,
+        dowel_splice_length_mm=600.0)
+    plan = build_footing_plan(inputs, column_section=_column_section())
+    lines = "\n".join(dowel_array_section(plan).lines)
+    assert "Splice length Ls = 600.0 mm" in lines
+    assert "1050.0 mm" in lines  # 450 + 600
+
+
 def test_not_yet_placed_section_names_the_three_unwired_pieces():
     lines = "\n".join(not_yet_placed_section().lines)
     assert "Top mesh" in lines

@@ -124,6 +124,24 @@ def dowel_array_section(plan):
             _mm(embedment.ld_mm)),
         "%d dowel bar(s) in this plan" % len(plan.dowel.bars),
     ]
+    # R12 (docs/footing/spec-amendments.md): Ls narrows Sec 0 F3 for this
+    # ONE bar only -- the vertical leg's own top point, read straight off
+    # the plan's own bars (never re-derived here), already reflects the
+    # splice when one was supplied. Every bar shares the same top
+    # elevation (footing_dowels.positioned_dowel_bar_geometry's own
+    # docstring: "z_mm ... same for every bar in the array").
+    top_z_mm = plan.dowel.bars[0].vertical.end.z_mm
+    if plan.inputs.dowel_splice_length_mm is not None:
+        lines.append(
+            "Splice length Ls = %s past the footing's own top face "
+            "(%s) -- dowel top elevation = %s" % (
+                _mm(plan.inputs.dowel_splice_length_mm),
+                _mm(plan.inputs.footing_thickness_mm), _mm(top_z_mm)))
+    else:
+        lines.append(
+            "No splice length (Ls) given -- dowel stops at the "
+            "footing's own top face, %s (R12: no splice into the "
+            "column above)." % _mm(top_z_mm))
     # Issue #230: Sec 8's own b_dowel formula has no clamp against the
     # footing's own plan size -- a large dowel_ld_multiplier/dowel_bar_
     # dia_mm relative to a small column-face clear offset can produce a

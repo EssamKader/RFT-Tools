@@ -342,3 +342,95 @@ def test_local_dowel_bar_geometry_matches_positioned_at_origin_legacy_direction(
         mesh_bar_y_dia_mm=12.0, u_mm=0.0, v_mm=0.0,
         direction_u=1.0, direction_v=0.0)
     assert via_legacy == via_positioned
+
+
+# --------------------------------------------------------------------- #
+# R12 (docs/footing/spec-amendments.md) -- dowel_splice_length_mm extends
+# the vertical leg's own top point PAST the footing's own top face, into
+# the column, by Ls mm. Additive, applied AFTER the existing embedment
+# math -- a_dowel/b_dowel/ld_mm are never touched.
+
+def test_no_splice_length_keeps_the_top_exactly_at_the_footing_top_face():
+    """None (every caller that predates this ticket) must reproduce the
+    EXACT pre-R12 top elevation: 78 + 372 = 450 (this module's own
+    pre-existing test, test_local_dowel_bar_geometry_vertical_leg_top_is_
+    top_of_footing, pinned the same 450 number)."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=0.0, v_mm=0.0,
+        direction_u=1.0, direction_v=0.0, splice_length_mm=None)
+    assert geometry.vertical.end.z_mm == pytest.approx(450.0)
+
+
+def test_a_splice_length_extends_the_top_past_the_footing_top_face_by_ls():
+    """footing_thickness=450, Ls=600 -> top = 450 + 600 = 1050, NOT folded
+    into a_dowel/b_dowel (embedment is unchanged from the no-splice case)."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=0.0, v_mm=0.0,
+        direction_u=1.0, direction_v=0.0, splice_length_mm=600.0)
+    assert geometry.vertical.end.z_mm == pytest.approx(1050.0)
+    assert embedment.a_dowel_mm == pytest.approx(372.0)
+    assert embedment.b_dowel_mm == pytest.approx(DEFAULT_B_DOWEL_MM)
+
+
+def test_splice_length_does_not_move_the_bend_corner_or_the_hook():
+    """Only the vertical leg's own top point moves -- the bend corner
+    (and therefore the hook leg resting on the bottom mesh) is unchanged
+    by Ls, per R12's own "purely additive to the vertical leg" scope."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    no_splice = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=92.0, v_mm=-242.0,
+        direction_u=0.0, direction_v=-1.0, splice_length_mm=None)
+    with_splice = positioned_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, u_mm=92.0, v_mm=-242.0,
+        direction_u=0.0, direction_v=-1.0, splice_length_mm=600.0)
+    assert with_splice.bottom_hook == no_splice.bottom_hook
+    assert with_splice.vertical.start == no_splice.vertical.start
+    assert with_splice.vertical.end.x_mm == pytest.approx(
+        no_splice.vertical.end.x_mm)
+    assert with_splice.vertical.end.y_mm == pytest.approx(
+        no_splice.vertical.end.y_mm)
+    assert with_splice.vertical.end.z_mm == pytest.approx(
+        no_splice.vertical.end.z_mm + 600.0)
+
+
+def test_local_dowel_bar_geometry_threads_splice_length_through_too():
+    """The fallback single-bar path gets the same extension, since
+    ``local_dowel_bar_geometry`` is a thin call into
+    ``positioned_dowel_bar_geometry`` (pinned equal above)."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = local_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, splice_length_mm=250.0)
+    assert geometry.vertical.end.z_mm == pytest.approx(450.0 + 250.0)
+
+
+def test_local_dowel_bar_geometry_default_splice_length_is_none_unchanged():
+    """Every caller that predates this ticket omits the new keyword
+    entirely -- confirms the default itself (not just an explicit None)
+    reproduces the exact pre-R12 behaviour."""
+    embedment = dowel_embedment(
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        mesh_bar_x_dia_mm=16.0, mesh_bar_y_dia_mm=12.0,
+        db_mm=16.0, ld_multiplier=30.0)
+    geometry = local_dowel_bar_geometry(
+        embedment, bottom_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0)
+    assert geometry.vertical.end.z_mm == pytest.approx(450.0)
