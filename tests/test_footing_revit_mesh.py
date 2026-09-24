@@ -17,11 +17,14 @@ import pytest
 
 from fake_revit_api import FakeBoundingBox, FakeXYZ
 
-from rft.core.footing_plan import FootingInputs, build_footing_plan
+from rft.core.footing_plan import (
+    TOP_REINFORCEMENT_TOP_AND_BTM, FootingInputs, build_footing_plan,
+)
 from rft.revit.footing_mesh import (
     FootingRotationUnsupportedError,
     place_bottom_mesh_bars,
     place_straight_bottom_mesh,
+    place_straight_top_mesh,
 )
 from rft.revit.units import mm_to_internal
 
@@ -321,6 +324,83 @@ def test_place_bottom_mesh_bars_hosts_every_bar_on_the_same_footing(footing):
     for bar in bars_x + bars_y:
         assert bar.args[5] is footing
         assert bar.args[0] is document
+
+
+def _top_plan(x_offset_mm=300.0, y_offset_mm=150.0):
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=x_offset_mm,
+        y_offset_mm=y_offset_mm, ld_multiplier=40.0,
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    return build_footing_plan(inputs)
+
+
+def test_place_straight_top_mesh_hosts_both_bars_on_the_footing(footing):
+    """#233 (R13): hosted on the SAME footing element as the bottom
+    mesh -- there is no separate top-mat host."""
+    document = object()
+    plan = _top_plan()
+
+    bar_x, bar_y = place_straight_top_mesh(
+        document, footing, plan.top_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+
+    assert bar_x.args[5] is footing
+    assert bar_y.args[5] is footing
+    assert bar_x.args[0] is document
+    assert bar_y.args[0] is document
+
+
+def test_place_straight_top_mesh_hooked_bar_bends_down_not_up(footing):
+    """R13's own reason for existing: the top mat's hook leg must go
+    DOWN toward the bottom mat, so the base elevation (the middle of the
+    curve chain) must be HIGHER than the hooked end's own Z, the mirror
+    image of the bottom mat's own rise."""
+    plan = _top_plan()  # both ends of both bars hooked, same offsets as
+    # the module's own `plan` fixture above (U-shape).
+    bar_x, _bar_y = place_straight_top_mesh(
+        object(), footing, plan.top_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+
+    zs = [point.Z for curve in bar_x.args[7]
+          for point in (curve.GetEndPoint(0), curve.GetEndPoint(1))]
+    base_z = max(zs)
+    hooked_z = min(zs)
+    assert hooked_z < base_z
+    drop_internal = base_z - hooked_z
+    expected_internal = mm_to_internal(plan.top_mesh.lengths.n_mm)
+    assert drop_internal == pytest.approx(expected_internal)
+
+
+def test_place_straight_top_mesh_uses_the_same_per_axis_norm_as_the_bottom_mat(
+        footing):
+    """R13 changes which way a hooked end's leg points, not which PLANE
+    it bends in -- so mesh_bar_x keeps norm = BasisY and mesh_bar_y keeps
+    norm = BasisX, exactly as the bottom mat's own #229 rule."""
+    plan = _top_plan()
+    bar_x, bar_y = place_straight_top_mesh(
+        object(), footing, plan.top_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    norm_x = bar_x.args[6]
+    norm_y = bar_y.args[6]
+    assert (norm_x.X, norm_x.Y, norm_x.Z) == (0.0, 1.0, 0.0)
+    assert (norm_y.X, norm_y.Y, norm_y.Z) == (1.0, 0.0, 0.0)
+
+
+def test_place_straight_top_mesh_straight_bar_keeps_the_verified_basis_z_norm(
+        footing):
+    plan = _top_plan(x_offset_mm=700.0, y_offset_mm=500.0)  # neither end
+    # of either bar needs a hook with these offsets (same LD math as the
+    # module's own straight_plan fixture above).
+    bar_x, bar_y = place_straight_top_mesh(
+        object(), footing, plan.top_mesh, _FakeBarType("16M"),
+        _FakeBarType("12M"))
+    norm_x = bar_x.args[6]
+    norm_y = bar_y.args[6]
+    assert (norm_x.X, norm_x.Y, norm_x.Z) == (0.0, 0.0, 1.0)
+    assert (norm_y.X, norm_y.Y, norm_y.Z) == (0.0, 0.0, 1.0)
 
 
 def test_place_bottom_mesh_bars_gives_each_bar_x_a_distinct_y_offset(footing):

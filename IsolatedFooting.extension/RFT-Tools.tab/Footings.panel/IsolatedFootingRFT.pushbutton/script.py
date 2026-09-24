@@ -12,16 +12,24 @@ the SAME functions the report and the placement both read
 
 ## Scope -- what this window does NOT expose, and why
 
-Top mesh (#201), dowel-tie closed loops (#203) and the perimeter-tie bar
-(#204) have core math (`rft.core.footing_plan`/`footing_dowel_ties`/
-`footing_perimeter_tie`) but no Revit placement adapter yet
-(`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet in" list) --
-adding input fields for them here would let an engineer configure
-something this tool cannot place. This ticket wires what #198-#228
-actually PLACE (bottom mesh, the dowel array, single or batch); it does
-not implement new placement logic for the rest, which stays out of
-scope per REUSE_GUIDELINES.md Sec 3 ("Zero API Guessing") the same way
-every other undelivered piece in this tool has been treated all session.
+Dowel-tie closed loops (#203) and the perimeter-tie bar (#204) have core
+math (`footing_dowel_ties`/`footing_perimeter_tie`) but no Revit
+placement adapter yet (`IsolatedFooting.extension/CONTEXT.md`'s own "Not
+yet in" list) -- adding input fields for them here would let an engineer
+configure something this tool cannot place. This window wires what
+#198-#233 actually PLACE (bottom mesh, the top mesh, the dowel array,
+single or batch); it does not implement new placement logic for the
+rest, which stays out of scope per REUSE_GUIDELINES.md Sec 3 ("Zero API
+Guessing") the same way every other undelivered piece in this tool has
+been treated all session.
+
+#233 (R13, docs/footing/spec-amendments.md): the top mat (Sec 3 Story 4,
+Sec 7) is now wired -- `top_reinforcement_cb`/`top_mat_shape_cb` on the
+Mesh & Dowels tab, threaded into `FootingInputs`/`BatchInputs`, and
+placed by `rft.revit.footing_mesh.place_straight_top_mesh` in the SAME
+transaction as the bottom mesh/dowels. It reuses the SAME `mesh_bar_x`/
+`mesh_bar_y` bar types as the bottom mat (Sec 7 names no top-mat-specific
+bar type) -- no new bar-type combo was added for it.
 
 ## The two settings that are not visible in this file
 
@@ -45,6 +53,9 @@ from Autodesk.Revit.DB import Transaction
 
 from rft.core.footing_plan import FootingInputs, build_footing_plan
 from rft.core.footing_plan import MAT_SHAPE_L_ALTERNATING, MAT_SHAPE_U
+from rft.core.footing_plan import (
+    TOP_REINFORCEMENT_BTM_ONLY, TOP_REINFORCEMENT_TOP_AND_BTM,
+)
 from rft.core import footing_report
 from rft.revit import footing_batch
 from rft.revit.bar_types import bar_type_diameter_mm, bar_type_options
@@ -54,7 +65,9 @@ from rft.revit.footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
     read_footing_geometry_mm,
 )
-from rft.revit.footing_mesh import place_bottom_mesh_bars
+from rft.revit.footing_mesh import (
+    place_bottom_mesh_bars, place_straight_top_mesh,
+)
 from rft.revit.units import internal_to_mm
 from rft.ui import footing_persistence as ui_persistence
 from rft.ui.inputs import (
@@ -249,6 +262,29 @@ class FootingWindow(forms.WPFWindow):
             return MAT_SHAPE_L_ALTERNATING
         return None
 
+    def _selected_top_reinforcement(self):
+        """#233 (Sec 3 Story 4, Sec 7): ``top_reinforcement_cb``'s own two
+        options -> the SAME ``TOP_REINFORCEMENT_BTM_ONLY``/
+        ``TOP_REINFORCEMENT_TOP_AND_BTM`` values ``FootingInputs.
+        top_reinforcement`` already accepts -- index 0 (the default) is
+        BTM-only, matching the trailing default every caller that
+        predates this ticket already got.
+        """
+        if self.top_reinforcement_cb.SelectedIndex == 1:
+            return TOP_REINFORCEMENT_TOP_AND_BTM
+        return TOP_REINFORCEMENT_BTM_ONLY
+
+    def _selected_top_mat_shape_mode(self):
+        """The top mat's OWN U/L-alternating override -- set independently
+        of ``_selected_bottom_mat_shape_mode`` (Sec 7: "set separately,
+        never coupled"), same three-option mapping."""
+        index = self.top_mat_shape_cb.SelectedIndex
+        if index == 1:
+            return MAT_SHAPE_U
+        if index == 2:
+            return MAT_SHAPE_L_ALTERNATING
+        return None
+
     def _selected_bar_type_object(self, combo):
         """The actual ``RebarBarType`` behind a combo -- never parsed out
         of the name (the live model's ``16M`` is 15.90mm, ``25M`` is
@@ -341,7 +377,9 @@ class FootingWindow(forms.WPFWindow):
             dowel_count_h_face=dowel_count_h_face,
             mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
             mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm,
-            dowel_splice_length_mm=dowel_splice_length_mm)
+            dowel_splice_length_mm=dowel_splice_length_mm,
+            top_reinforcement=self._selected_top_reinforcement(),
+            top_mat_shape_mode=self._selected_top_mat_shape_mode())
 
         try:
             plan = build_footing_plan(
@@ -373,15 +411,19 @@ class FootingWindow(forms.WPFWindow):
             dowel_count_h_face=dowel_count_h_face,
             mesh_bar_x_spacing_mm=mesh_bar_x_spacing_mm,
             mesh_bar_y_spacing_mm=mesh_bar_y_spacing_mm,
-            dowel_splice_length_mm=dowel_splice_length_mm)
+            dowel_splice_length_mm=dowel_splice_length_mm,
+            top_reinforcement=self._selected_top_reinforcement(),
+            top_mat_shape_mode=self._selected_top_mat_shape_mode())
 
         sections = [
             footing_report.footing_geometry_section(geometry),
             footing_report.column_section_section(self.column_section),
             footing_report.mesh_section(plan),
-            footing_report.dowel_array_section(plan),
-            footing_report.not_yet_placed_section(),
         ]
+        if plan.top_mesh is not None:
+            sections.append(footing_report.top_mesh_section(plan))
+        sections.append(footing_report.dowel_array_section(plan))
+        sections.append(footing_report.not_yet_placed_section())
         self.report_tb.Text = footing_report.render(sections)
         self.review_tab.IsEnabled = True
         self.tabs.SelectedItem = self.review_tab
@@ -414,6 +456,14 @@ class FootingWindow(forms.WPFWindow):
             dowel_bars = place_dowel_bars(
                 doc, self.footing, self.plan.dowel,
                 bar_types["dowel_bar_type"])
+            # #233 (R13): the top mat, same transaction, same footing
+            # host as the bottom mesh -- only when the engineer asked for
+            # TOP+BTM (self.plan.top_mesh is not None).
+            top_bar_x, top_bar_y = None, None
+            if self.plan.top_mesh is not None:
+                top_bar_x, top_bar_y = place_straight_top_mesh(
+                    doc, self.footing, self.plan.top_mesh,
+                    bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])
         except Exception as ex:
             transaction.RollBack()
             message = "Placement FAILED and was rolled back -- {}: {}".format(
@@ -424,9 +474,13 @@ class FootingWindow(forms.WPFWindow):
             return
         transaction.Commit()
 
+        top_mesh_message = ""
+        if top_bar_x is not None:
+            top_mesh_message = " Placed the top mat's mesh_bar_x/mesh_bar_y."
         message = (
             "Placed %d mesh_bar_x bar(s), %d mesh_bar_y bar(s), and %d "
-            "dowel bar(s)." % (len(bars_x), len(bars_y), len(dowel_bars)))
+            "dowel bar(s).%s" % (
+                len(bars_x), len(bars_y), len(dowel_bars), top_mesh_message))
         self.review_status_tb.Text = message
         self.status_tb.Text = message
         forms.alert(message, title="Isolated Footing RFT")

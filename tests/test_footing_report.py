@@ -5,7 +5,12 @@ text out; nothing here is recomputed, only the objects
 """
 
 from rft.core.footing_batch import BatchExisting, BatchGroup, Exclusion, GroupKey
-from rft.core.footing_plan import DowelColumnSection, FootingInputs, build_footing_plan
+from rft.core.footing_plan import (
+    TOP_REINFORCEMENT_TOP_AND_BTM,
+    DowelColumnSection,
+    FootingInputs,
+    build_footing_plan,
+)
 from rft.core.footing_report import (
     ReportSection,
     batch_exclusion_section,
@@ -17,6 +22,7 @@ from rft.core.footing_report import (
     mesh_section,
     not_yet_placed_section,
     render,
+    top_mesh_section,
 )
 from rft.revit.footing_host import FootingGeometry
 
@@ -169,11 +175,38 @@ def test_dowel_array_section_states_the_splice_length_and_top_elevation():
     assert "1050.0 mm" in lines  # 450 + 600
 
 
-def test_not_yet_placed_section_names_the_three_unwired_pieces():
+def test_not_yet_placed_section_names_the_two_unwired_pieces():
+    """#233 (R13): top mesh is now wired to placement, so this section
+    must stop naming it -- only dowel-tie/perimeter-tie remain."""
     lines = "\n".join(not_yet_placed_section().lines)
-    assert "Top mesh" in lines
-    assert "dowel-tie" in lines
-    assert "perimeter-tie" in lines
+    assert "Top mesh" not in lines
+    assert "dowel-tie" in lines.lower()
+    assert "perimeter-tie" in lines.lower()
+
+
+def _top_plan():
+    inputs = FootingInputs(
+        a_mm=1800.0, b_mm=1200.0, cover_mm=50.0,
+        footing_thickness_mm=450.0, bottom_cover_mm=50.0,
+        top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
+        mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        ld_multiplier=40.0, top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    return build_footing_plan(inputs)
+
+
+def test_top_mesh_section_names_both_bar_lengths():
+    plan = _top_plan()
+    lines = "\n".join(top_mesh_section(plan).lines)
+    assert "mesh_bar_x" in lines and "mesh_bar_y" in lines
+
+
+def test_top_mesh_section_states_the_downward_hook_direction():
+    """R13: the report must say the hook bends DOWN, toward the bottom
+    mat -- never left silent, the same lesson #229's own live-host
+    finding taught for the bottom mat's U/L shape."""
+    plan = _top_plan()
+    lines = "\n".join(top_mesh_section(plan).lines)
+    assert "DOWNWARD" in lines
 
 
 def test_batch_group_section_names_each_group_its_key_and_its_footings():

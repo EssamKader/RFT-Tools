@@ -21,6 +21,7 @@ from rft.core.footing_mesh import (
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
+    top_mesh_bar_geometry,
 )
 from rft.core.footing_dowels import dowel_embedment, local_dowel_bar_geometry
 from rft.core.column_layout import perimeter_bar_positions
@@ -151,15 +152,47 @@ def test_the_plan_carries_bar_geometry_matching_bottom_mesh_bar_geometry():
     assert plan.bottom_mesh.bar_y_geometry == expected_bar_y
 
 
-def test_the_top_mesh_never_gets_a_bent_geometry_no_direction_ruling_yet():
-    """#229 is bottom-mat-only (see ``footing_mesh.bottom_mesh_bar_
-    geometry``'s own docstring) -- the top mat's own hook direction is
-    genuinely unstated by the spec, so ``top_mesh.bar_x_geometry``/
-    ``bar_y_geometry`` must stay ``None``, never silently guessed."""
+def test_the_top_mesh_now_gets_its_own_bent_geometry_per_r13():
+    """#233 (R13, docs/footing/spec-amendments.md): the top mat's hook
+    direction is now resolved (DOWNWARD, toward the bottom mat), so
+    ``top_mesh.bar_x_geometry``/``bar_y_geometry`` must be populated by
+    the SAME composing module that populates the bottom mat's own
+    geometry -- the ``None`` this test used to require is exactly what
+    R13 was raised to fix."""
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    plan = build_footing_plan(inputs)
+
+    expected_bar_x, expected_bar_y = top_mesh_bar_geometry(
+        plan.top_mesh.lengths, inputs.top_cover_mm,
+        inputs.footing_thickness_mm, inputs.mesh_bar_x_dia_mm,
+        inputs.mesh_bar_y_dia_mm, plan.top_mesh.bar_x_hooks,
+        plan.top_mesh.bar_y_hooks)
+    assert plan.top_mesh.bar_x_geometry == expected_bar_x
+    assert plan.top_mesh.bar_y_geometry == expected_bar_y
+
+
+def test_the_top_mesh_array_stays_none_array_is_separate_follow_up_scope():
+    """#233's own scope: only the single representative bar per direction
+    is built for the top mat -- the array (many parallel bars, mirroring
+    #232's bottom-mesh array) is deliberately left unbuilt."""
     plan = build_footing_plan(_inputs(
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM))
-    assert plan.top_mesh.bar_x_geometry is None
-    assert plan.top_mesh.bar_y_geometry is None
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0))
+    assert plan.top_mesh.bar_x_array is None
+    assert plan.top_mesh.bar_y_array is None
+
+
+def test_the_top_mesh_hook_leg_is_subtracted_not_added():
+    """R13's own reason for existing: a hooked top-mat bar's own vertical
+    leg must go DOWN (toward the bottom mat), the opposite direction from
+    the bottom mat's own hook leg at the SAME (mirrored) base elevation."""
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    plan = build_footing_plan(inputs)
+
+    assert plan.top_mesh.bar_x_hooks.start.needs_hook
+    base_z = plan.top_mesh.bar_x_geometry.points[1].z_mm
+    hooked_z = plan.top_mesh.bar_x_geometry.points[0].z_mm
+    assert hooked_z < base_z
 
 
 def test_the_plan_keeps_the_inputs_it_was_built_from():

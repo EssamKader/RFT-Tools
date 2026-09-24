@@ -252,3 +252,54 @@ def place_bottom_mesh_bars(document, footing, bottom_mesh, bar_x_type,
             norm_y, bar_y_type)
         for geometry in bar_y_geometries]
     return bars_x, bars_y
+
+
+def place_straight_top_mesh(document, footing, top_mesh, bar_x_type,
+                            bar_y_type):
+    """#233 (R13, docs/footing/spec-amendments.md): places ONE
+    ``mesh_bar_x`` bar and ONE ``mesh_bar_y`` bar for the TOP mat, hosted
+    on the SAME ``footing`` element as the bottom mesh -- there is no
+    separate top-mat host.
+
+    Mirrors ``place_straight_bottom_mesh``'s own pre-#232 shape (single
+    representative bar per direction) rather than ``place_bottom_mesh_
+    bars``'s array-loop shape: ``rft.core.footing_plan.TopMeshPlan`` never
+    carries a ``bar_x_array``/``bar_y_array`` (this ticket's own scope --
+    the top mat's own array is separate, unbuilt follow-up), so there is
+    nothing to loop over yet.
+
+    ``norm`` derivation reuses ``_norm_for_bar`` exactly as the bottom mat
+    does -- ``mesh_bar_x`` still bends in the X-Z plane (``norm =
+    XYZ.BasisY``), ``mesh_bar_y`` still bends in the Y-Z plane (``norm =
+    XYZ.BasisX``); R13 changes which way (up/down) a hooked end's leg
+    points, not which PLANE it bends in, so the same #183 measurement
+    (``norm`` perpendicular to the bend's own plane) still applies
+    unchanged. A bar with neither end hooked keeps the #197-verified
+    ``XYZ.BasisZ`` for the same reason ``_norm_for_bar`` already gives the
+    bottom mat's own straight case that value.
+
+    ``top_mesh`` is a ``rft.core.footing_plan.TopMeshPlan`` -- the caller
+    must build it via ``build_footing_plan``, never by calling
+    ``rft.core.footing_mesh`` directly (the one composing module rule).
+
+    Returns ``(bar_x, bar_y)``, the two created ``Rebar`` elements.
+
+    SHAPE UNVERIFIED: the same footing-host bent-multi-curve
+    ``Rebar.CreateFromCurves`` combination #229's own docstring already
+    flags as unverified for the bottom mat (issue #236) -- this places at
+    the top mat's own (different) elevation, which is not a new API
+    shape, but has not itself been run against a live host either.
+    """
+    origin_x, origin_y, origin_z = _footing_origin(footing)
+    norm_x = _norm_for_bar(top_mesh.bar_x_hooks, XYZ.BasisY)
+    norm_y = _norm_for_bar(top_mesh.bar_y_hooks, XYZ.BasisX)
+
+    bar_x = _place_one_bar(
+        document, footing,
+        _bent_bar_curves(origin_x, origin_y, origin_z, top_mesh.bar_x_geometry),
+        norm_x, bar_x_type)
+    bar_y = _place_one_bar(
+        document, footing,
+        _bent_bar_curves(origin_x, origin_y, origin_z, top_mesh.bar_y_geometry),
+        norm_y, bar_y_type)
+    return bar_x, bar_y

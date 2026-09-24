@@ -168,7 +168,7 @@ def local_mesh_bar_endpoints(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
 
 
 def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
-                          along_x, offset_mm=0.0):
+                          along_x, offset_mm=0.0, hook_sign=1.0):
     """One bar's bent centreline (:class:`MeshBarGeometry`'s own
     ``points``), footing-local mm.
 
@@ -177,10 +177,10 @@ def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
     ``mesh_bar_y_mm``, which already fold both hook legs into one total
     length for Sec 4's bookkeeping formula, not into one straight run).
     Each end whose ``hook_plan`` says ``needs_hook`` gets a VERTICAL leg
-    of length ``hook_leg_mm`` (Sec 3's ``N``/``N2``), bent straight UP
-    (Sec 5: "bend the bar up") from that end's own elevation -- never
-    sideways, so unlike the dowel array (R10) there is no per-bar outward
-    direction to derive, only a fixed +Z.
+    of length ``hook_leg_mm`` (Sec 3's ``N``/``N2``), bent from that end's
+    own elevation -- never sideways, so unlike the dowel array (R10)
+    there is no per-bar outward direction to derive, only a fixed
+    vertical axis.
 
     #232 (R11, docs/footing/spec-amendments.md): ``offset_mm`` is this
     bar's own position along the axis PERPENDICULAR to its run (Y for a
@@ -190,6 +190,16 @@ def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
     existing single-bar builder is the array; the hook-point logic itself
     is not duplicated anywhere for the array (this ticket's own
     instruction).
+
+    R13 (docs/footing/spec-amendments.md, issue #233): ``hook_sign`` is
+    the ONE difference between the bottom mat's "bend the bar up" rule
+    (Sec 5) and the top mat's mirrored "bend DOWN toward the bottom mat"
+    rule -- ``+1.0`` (the default, so every caller that predates #233
+    keeps building the bottom mat's own upward hook unchanged) adds the
+    hook leg to the end's elevation; ``-1.0`` (the top mat only)
+    subtracts it instead. Nothing else about this function's own shape
+    changes for the top mat -- the 2/3/4-point chain logic is identical,
+    per this ticket's own instruction not to duplicate it.
     """
     half = z_mm / 2.0
     if along_x:
@@ -202,13 +212,14 @@ def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
     def _point(xy, z_mm_value):
         return LocalPoint(xy[0], xy[1], z_mm_value)
 
+    hook_leg_signed_mm = hook_sign * hook_leg_mm
     points = []
     if hook_plan.start.needs_hook:
-        points.append(_point(start_xy, elevation_mm + hook_leg_mm))
+        points.append(_point(start_xy, elevation_mm + hook_leg_signed_mm))
     points.append(_point(start_xy, elevation_mm))
     points.append(_point(end_xy, elevation_mm))
     if hook_plan.end.needs_hook:
-        points.append(_point(end_xy, elevation_mm + hook_leg_mm))
+        points.append(_point(end_xy, elevation_mm + hook_leg_signed_mm))
     return MeshBarGeometry(points=tuple(points))
 
 
@@ -352,6 +363,38 @@ def local_top_mesh_bar_endpoints(lengths, top_cover_mm, footing_thickness_mm,
     bar_y = BarEndpoints(
         start=LocalPoint(0.0, -half_y, z_y_mm),
         end=LocalPoint(0.0, half_y, z_y_mm))
+    return bar_x, bar_y
+
+
+def top_mesh_bar_geometry(lengths, top_cover_mm, footing_thickness_mm,
+                         mesh_bar_x_dia_mm, mesh_bar_y_dia_mm,
+                         bar_x_hooks, bar_y_hooks):
+    """#233 (R13, docs/footing/spec-amendments.md): ``mesh_bar_x``/
+    ``mesh_bar_y``'s own bent centrelines for the TOP mat -- the mirror
+    image of ``bottom_mesh_bar_geometry``, both in SHAPE (identical
+    2/3/4-point chain logic, via the SAME ``_mesh_bar_hook_points``) and
+    in the ONE thing that differs: each hooked end's vertical leg is
+    SUBTRACTED from that end's own elevation (``hook_sign=-1.0``) rather
+    than added, since the top mat's hook bends DOWNWARD toward the bottom
+    mat, never upward toward the top face.
+
+    Elevations are the SAME ``local_top_mesh_bar_endpoints`` already uses
+    (R3) -- measured from the top face downward, ``mesh_bar_x`` nearest
+    the top face, ``mesh_bar_y`` one ``mesh_bar_x`` diameter further into
+    the footing. Only the straight run/elevation math is shared with
+    ``local_top_mesh_bar_endpoints``; the bent centreline itself is built
+    fresh here the same way ``bottom_mesh_bar_geometry`` builds its own
+    on top of ``local_mesh_bar_endpoints``.
+    """
+    z_x_mm = footing_thickness_mm - top_cover_mm - mesh_bar_x_dia_mm / 2.0
+    z_y_mm = (footing_thickness_mm - top_cover_mm
+              - mesh_bar_x_dia_mm - mesh_bar_y_dia_mm / 2.0)
+    bar_x = _mesh_bar_hook_points(
+        lengths.z_mm, lengths.n_mm, z_x_mm, bar_x_hooks, along_x=True,
+        hook_sign=-1.0)
+    bar_y = _mesh_bar_hook_points(
+        lengths.z2_mm, lengths.n2_mm, z_y_mm, bar_y_hooks, along_x=False,
+        hook_sign=-1.0)
     return bar_x, bar_y
 
 

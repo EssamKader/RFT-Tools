@@ -28,10 +28,10 @@ Sections 1, 2, 4 and 5 add on top of the single-footing path:
        dialog and before any transaction, via ``footing_ownership.
        partition_host_rebar`` -- so the replacement count and the
        elements apply deletes are the same query (Sec 6);
-    7. place every remaining candidate (bottom mesh + full dowel array)
-       inside ONE transaction, all-or-nothing (Sec 5) -- refusing the
-       whole run rather than opening an empty transaction if nothing
-       survived.
+    7. place every remaining candidate (bottom mesh + full dowel array,
+       plus the top mat -- #233 -- when its own plan carries one) inside
+       ONE transaction, all-or-nothing (Sec 5) -- refusing the whole run
+       rather than opening an empty transaction if nothing survived.
 
 Nothing here re-derives a detailing rule: every ``FootingPlan`` is built
 by the exact function the single-footing script already calls, so a batch
@@ -49,7 +49,9 @@ from Autodesk.Revit import DB
 from Autodesk.Revit.DB import Transaction
 
 from ..core.footing_batch import BatchExisting, Exclusion, group_hosts
-from ..core.footing_plan import FootingInputs, build_footing_plan
+from ..core.footing_plan import (
+    TOP_REINFORCEMENT_BTM_ONLY, FootingInputs, build_footing_plan,
+)
 from .bar_types import bar_type_diameter_mm
 from .column_host import ColumnHostError
 from .footing_dowels import place_dowel_bars
@@ -57,7 +59,7 @@ from .footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
     read_footing_geometry_mm,
 )
-from .footing_mesh import place_bottom_mesh_bars
+from .footing_mesh import place_bottom_mesh_bars, place_straight_top_mesh
 from .footing_ownership import partition_host_rebar, tag_as_ours
 from .units import internal_to_mm
 
@@ -97,6 +99,16 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: one back to stopping at the footing's own top face. Append-only,
 #: default ``None`` -- every caller that predates this ticket keeps
 #: building a batch with no splice, unchanged.
+#: #233 (R13): ``top_reinforcement``/``top_mat_shape_mode`` are the SAME
+#: direct toggle/override ``FootingInputs`` already accepts for the
+#: single-footing path, carried here too so a batch run honours the SAME
+#: TOP+BTM choice the engineer made on the Mesh & Dowels tab, rather than
+#: silently reverting every footing in the group back to BTM-only.
+#: Append-only: ``top_reinforcement`` defaults to
+#: ``footing_plan.TOP_REINFORCEMENT_BTM_ONLY`` (the SAME default
+#: ``FootingInputs`` itself uses) and ``top_mat_shape_mode`` defaults to
+#: ``None`` -- every caller that predates this ticket keeps building a
+#: batch with no top mat, unchanged.
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
@@ -104,8 +116,9 @@ BatchInputs = namedtuple(
      "dowel_bar_type", "dowel_tie_bar_type", "dowel_ld_multiplier",
      "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode",
      "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
-     "dowel_splice_length_mm"])
-BatchInputs.__new__.__defaults__ = (None, None, None, None)
+     "dowel_splice_length_mm", "top_reinforcement", "top_mat_shape_mode"])
+BatchInputs.__new__.__defaults__ = (
+    None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None)
 
 
 class FootingBatchError(Exception):
@@ -156,14 +169,22 @@ class FootingPlacementResult(object):
     that direction, one entry when no array was built (spacing not
     supplied, the SAME single-bar-per-direction shape every caller that
     predates #232 already got), N entries for a real array.
+
+    #233 (R13): ``top_bar_x``/``top_bar_y`` are the top mat's own single
+    representative ``Rebar`` element per direction (no array yet -- see
+    ``TopMeshPlan``'s own docstring), or ``None`` when no top mat was
+    requested for this footing (every caller that predates this ticket).
     """
 
-    def __init__(self, bars_x, bars_y, dowel_bars, replaced_count, foreign):
+    def __init__(self, bars_x, bars_y, dowel_bars, replaced_count, foreign,
+                top_bar_x=None, top_bar_y=None):
         self.bars_x = bars_x
         self.bars_y = bars_y
         self.dowel_bars = dowel_bars
         self.replaced_count = replaced_count
         self.foreign = foreign
+        self.top_bar_x = top_bar_x
+        self.top_bar_y = top_bar_y
 
 
 class BatchPlacementResult(object):
@@ -280,7 +301,9 @@ def plan_candidates(doc, host_footing, inputs):
             dowel_count_h_face=inputs.dowel_count_h_face,
             mesh_bar_x_spacing_mm=inputs.mesh_bar_x_spacing_mm,
             mesh_bar_y_spacing_mm=inputs.mesh_bar_y_spacing_mm,
-            dowel_splice_length_mm=inputs.dowel_splice_length_mm)
+            dowel_splice_length_mm=inputs.dowel_splice_length_mm,
+            top_reinforcement=inputs.top_reinforcement,
+            top_mat_shape_mode=inputs.top_mat_shape_mode)
         try:
             plan = build_footing_plan(
                 footing_inputs, column_section=column_section)
@@ -361,14 +384,28 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type):
             dowel_bars = place_dowel_bars(
                 doc, candidate.element, candidate.plan.dowel,
                 dowel_bar_type)
+            # #233 (R13): the top mat, when this candidate's own plan
+            # carries one -- inside the SAME transaction as the bottom
+            # mesh/dowels (this repo's hard "one transaction" rule).
+            top_bar_x, top_bar_y = None, None
+            if candidate.plan.top_mesh is not None:
+                top_bar_x, top_bar_y = place_straight_top_mesh(
+                    doc, candidate.element, candidate.plan.top_mesh,
+                    bar_x_type, bar_y_type)
 
             host_id = candidate.element.Id.IntegerValue
-            for rebar in list(bars_x) + list(bars_y) + list(dowel_bars):
+            all_rebar = list(bars_x) + list(bars_y) + list(dowel_bars)
+            if top_bar_x is not None:
+                all_rebar.append(top_bar_x)
+            if top_bar_y is not None:
+                all_rebar.append(top_bar_y)
+            for rebar in all_rebar:
                 tag_as_ours(rebar, host_id)
 
             per_footing.append((host_id, FootingPlacementResult(
                 bars_x=bars_x, bars_y=bars_y, dowel_bars=dowel_bars,
-                replaced_count=len(ours), foreign=foreign)))
+                replaced_count=len(ours), foreign=foreign,
+                top_bar_x=top_bar_x, top_bar_y=top_bar_y)))
     except Exception:
         transaction.RollBack()
         raise
