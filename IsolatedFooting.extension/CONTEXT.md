@@ -376,16 +376,20 @@ placement adapters as a side effect of a UI-wiring ticket.
 `rft.revit.footing_mesh._footing_origin` translates footing-local mm
 coordinates into world XYZ using only the footing's bounding-box centre,
 with no rotation transform. Per issue #69's own finding for columns
-(bounding boxes are axis-aligned in model space and only agree with the
-element's own dimensions at 0/90/180/270 deg), a rotated footing would get
-its bars placed along world X/Y instead of its own a/b directions if this
-went unchecked. `_footing_origin` therefore raises
-`FootingRotationUnsupportedError` for any footing not at a quarter-turn,
-per REUSE_GUIDELINES.md Sec 3's "Explicit Refusals" rule (found and fixed
-in review, PR #209). Supporting a rotated footing needs a live-host check
-of `footing.GetTransform()` against the plan centroid and the family's own
-a/b axes — unverified, and a decision ticket of its own, not something to
-guess at inline.
+(bounding boxes are axis-aligned in model space), a rotated footing would
+get its bars placed along world X/Y instead of its own a/b directions if
+this went unchecked -- true even at a 90/270-deg quarter-turn, where the
+footing's own a/b axes are swapped onto world X/Y, not merely rotated
+away (issue #246, confirmed live: rebar placed outside the footing solid
+at 90 deg). `_footing_origin` therefore raises
+`FootingRotationUnsupportedError` for any footing not at a HALF-turn (0
+or 180 deg only -- #246 tightened this from the original, wrong 0/90/
+180/270 acceptance), per REUSE_GUIDELINES.md Sec 3's "Explicit Refusals"
+rule (found and fixed in review, PR #209; tightened again in #246).
+Supporting a 90/270-deg (or any other) rotated footing needs a live-host
+check of `footing.GetTransform()` against the plan centroid and the
+family's own a/b axes, including an actual axis swap — unverified, and a
+decision ticket of its own, not something to guess at inline.
 
 ## Resolved spec gap: X == Y (R1)
 
