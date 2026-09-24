@@ -92,6 +92,25 @@ def dowel_array_section(plan):
             _mm(embedment.ld_mm)),
         "%d dowel bar(s) in this plan" % len(plan.dowel.bars),
     ]
+    # Issue #230: Sec 8's own b_dowel formula has no clamp against the
+    # footing's own plan size -- a large dowel_ld_multiplier/dowel_bar_
+    # dia_mm relative to a small column-face clear offset can produce a
+    # hook whose far end lands past the footing's own plan edge. This is
+    # the spec's own formula working as specified, not a placement bug
+    # (see footing_dowels.dowel_hook_exceeds_footing_edge's own
+    # docstring) -- surfaced here as a WARNING, not a refusal, since an
+    # engineer may still want the plan reviewed/adjusted rather than
+    # blocked outright.
+    if plan.dowel.overshoot_bar_indices:
+        lines.append(
+            "WARNING: %d of %d dowel hook(s) extend past the footing's "
+            "own plan edge (b_dowel = %s is longer than the available "
+            "column-face clear offset here). This is Sec 8's LD-driven "
+            "hook formula, not a placement bug -- increase the column-face "
+            "clear offset (X/Y) or review the dowel bar size/LD multiplier "
+            "before placing." % (
+                len(plan.dowel.overshoot_bar_indices), len(plan.dowel.bars),
+                _mm(embedment.b_dowel_mm)))
     return ReportSection("Dowel array (#202/#222, hooks bend outward -- R10)",
                          lines)
 

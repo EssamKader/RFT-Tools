@@ -25,6 +25,7 @@ from collections import namedtuple
 from .column_layout import perimeter_bar_positions
 from .footing_dowels import (
     dowel_embedment,
+    dowel_hook_exceeds_footing_edge,
     dowel_outward_direction,
     local_dowel_bar_geometry,
     positioned_dowel_bar_geometry,
@@ -258,7 +259,17 @@ DowelColumnSection = namedtuple(
 #: per docs/token-efficient-expansion.md Sec 7 (one composing-module
 #: shape, built before a second consumer -- #223's placement adapter --
 #: exists).
-DowelArrayPlan = namedtuple("DowelArrayPlan", ["embedment", "bars"])
+#:
+#: Issue #230: ``overshoot_bar_indices`` (append-only field, added after
+#: this ticket's own DowelArrayPlan shape shipped) is the list of indices
+#: into ``bars`` whose hook far end (``bars[i].bottom_hook.start``) lands
+#: outside the footing's own plan edge (``footing_dowels.dowel_hook_
+#: exceeds_footing_edge``, computed once here so the report and any future
+#: consumer read the SAME list rather than re-deriving it). Empty when no
+#: bar overshoots -- the common case -- never ``None``, so a caller can
+#: always call ``len()``/iterate without a null check.
+DowelArrayPlan = namedtuple(
+    "DowelArrayPlan", ["embedment", "bars", "overshoot_bar_indices"])
 
 #: #203 (Sec 3 Story 6, Sec 9): ``ladder`` is a
 #: ``footing_dowel_ties.DowelTieLadder`` -- the starter/end-offset vertical
@@ -507,7 +518,22 @@ def _build_dowel_plan(inputs, column_section):
             embedment, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
             inputs.mesh_bar_y_dia_mm)]
 
-    return DowelArrayPlan(embedment=embedment, bars=bars)
+    # Issue #230: Sec 8's own b_dowel formula has no clamp against the
+    # footing's own plan size -- flag, once, here (the one composing
+    # module every consumer reads), never silently reshaped. half_a_mm/
+    # half_b_mm are the footing's own plan half-extents in the SAME
+    # footing-local frame (centroid at x=y=0) every bar's (u, v) already
+    # uses (see this function's own docstring, "no rotation transform").
+    half_a_mm = inputs.a_mm / 2.0
+    half_b_mm = inputs.b_mm / 2.0
+    overshoot_bar_indices = [
+        index for index, bar in enumerate(bars)
+        if dowel_hook_exceeds_footing_edge(
+            bar.bottom_hook.start.x_mm, bar.bottom_hook.start.y_mm,
+            half_a_mm, half_b_mm)]
+
+    return DowelArrayPlan(embedment=embedment, bars=bars,
+                          overshoot_bar_indices=overshoot_bar_indices)
 
 
 def _build_dowel_tie_plan(inputs):

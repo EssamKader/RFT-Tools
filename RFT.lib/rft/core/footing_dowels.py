@@ -167,6 +167,38 @@ def local_dowel_bar_geometry(embedment, bottom_cover_mm, mesh_bar_x_dia_mm,
         u_mm=0.0, v_mm=0.0, direction_u=1.0, direction_v=0.0)
 
 
+def dowel_hook_exceeds_footing_edge(hook_far_end_x_mm, hook_far_end_y_mm,
+                                    half_a_mm, half_b_mm):
+    """Issue #230 finding: Sec 8's own ``b_dowel`` formula (``dowel_
+    embedment``) has no clamp against the footing's own plan size -- for a
+    realistic ``dowel_ld_multiplier``/``dowel_bar_dia_mm`` and a footing
+    whose column-face clear offset (``x_offset_mm``/``y_offset_mm``) is
+    small relative to the resulting hook, the hook's far end can land
+    outside the footing's own plan edge. Confirmed by hand-computation
+    against this repo's own UI defaults (x_offset=300mm, y_offset=150mm,
+    dowel_ld_multiplier=40, a 400x400 column): the hook on a v-face bar
+    (150mm offset) lands past the footing's own half-``b`` edge while the
+    same hook on a u-face bar (300mm offset) does not -- see
+    ``docs/footing/verification/`` for the numeric write-up this ticket's
+    investigation produced.
+
+    This is Sec 8's own formula working as specified, not a placement
+    bug (the vertical leg still always lands exactly at ``footing_
+    thickness_mm``, proven by ``test_footing_dowels.
+    test_local_dowel_bar_geometry_vertical_leg_top_is_top_of_footing``) --
+    so this function exists to WARN, not to silently reshape the hook.
+    ``half_a_mm``/``half_b_mm`` are the footing's own plan half-extents
+    (``a_mm``/2, ``b_mm``/2), in the SAME footing-local frame (centroid at
+    x=y=0) the hook's far end (``bottom_hook.start``) already uses --
+    never re-derived from a column-relative frame, since #222's own
+    ``_build_dowel_plan`` places every bar's ``(u, v)`` directly as this
+    footing's own local ``(x, y)`` with no rotation transform (see that
+    function's own docstring for the same assumption).
+    """
+    return (abs(hook_far_end_x_mm) > half_a_mm
+            or abs(hook_far_end_y_mm) > half_b_mm)
+
+
 def dowel_outward_direction(u_mm, v_mm, half_u_mm, half_v_mm, is_corner):
     """R10's own rule, as a unit ``(direction_u, direction_v)``:
 

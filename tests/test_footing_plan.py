@@ -507,6 +507,81 @@ def test_a_column_section_too_small_for_the_array_raises_a_footing_error():
         build_footing_plan(inputs, column_section=tiny_column)
 
 
+# --------------------------------------------------------------------- #
+# Issue #230 -- a footing whose column-face clear offset leaves less room
+# than the LD-driven b_dowel hook produces a hook that lands past the
+# footing's own plan edge on the narrower axis. Hand-computed by this
+# ticket's own investigation: a 400x400 column, footing_thickness=450,
+# bottom_cover=50, mesh dia 15.9mm both directions, dowel bar dia 15.9mm,
+# dowel_ld_multiplier=40 (the tool's own default), x_offset=300/
+# y_offset=150 (also the tool's own defaults) -> a=1000mm, b=700mm ->
+# a v-face bar's hook (far end y = -411.85mm) lands past half_b=350mm,
+# while a u-face bar's hook (far end x = 411.85mm) stays inside
+# half_a=500mm -- confirms this is Sec 8's own formula colliding with a
+# small edge offset, not a placement/geometry bug (the vertical leg still
+# lands exactly at footing_thickness, per test_footing_dowels.py).
+
+def _small_edge_offset_inputs():
+    inputs = _inputs(
+        a_mm=1000.0, b_mm=700.0, x_offset_mm=300.0, y_offset_mm=150.0,
+        mesh_bar_x_dia_mm=15.9, mesh_bar_y_dia_mm=15.9,
+        dowel_bar_dia_mm=15.9, dowel_ld_multiplier=40.0,
+        dowel_tie_dia_mm=8.0, dowel_count_b_face=3, dowel_count_h_face=3)
+    column_section = DowelColumnSection(
+        Cw_mm=400.0, Cd_mm=400.0, Ccover_mm=40.0)
+    return inputs, column_section
+
+
+def test_a_small_column_face_clear_offset_produces_an_overshoot_warning():
+    inputs, column_section = _small_edge_offset_inputs()
+    plan = build_footing_plan(inputs, column_section=column_section)
+
+    assert plan.dowel.overshoot_bar_indices
+    for index in plan.dowel.overshoot_bar_indices:
+        bar = plan.dowel.bars[index]
+        assert (abs(bar.bottom_hook.start.x_mm) > inputs.a_mm / 2.0
+                or abs(bar.bottom_hook.start.y_mm) > inputs.b_mm / 2.0)
+
+
+def test_the_vertical_leg_still_lands_exactly_at_the_footing_top_even_when_the_hook_overshoots():
+    """The exact claim in issue #230 that needed checking against real
+    numbers: the hook overshooting the plan edge must NOT also mean the
+    vertical leg overshoots the footing's own top face -- it is fixed by
+    a separate, unaffected identity (bend_z + a_dowel == footing_
+    thickness_mm, see footing_dowels.positioned_dowel_bar_geometry)."""
+    inputs, column_section = _small_edge_offset_inputs()
+    plan = build_footing_plan(inputs, column_section=column_section)
+
+    assert plan.dowel.overshoot_bar_indices  # the fixture DOES overshoot
+    for bar in plan.dowel.bars:
+        assert bar.vertical.end.z_mm == pytest.approx(
+            inputs.footing_thickness_mm)
+
+
+def test_a_footing_large_enough_for_the_hook_has_no_overshoot():
+    """A more modest dowel bar/LD multiplier on the SAME 1800x1200 footing
+    stays entirely inside the plan edge -- the warning is conditional on
+    the real numbers, not always on (contrast with ``_array_inputs``'s own
+    dowel_bar_dia_mm=25/dowel_ld_multiplier=55, which DOES overshoot on
+    this footing, per the next test)."""
+    inputs, column_section = _array_inputs()
+    inputs = inputs._replace(dowel_bar_dia_mm=16.0, dowel_ld_multiplier=40.0)
+    plan = build_footing_plan(inputs, column_section=column_section)
+    assert plan.dowel.overshoot_bar_indices == []
+
+
+def test_array_inputs_fixtures_own_large_ld_multiplier_does_overshoot():
+    """The reverse check on the SAME footing: ``_array_inputs``' own
+    dowel_bar_dia_mm=25/dowel_ld_multiplier=55 (LD=1375mm) produces a
+    b_dowel of 1128mm on a 1800x1200 footing with a 450x600 column --
+    large enough to land past the plan edge even on this bigger footing,
+    confirming the warning genuinely depends on the LD/offset combination
+    rather than being a fixed pass/fail."""
+    inputs, column_section = _array_inputs()
+    plan = build_footing_plan(inputs, column_section=column_section)
+    assert plan.dowel.overshoot_bar_indices != []
+
+
 def test_the_plan_defaults_perimeter_tie_fields_to_none_with_no_perimeter_tie_plan():
     """#204: predates-#204 callers keep building a perimeter-tie-free plan
     unchanged."""

@@ -18,6 +18,7 @@ from rft.core.footing_dowels import (
     DEFAULT_B_DOWEL_MM,
     a_dowel,
     dowel_embedment,
+    dowel_hook_exceeds_footing_edge,
     dowel_outward_direction,
     local_dowel_bar_geometry,
     positioned_dowel_bar_geometry,
@@ -278,6 +279,50 @@ def test_positioned_dowel_bar_geometry_bends_the_hook_along_direction():
     assert geometry.bottom_hook.start.x_mm == pytest.approx(92.0)
     assert geometry.bottom_hook.start.y_mm == pytest.approx(
         -242.0 - embedment.b_dowel_mm)
+
+
+# --------------------------------------------------------------------- #
+# Issue #230 -- dowel_hook_exceeds_footing_edge: Sec 8's own b_dowel
+# formula has no clamp against the footing's own plan size, so a hook far
+# end can land outside the footing's own plan edge for realistic inputs.
+
+def test_a_hook_far_end_inside_both_half_extents_does_not_exceed():
+    assert not dowel_hook_exceeds_footing_edge(
+        hook_far_end_x_mm=400.0, hook_far_end_y_mm=300.0,
+        half_a_mm=500.0, half_b_mm=350.0)
+
+
+def test_a_hook_far_end_past_the_x_half_extent_exceeds():
+    assert dowel_hook_exceeds_footing_edge(
+        hook_far_end_x_mm=500.1, hook_far_end_y_mm=0.0,
+        half_a_mm=500.0, half_b_mm=350.0)
+
+
+def test_a_hook_far_end_past_the_y_half_extent_exceeds():
+    """Confirms this checks BOTH axes independently -- x well inside,
+    y past its own half-extent must still exceed (found in this ticket's
+    own hand-computation against the UI's own default offsets: a 400x400
+    column with y_offset=150mm produces exactly this asymmetric case)."""
+    assert dowel_hook_exceeds_footing_edge(
+        hook_far_end_x_mm=0.0, hook_far_end_y_mm=411.85,
+        half_a_mm=500.0, half_b_mm=350.0)
+
+
+def test_a_hook_far_end_exactly_at_the_edge_does_not_exceed():
+    """Read literally: "outside the footing's own plan edge" -- landing
+    exactly ON the edge is not yet past it (no R2-style ambiguity here,
+    the same "<=" convention dowel_embedment's own threshold uses)."""
+    assert not dowel_hook_exceeds_footing_edge(
+        hook_far_end_x_mm=500.0, hook_far_end_y_mm=350.0,
+        half_a_mm=500.0, half_b_mm=350.0)
+
+
+def test_a_hook_far_end_on_the_negative_side_is_checked_by_magnitude():
+    """Both directions off either half-extent must be caught -- a mutation
+    dropping the abs() would silently pass negative overshoot."""
+    assert dowel_hook_exceeds_footing_edge(
+        hook_far_end_x_mm=-500.1, hook_far_end_y_mm=0.0,
+        half_a_mm=500.0, half_b_mm=350.0)
 
 
 def test_local_dowel_bar_geometry_matches_positioned_at_origin_legacy_direction():
