@@ -36,12 +36,23 @@ from .footing_perimeter_tie import (
     perimeter_tie_ladder_mm,
 )
 from .footing_mesh import (
+    MAT_SHAPE_L_ALTERNATING,
+    MAT_SHAPE_U,
     bar_hook_plan_for_mat,
+    bottom_mesh_bar_geometry,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
     primary_reinforcement_direction,
 )
+
+#: ``MAT_SHAPE_L_ALTERNATING``/``MAT_SHAPE_U`` (imported above) are
+#: re-exported from THIS module on purpose: the pushbutton script may only
+#: import from ``footing_plan`` (docs/token-efficient-expansion.md Sec 7,
+#: `tests/test_footing_plan.py::test_the_pushbutton_script_reads_the_
+#: composing_plan_not_bare_footing_mesh`), so #200's own U/L-alternating
+#: constants need to be reachable here rather than forcing a direct
+#: ``rft.core.footing_mesh`` import in the script.
 
 #: Every straight-case input this ticket's geometry needs. ``x_offset_mm``/
 #: ``y_offset_mm`` are the column-face clear offsets (Sec 2/3's `X`/`Y`),
@@ -173,18 +184,30 @@ FootingInputs.__new__.__defaults__ = (
 #: Sec 3 Story 2 / Sec 5; #200's per-mat U/L-alternating override, Sec 3
 #: Story 3 / Sec 6, is applied before this plan is built -- see
 #: ``FootingInputs.bottom_mat_shape_mode``).
+#: #229: ``bar_x_geometry``/``bar_y_geometry`` are each a
+#: ``footing_mesh.MeshBarGeometry`` -- the bar's own REAL bent centreline
+#: (straight run plus each hooked end's vertical leg), built from this
+#: SAME plan's own ``lengths``/``bar_x_hooks``/``bar_y_hooks`` right after
+#: this namedtuple is constructed (see ``build_footing_plan``). ``None``
+#: on ``TopMeshPlan`` (shares this field list, see below) -- the top mat
+#: has no hook-direction ruling and no placement adapter yet, so it is
+#: never computed there; only the BOTTOM mat's own build step fills it in.
 BottomMeshPlan = namedtuple(
     "BottomMeshPlan",
     ["lengths", "primary_direction", "bar_x_endpoints", "bar_y_endpoints",
-     "bar_x_hooks", "bar_y_hooks"],
+     "bar_x_hooks", "bar_y_hooks", "bar_x_geometry", "bar_y_geometry"],
 )
+BottomMeshPlan.__new__.__defaults__ = (None, None)
 
 #: #201 (Sec 3 Story 4, Sec 7): mirrors ``BottomMeshPlan`` field-for-field
 #: -- the top mat is the same per-mat geometry/hook decision as the bottom
 #: mat, just built with the top mat's own ``top_mat_shape_mode``, so it
 #: carries exactly the same shape rather than inventing a differently-
-#: shaped plan for what is not new math.
+#: shaped plan for what is not new math. ``bar_x_geometry``/
+#: ``bar_y_geometry`` stay ``None`` here (#229's own bent-geometry builder
+#: is bottom-mat-only, see ``footing_mesh.bottom_mesh_bar_geometry``).
 TopMeshPlan = namedtuple("TopMeshPlan", BottomMeshPlan._fields)
+TopMeshPlan.__new__.__defaults__ = (None, None)
 
 #: #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"): the
 #: column's own live cross-section width/depth and dowel-positioning
@@ -573,6 +596,16 @@ def build_footing_plan(inputs, column_section=None):
     bottom_mesh = _build_mesh_mat_plan(
         BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode,
         _bottom_mat_endpoints)
+    # #229: the bottom mat's own real bent U/L geometry, built from the
+    # SAME lengths/hook-plan just computed above -- never re-derived
+    # independently, so the report and the placer read the identical
+    # shape (REUSE_GUIDELINES.md Sec 1).
+    bar_x_geometry, bar_y_geometry = bottom_mesh_bar_geometry(
+        bottom_mesh.lengths, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        bottom_mesh.bar_x_hooks, bottom_mesh.bar_y_hooks)
+    bottom_mesh = bottom_mesh._replace(
+        bar_x_geometry=bar_x_geometry, bar_y_geometry=bar_y_geometry)
 
     if inputs.top_reinforcement == TOP_REINFORCEMENT_BTM_ONLY:
         top_mesh = None

@@ -17,6 +17,7 @@ from rft.core.footing_mesh import (
     SHAPE_L,
     SHAPE_U,
     bar_hook_plan_for_mat,
+    bottom_mesh_bar_geometry,
     local_mesh_bar_endpoints,
     local_top_mesh_bar_endpoints,
     mesh_bar_lengths,
@@ -94,6 +95,32 @@ def test_the_plan_carries_bar_endpoints_matching_local_mesh_bar_endpoints():
 
     assert plan.bottom_mesh.bar_x_endpoints == expected_bar_x
     assert plan.bottom_mesh.bar_y_endpoints == expected_bar_y
+
+
+def test_the_plan_carries_bar_geometry_matching_bottom_mesh_bar_geometry():
+    """#229: the composing module must be the ONE place
+    bottom_mesh_bar_geometry is called from, so its output matches calling
+    it directly with the SAME lengths/hook plan the plan itself carries."""
+    inputs = _inputs()
+    plan = build_footing_plan(inputs)
+
+    expected_bar_x, expected_bar_y = bottom_mesh_bar_geometry(
+        plan.bottom_mesh.lengths, inputs.bottom_cover_mm,
+        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm,
+        plan.bottom_mesh.bar_x_hooks, plan.bottom_mesh.bar_y_hooks)
+    assert plan.bottom_mesh.bar_x_geometry == expected_bar_x
+    assert plan.bottom_mesh.bar_y_geometry == expected_bar_y
+
+
+def test_the_top_mesh_never_gets_a_bent_geometry_no_direction_ruling_yet():
+    """#229 is bottom-mat-only (see ``footing_mesh.bottom_mesh_bar_
+    geometry``'s own docstring) -- the top mat's own hook direction is
+    genuinely unstated by the spec, so ``top_mesh.bar_x_geometry``/
+    ``bar_y_geometry`` must stay ``None``, never silently guessed."""
+    plan = build_footing_plan(_inputs(
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM))
+    assert plan.top_mesh.bar_x_geometry is None
+    assert plan.top_mesh.bar_y_geometry is None
 
 
 def test_the_plan_keeps_the_inputs_it_was_built_from():

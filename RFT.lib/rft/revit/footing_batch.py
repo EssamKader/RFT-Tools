@@ -75,12 +75,21 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: are the actual ``RebarBarType`` elements (not just their diameters) --
 #: ``plan_candidates`` derives the diameters from them once, and
 #: ``apply_batch`` needs the types themselves to place bars.
+#: #229: ``bottom_mat_shape_mode`` is the SAME ``None``/``footing_mesh.
+#: MAT_SHAPE_U``/``footing_mesh.MAT_SHAPE_L_ALTERNATING`` override
+#: ``FootingInputs.bottom_mat_shape_mode`` already accepts for the
+#: single-footing path -- carried here too so a batch run honours the
+#: SAME shape choice the engineer made on the Mesh & Dowels tab, rather
+#: than silently reverting every OTHER footing in the group back to
+#: "auto". Defaults to ``None`` so every caller that predates #229 keeps
+#: building a batch with no override, unchanged.
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
      "bar_x_type", "bar_y_type",
      "dowel_bar_type", "dowel_tie_bar_type", "dowel_ld_multiplier",
-     "dowel_count_b_face", "dowel_count_h_face"])
+     "dowel_count_b_face", "dowel_count_h_face", "bottom_mat_shape_mode"])
+BatchInputs.__new__.__defaults__ = (None,)
 
 
 class FootingBatchError(Exception):
@@ -241,6 +250,7 @@ def plan_candidates(doc, host_footing, inputs):
             mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
             x_offset_mm=inputs.x_offset_mm, y_offset_mm=inputs.y_offset_mm,
             ld_multiplier=inputs.ld_multiplier,
+            bottom_mat_shape_mode=inputs.bottom_mat_shape_mode,
             dowel_bar_dia_mm=dowel_bar_dia_mm,
             dowel_ld_multiplier=inputs.dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,

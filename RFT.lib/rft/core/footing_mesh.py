@@ -78,6 +78,14 @@ BarEndHook = namedtuple("BarEndHook", ["ld_mm", "needs_hook"])
 #: resulting overall ``shape`` (``SHAPE_U``/``SHAPE_L``).
 BarHookPlan = namedtuple("BarHookPlan", ["start", "end", "shape"])
 
+#: #229: one mesh bar's actual bent centreline, footing-local mm, as an
+#: ORDERED chain of connected points (2 points for a straight run with no
+#: hooked end, 3 for one hooked end, 4 for both -- Sec 3 Story 1's "a U in
+#: elevation"). Unlike the dowel array (R10), the hook direction here is
+#: fixed (always straight up, Sec 5's "bend the bar up") -- there is no
+#: per-bar outward-direction question, only per-END presence.
+MeshBarGeometry = namedtuple("MeshBarGeometry", ["points"])
+
 
 def mesh_bar_lengths(a_mm, b_mm, cover_mm, footing_thickness_mm,
                       bottom_cover_mm, top_cover_mm, mesh_bar_x_dia_mm):
@@ -155,6 +163,67 @@ def local_mesh_bar_endpoints(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
     bar_y = BarEndpoints(
         start=LocalPoint(0.0, -half_y, z_y_mm),
         end=LocalPoint(0.0, half_y, z_y_mm))
+    return bar_x, bar_y
+
+
+def _mesh_bar_hook_points(z_mm, hook_leg_mm, elevation_mm, hook_plan,
+                          along_x):
+    """One bar's bent centreline (:class:`MeshBarGeometry`'s own
+    ``points``), footing-local mm.
+
+    Spec Ref: Sec 3 Story 1, Sec 4 -- the straight middle run spans
+    ``z_mm`` alone (Sec 3's ``Z``/``Z2``, NOT ``mesh_bar_x_mm``/
+    ``mesh_bar_y_mm``, which already fold both hook legs into one total
+    length for Sec 4's bookkeeping formula, not into one straight run).
+    Each end whose ``hook_plan`` says ``needs_hook`` gets a VERTICAL leg
+    of length ``hook_leg_mm`` (Sec 3's ``N``/``N2``), bent straight UP
+    (Sec 5: "bend the bar up") from that end's own elevation -- never
+    sideways, so unlike the dowel array (R10) there is no per-bar outward
+    direction to derive, only a fixed +Z.
+    """
+    half = z_mm / 2.0
+    if along_x:
+        start_xy = (-half, 0.0)
+        end_xy = (half, 0.0)
+    else:
+        start_xy = (0.0, -half)
+        end_xy = (0.0, half)
+
+    def _point(xy, z_mm_value):
+        return LocalPoint(xy[0], xy[1], z_mm_value)
+
+    points = []
+    if hook_plan.start.needs_hook:
+        points.append(_point(start_xy, elevation_mm + hook_leg_mm))
+    points.append(_point(start_xy, elevation_mm))
+    points.append(_point(end_xy, elevation_mm))
+    if hook_plan.end.needs_hook:
+        points.append(_point(end_xy, elevation_mm + hook_leg_mm))
+    return MeshBarGeometry(points=tuple(points))
+
+
+def bottom_mesh_bar_geometry(lengths, bottom_cover_mm, mesh_bar_x_dia_mm,
+                             mesh_bar_y_dia_mm, bar_x_hooks, bar_y_hooks):
+    """#229: ``mesh_bar_x``/``mesh_bar_y``'s own bent centrelines for the
+    BOTTOM mat, honouring each bar's own :class:`BarHookPlan` (#199/#200).
+
+    Same elevations ``local_mesh_bar_endpoints`` already uses (unchanged --
+    only the horizontal span and the added vertical legs differ, not the
+    bars' own Z datum or stacking order).
+
+    Deliberately bottom-mat-only: the top mat's own hook direction (would
+    it bend up, toward the bottom mat, or down, toward the top face?) is
+    not stated anywhere in the spec and the top mat has no placement
+    adapter yet (`IsolatedFooting.extension/CONTEXT.md`'s own "Not yet
+    in" list) -- guessing that direction now, with no consumer to verify
+    it against, is exactly the guessing REUSE_GUIDELINES.md Sec 3 refuses.
+    """
+    z_x_mm = bottom_cover_mm + mesh_bar_x_dia_mm / 2.0
+    z_y_mm = bottom_cover_mm + mesh_bar_x_dia_mm + mesh_bar_y_dia_mm / 2.0
+    bar_x = _mesh_bar_hook_points(
+        lengths.z_mm, lengths.n_mm, z_x_mm, bar_x_hooks, along_x=True)
+    bar_y = _mesh_bar_hook_points(
+        lengths.z2_mm, lengths.n2_mm, z_y_mm, bar_y_hooks, along_x=False)
     return bar_x, bar_y
 
 

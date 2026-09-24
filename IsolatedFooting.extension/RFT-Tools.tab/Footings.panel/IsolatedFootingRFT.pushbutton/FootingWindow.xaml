@@ -240,6 +240,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0"
@@ -271,6 +272,17 @@
                                        Style="{StaticResource InputLabel}"/>
                             <ComboBox Grid.Row="4" Grid.Column="1"
                                       x:Name="mesh_bar_y_type_cb"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0"
+                                       Text="Hook shape, bottom mat (#229)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="5" Grid.Column="1"
+                                      x:Name="bottom_mat_shape_cb"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="Auto (per-end LD compare)"/>
+                                <ComboBoxItem Content="U-Shape (both ends hooked)"/>
+                                <ComboBoxItem Content="L-Shape, alternating"/>
+                            </ComboBox>
                         </Grid>
 
                         <TextBlock Style="{StaticResource SectionHeading}"

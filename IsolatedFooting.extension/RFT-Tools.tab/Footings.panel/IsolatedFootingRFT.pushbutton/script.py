@@ -44,6 +44,7 @@ from pyrevit import forms, revit, script
 from Autodesk.Revit.DB import Transaction
 
 from rft.core.footing_plan import FootingInputs, build_footing_plan
+from rft.core.footing_plan import MAT_SHAPE_L_ALTERNATING, MAT_SHAPE_U
 from rft.core import footing_report
 from rft.revit import footing_batch
 from rft.revit.bar_types import bar_type_diameter_mm, bar_type_options
@@ -231,6 +232,20 @@ class FootingWindow(forms.WPFWindow):
         self._bar_type_options = options
         self._restore_bar_type_selections()
 
+    def _selected_bottom_mat_shape_mode(self):
+        """#229: ``bottom_mat_shape_cb``'s own three options -> the SAME
+        ``None``/``MAT_SHAPE_U``/``MAT_SHAPE_L_ALTERNATING`` values
+        ``FootingInputs.bottom_mat_shape_mode`` already accepts (Sec 3
+        Story 3/Sec 6's direct user override) -- "Auto" maps to ``None``
+        so #199's own per-end LD comparison keeps deciding, exactly the
+        default every caller had before this combo existed."""
+        index = self.bottom_mat_shape_cb.SelectedIndex
+        if index == 1:
+            return MAT_SHAPE_U
+        if index == 2:
+            return MAT_SHAPE_L_ALTERNATING
+        return None
+
     def _selected_bar_type_object(self, combo):
         """The actual ``RebarBarType`` behind a combo -- never parsed out
         of the name (the live model's ``16M`` is 15.90mm, ``25M`` is
@@ -308,6 +323,7 @@ class FootingWindow(forms.WPFWindow):
             mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
             x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
             ld_multiplier=ld_multiplier,
+            bottom_mat_shape_mode=self._selected_bottom_mat_shape_mode(),
             dowel_bar_dia_mm=dowel_bar_dia_mm,
             dowel_ld_multiplier=dowel_ld_multiplier,
             dowel_tie_dia_mm=dowel_tie_dia_mm,
@@ -335,6 +351,7 @@ class FootingWindow(forms.WPFWindow):
         self._batch_inputs = footing_batch.BatchInputs(
             x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,
             ld_multiplier=ld_multiplier,
+            bottom_mat_shape_mode=self._selected_bottom_mat_shape_mode(),
             bar_x_type=mesh_bar_x_type, bar_y_type=mesh_bar_y_type,
             dowel_bar_type=dowel_bar_type,
             dowel_tie_bar_type=dowel_tie_bar_type,
