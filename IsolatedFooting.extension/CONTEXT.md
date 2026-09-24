@@ -255,37 +255,31 @@ and then confirmed correct by Essam — recorded as **R3** in
   ticket places ONE representative bar per direction only, to prove the
   placement mechanics; array/spacing is not named by any formula in the
   #198 ticket and is not invented here.
-- Dowel array/quantity (only ONE representative dowel is placed, per
-  #202's own tracer-bullet scope, same convention as #198's mesh bars)
-  and the footing-perimeter tie bar (Story 7 / spec Sec 10). #202
-  (Story 5 / Sec 8) and #203's vertical `dowel_tie` ladder (Story 6 /
-  Sec 9) are now built -- see "Scope, as of #202"/"Scope, as of #203"
-  above.
-- `dowel_tie`'s own closed-loop shape and Revit placement (Story 6 / Sec
-  9, the rest of what #203 did not build) -- blocked on a dowel-bar array
-  and a column cross-section field that don't exist yet; see "Scope, as
-  of #203" above and `docs/footing/reuse-audit.md` Sec 1.
-- Wiring #202's dowel inputs (`dowel_bar_dia_mm`/`dowel_ld_multiplier`) or
-  #203's dowel-tie inputs (`dowel_tie_dia_mm`/`dowel_tie_spacing_mm`) into
-  the pushbutton UI or into a combined single-transaction placement that
-  also places the bottom mesh -- `IsolatedFootingRFT.pushbutton/
-  script.py` still only asks for and places the bottom mat.
+- The footing-perimeter tie bar (Story 7 / spec Sec 10) is still not
+  wired into the pushbutton script or placed. `dowel_tie`'s own
+  closed-loop shape and Revit placement (Story 6 / Sec 9, the rest of
+  what #203 did not build) remains a follow-on ticket
+  (`docs/footing/HANDOVER-2026-09-24.md` item 6) -- unblocked now that a
+  real dowel-bar array exists and places (#222/#223), but not built.
 - Any modeless Review window -- inputs are asked one at a time with
-  `pyrevit.forms` for now.
-- Multi-footing / batch placement (F1, spec Sec 0) -- explicitly out of
-  scope for the whole tool, not just this ticket.
-- Wiring `rft.revit.footing_host.find_column_above` (#220, Story 1 of
-  `specs/isolated-footing-dowel-array.md`) into the pushbutton script, or
-  into #221's own `column_host.read_section_mm`/`read_orientation` call
-  against the column it returns -- #220 built and unit-tested the
-  ray-cast adapter; its own read-only live-host tracer bullet (addendum
-  §5) has now been run by the orchestrating session (2026-09-24, via
-  `revit-mcp`, no `Transaction` opened) and the flagged claim ("a view
-  that sees `OST_StructuralFoundation` also sees `OST_StructuralColumns`")
-  is confirmed -- see `docs/footing/verification/
-  issue-220-footing-column-autodetect.md` and `docs/footing/
-  reuse-audit.md` §5. Wiring the function into the pushbutton flow itself
-  is still #223's job, not built here.
+  `pyrevit.forms` for now (spec-named #205, not started).
+- Multi-footing / batch placement (F1, spec Sec 0) -- blocked on #228
+  (done, this session) having landed; #226 itself (the batch mechanism)
+  is not yet started.
+
+**Now DONE, no longer a gap (2026-09-24 session):** the dowel array
+(#220-#223 -- auto-detect the column, read its Cw/Cd/cover live, compute
+the full array, place every bar) and the footing's own plan
+dimensions/thickness/three covers (#228 -- read live off the picked
+`FamilyInstance`'s `STRUCTURAL_FOUNDATION_LENGTH`/`_WIDTH`/`_THICKNESS`
+type parameters and `CLEAR_COVER_BOTTOM`/`_TOP`/`_OTHER` instance
+parameters, never typed) are both wired into
+`IsolatedFootingRFT.pushbutton/script.py` and placed inside its one
+transaction. `x_offset_mm`/`y_offset_mm`/`ld_multiplier` and the dowel
+array's own bar-type/LD-multiplier/count-per-face inputs remain typed
+`pyrevit.forms` prompts -- see `docs/footing/reuse-audit.md` §6-§8 and
+`docs/footing/verification/issue-22{0,3}-*.md` /
+`issue-228-footing-dimension-read.md` for the live-host proof.
 
 ## Open gap: rotated footings refuse rather than place wrong
 

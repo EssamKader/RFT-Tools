@@ -30,8 +30,10 @@ from fake_revit_api import (
     FakeBuiltInParameter,
     FakeColumn,
     FakeDocument,
+    FakeDoubleParameter,
     FakeElementId,
     FakeElementIdParameter,
+    FakeFamilySymbol,
     FakeFilteredElementCollector,
     FakeRebarCoverType,
     FakeReferenceIntersector,
@@ -43,11 +45,13 @@ from fake_revit_api import (
 from rft.core.footing_plan import DowelColumnSection
 from rft.revit.column_host import ColumnHostError
 from rft.revit.footing_host import (
+    FootingGeometry,
     FootingHostError,
     find_column_above,
     find_search_view,
     footing_bounding_box_internal,
     read_dowel_column_section_mm,
+    read_footing_geometry_mm,
 )
 
 FT = 304.8
@@ -286,3 +290,98 @@ def test_an_unset_cover_refuses_with_column_hosts_own_message():
                 FakeElementIdParameter(None),
         }))
     assert "Rebar Cover - Other Faces" in str(caught.value)
+
+
+# --------------------------------------------------------------------- #
+# read_footing_geometry_mm (#228) -- parameter names/values and refusal
+# wording only. The TYPE-parameter-read and cover-read MECHANICS
+# themselves are the same shape already proven for ColumnRFT
+# (column_host.read_section_mm/read_cover_mm), per this ticket's own
+# "Test volume rule".
+
+FOOTING_COVER_ID = 998877
+
+
+class _FakeFootingGeometryHost(object):
+    """Only what ``read_footing_geometry_mm`` reads: ``Symbol`` (TYPE
+    dimensions), ``get_Parameter`` (INSTANCE covers) and ``Document`` (to
+    resolve a cover parameter's ``ElementId`` to a ``RebarCoverType``)."""
+
+    def __init__(self, document, symbol, cover_parameters):
+        self.Document = document
+        self.Symbol = symbol
+        self._cover_parameters = dict(cover_parameters)
+
+    def get_Parameter(self, built_in):
+        return self._cover_parameters.get(built_in)
+
+
+def _footing_with_geometry(missing_type_param=None, missing_cover_param=None,
+                           unset_cover_param=None):
+    document = FakeDocument({
+        FOOTING_COVER_ID: FakeRebarCoverType(
+            mm(40.0), name="Interior (framing, columns)",
+            id_value=FOOTING_COVER_ID),
+    })
+
+    type_params = {
+        FakeBuiltInParameter.STRUCTURAL_FOUNDATION_LENGTH:
+            FakeDoubleParameter(mm(1800.0)),
+        FakeBuiltInParameter.STRUCTURAL_FOUNDATION_WIDTH:
+            FakeDoubleParameter(mm(1200.0)),
+        FakeBuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS:
+            FakeDoubleParameter(mm(450.0)),
+    }
+    if missing_type_param is not None:
+        del type_params[missing_type_param]
+    symbol = FakeFamilySymbol(
+        "1800 x 1200 x 450mm", family_name="M_Footing-Rectangular",
+        built_in_parameters=type_params)
+
+    cover_params = {
+        FakeBuiltInParameter.CLEAR_COVER_OTHER:
+            FakeElementIdParameter(FakeElementId(FOOTING_COVER_ID)),
+        FakeBuiltInParameter.CLEAR_COVER_BOTTOM:
+            FakeElementIdParameter(FakeElementId(FOOTING_COVER_ID)),
+        FakeBuiltInParameter.CLEAR_COVER_TOP:
+            FakeElementIdParameter(FakeElementId(FOOTING_COVER_ID)),
+    }
+    if missing_cover_param is not None:
+        del cover_params[missing_cover_param]
+    if unset_cover_param is not None:
+        cover_params[unset_cover_param] = FakeElementIdParameter(None)
+
+    return _FakeFootingGeometryHost(document, symbol, cover_params)
+
+
+def test_returns_the_footing_geometry_from_the_live_reads():
+    geometry = read_footing_geometry_mm(_footing_with_geometry())
+    assert geometry == FootingGeometry(
+        a_mm=pytest.approx(1800.0), b_mm=pytest.approx(1200.0),
+        footing_thickness_mm=pytest.approx(450.0),
+        cover_mm=pytest.approx(40.0), bottom_cover_mm=pytest.approx(40.0),
+        top_cover_mm=pytest.approx(40.0))
+
+
+def test_a_missing_type_dimension_refuses_naming_the_parameter():
+    footing = _footing_with_geometry(
+        missing_type_param=FakeBuiltInParameter.STRUCTURAL_FOUNDATION_WIDTH)
+    with pytest.raises(FootingHostError) as caught:
+        read_footing_geometry_mm(footing)
+    assert "Width" in str(caught.value)
+
+
+def test_a_missing_cover_parameter_refuses_naming_the_parameter():
+    footing = _footing_with_geometry(
+        missing_cover_param=FakeBuiltInParameter.CLEAR_COVER_BOTTOM)
+    with pytest.raises(FootingHostError) as caught:
+        read_footing_geometry_mm(footing)
+    assert "Rebar Cover - Bottom Face" in str(caught.value)
+
+
+def test_an_unset_cover_parameter_refuses_naming_the_parameter():
+    footing = _footing_with_geometry(
+        unset_cover_param=FakeBuiltInParameter.CLEAR_COVER_TOP)
+    with pytest.raises(FootingHostError) as caught:
+        read_footing_geometry_mm(footing)
+    assert "Rebar Cover - Top Face" in str(caught.value)

@@ -21,10 +21,14 @@ partway through the dowel array loop -- leaves the model exactly as it was
 (this repo's transaction hard rule; spec Ref: isolated-footing-dowel-array
 Sec 3 Story 4, "roll back the WHOLE transaction").
 
-The column is auto-detected (#220) and its Cw/Cd/cover read live (#221)
-BEFORE any dimension is asked and before any transaction opens -- R7's own
-ruling: "no manual pick/typed fallback", so a footing with no column above
-it refuses immediately, never reaching a half-asked dialog.
+The column is auto-detected (#220) and its Cw/Cd/cover read live (#221),
+and the footing's OWN plan dimensions/thickness/covers are read live off
+the picked FamilyInstance (#228) -- all BEFORE any remaining dimension is
+asked and before any transaction opens. R7's own ruling ("no manual
+pick/typed fallback") and R8's own ruling ("read dimension from revit not
+from typed inputs") both apply: a footing with no column above it, or with
+a geometry/cover parameter this tool cannot read, refuses immediately,
+never reaching a half-asked dialog.
 """
 
 from pyrevit import forms, revit, script
@@ -36,6 +40,7 @@ from rft.revit.column_host import ColumnHostError
 from rft.revit.footing_dowels import place_dowel_bars
 from rft.revit.footing_host import (
     FootingHostError, find_column_above, read_dowel_column_section_mm,
+    read_footing_geometry_mm,
 )
 from rft.revit.footing_mesh import place_straight_bottom_mesh
 from rft.revit.units import internal_to_mm
@@ -90,31 +95,25 @@ def main():
     if footing is None:
         return
 
-    # Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 1 -- no
-    # manual pick/typed fallback (R7). Runs BEFORE any dimension is asked
-    # and before any transaction opens, so a footing with no column above
-    # it refuses immediately rather than after a half-filled dialog.
+    # Spec Ref: specs/isolated-footing-dowel-array.md Sec 3 Story 1 (R7) +
+    # docs/footing/spec-amendments.md R8. Both run BEFORE any dimension is
+    # asked and before any transaction opens, so a footing with no column
+    # above it, or missing/unset geometry parameters, refuses immediately
+    # rather than after a half-filled dialog.
     try:
         column = find_column_above(revit.doc, footing)
         column_section = read_dowel_column_section_mm(column)
+        geometry = read_footing_geometry_mm(footing)
     except (FootingHostError, ColumnHostError) as gap:
         forms.alert(str(gap), title="Isolated Footing RFT")
         return
 
-    a_mm = _ask_mm("Footing dimension a, mm (X-direction)", 1800.0)
-    b_mm = _ask_mm("Footing dimension b, mm (Y-direction)", 1200.0)
-    cover_mm = _ask_mm("Side cover, mm", 50.0)
-    footing_thickness_mm = _ask_mm("Footing thickness, mm", 450.0)
-    bottom_cover_mm = _ask_mm("Bottom cover, mm", 50.0)
-    top_cover_mm = _ask_mm("Top cover, mm", 50.0)
     x_offset_mm = _ask_mm("Column-face clear offset X, mm", 300.0)
     y_offset_mm = _ask_mm("Column-face clear offset Y, mm", 150.0)
     ld_multiplier = _ask_mm(
         "Development length multiplier (LD = multiplier x db)", 40.0)
 
-    if None in (a_mm, b_mm, cover_mm, footing_thickness_mm,
-                bottom_cover_mm, top_cover_mm, x_offset_mm, y_offset_mm,
-                ld_multiplier):
+    if None in (x_offset_mm, y_offset_mm, ld_multiplier):
         return
 
     bar_x_type = _ask_bar_type(revit.doc, "mesh_bar_x type (X-direction)")
@@ -150,9 +149,10 @@ def main():
         dowel_tie_bar_type, internal_to_mm)
 
     inputs = FootingInputs(
-        a_mm=a_mm, b_mm=b_mm, cover_mm=cover_mm,
-        footing_thickness_mm=footing_thickness_mm,
-        bottom_cover_mm=bottom_cover_mm, top_cover_mm=top_cover_mm,
+        a_mm=geometry.a_mm, b_mm=geometry.b_mm, cover_mm=geometry.cover_mm,
+        footing_thickness_mm=geometry.footing_thickness_mm,
+        bottom_cover_mm=geometry.bottom_cover_mm,
+        top_cover_mm=geometry.top_cover_mm,
         mesh_bar_x_dia_mm=mesh_bar_x_dia_mm,
         mesh_bar_y_dia_mm=mesh_bar_y_dia_mm,
         x_offset_mm=x_offset_mm, y_offset_mm=y_offset_mm,

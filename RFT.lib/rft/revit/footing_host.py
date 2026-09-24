@@ -72,6 +72,8 @@ the first hit, or a plinth/column naming convention) is out of this
 ticket's scope.
 """
 
+from collections import namedtuple
+
 from Autodesk.Revit import DB
 
 from . import column_host
@@ -83,12 +85,14 @@ from .ray_search import (
     find_self_testing_view,
     inset_internal,
 )
+from .units import internal_to_mm
 
 
 class FootingHostError(Exception):
-    """A footing for which no column could be auto-detected, or a reason
-    the search could not run at all. Raised, never returned, so no caller
-    can carry on past a refusal with a half-populated read -- the same
+    """A footing for which no column could be auto-detected, its own plan
+    dimensions/thickness/cover could not be read (#228), or a reason a
+    search could not run at all. Raised, never returned, so no caller can
+    carry on past a refusal with a half-populated read -- the same
     discipline column_host.ColumnHostError follows (see that module's own
     docstring).
     """
@@ -232,3 +236,111 @@ def read_dowel_column_section_mm(column):
     cover_mm, _cover_name = column_host.read_cover_mm(column)
     return DowelColumnSection(
         Cw_mm=section.b_mm, Cd_mm=section.h_mm, Ccover_mm=cover_mm)
+
+
+#: #228, spec Ref: docs/footing/spec-amendments.md R8. Bundled into one
+#: namedtuple, keyword-constructed only, for the SAME reason #225/#227
+#: bundled DowelColumnSection: six same-typed, same-unit mm floats at the
+#: call site otherwise invite a silent swap (a/b, or bottom/top cover) that
+#: type-checks fine and produces a silently wrong plan.
+FootingGeometry = namedtuple(
+    "FootingGeometry",
+    ["a_mm", "b_mm", "footing_thickness_mm", "cover_mm",
+     "bottom_cover_mm", "top_cover_mm"])
+
+
+def _require_type_dimension_mm(symbol, built_in, label):
+    parameter = symbol.get_Parameter(built_in)
+    _require(
+        parameter is not None,
+        "This footing's family (%s) has no '%s' parameter, so its %s "
+        "cannot be read. The tool reads plan dimensions and thickness "
+        "from the type, as the Autodesk metric rectangular footing family "
+        "names them; a family that names them differently is not "
+        "supported." % (symbol.Family.Name, label, label))
+    return internal_to_mm(parameter.AsDouble())
+
+
+def _require_instance_cover_mm(footing, built_in, label):
+    parameter = footing.get_Parameter(built_in)
+    _require(parameter is not None,
+             "This footing has no '%s' parameter, so the cover it "
+             "governs cannot be read." % label)
+    cover_type = footing.Document.GetElement(parameter.AsElementId())
+    _require(
+        cover_type is not None,
+        "This footing's '%s' is not set. Cover is read from the element "
+        "and never typed (amendment A2, R8), so there is nothing to "
+        "detail against. Set a cover on the footing and pick it again."
+        % label)
+    return internal_to_mm(cover_type.CoverDistance)
+
+
+def read_footing_geometry_mm(footing):
+    """The footing's own plan dimensions, thickness and three covers,
+    read live off the picked ``FamilyInstance`` -- R8's ruling ("read
+    dimension from revit not from typed inputs"), and the batch-grouping
+    prerequisite #226 needs (two footings that measure identically this
+    way share identical detailing automatically, per R8's own "no worries
+    for no.02 run").
+
+    Spec Ref: docs/footing/spec-amendments.md R8.
+
+    **Parameter names confirmed live** (2026-09-24, ``ColumnRFT.Trail.rvt``,
+    footing family ``M_Footing-Rectangular``) -- see
+    ``docs/footing/verification/issue-228-footing-dimension-read.md``:
+    unlike ``column_host.read_section_mm``'s family-defined ``b``/``h``
+    parameters, a Revit structural foundation carries FIXED
+    ``BuiltInParameter``s for its own plan/thickness, read here instead of
+    a name lookup (more robust than ``LookupParameter``, since a built-in
+    ID does not depend on the UI language a family happens to be
+    authored/renamed in):
+
+    - ``STRUCTURAL_FOUNDATION_LENGTH`` / ``_WIDTH`` / ``_THICKNESS``, all
+      TYPE (``Symbol``) parameters, never the bounding box -- the same
+      "type, not bounding box" discipline ``column_host.read_section_mm``
+      follows, for the same reason (#69: a bounding box degrades on
+      anything but an axis-aligned footing; ``footing_mesh._footing_origin``
+      already refuses a rotated footing rather than trust one).
+    - ``CLEAR_COVER_OTHER`` / ``_BOTTOM`` / ``_TOP``, all INSTANCE
+      parameters -- confirmed to exist independently of the TYPE cover
+      convention ``column_host.read_cover_mm`` reads (a column has only
+      ``CLEAR_COVER_OTHER``; a footing, being a horizontal element, also
+      carries distinct bottom/top face covers).
+
+    ``a_mm``/``b_mm`` map from ``Length``/``Width`` respectively --
+    matching this family's own "1800 x 1200 x 450mm" type name and
+    ``IsolatedFootingRFT.pushbutton/script.py``'s pre-existing default
+    prompts (a=1800 X-direction, b=1200 Y-direction) exactly, though which
+    of the family's own local axes ``Length``/``Width`` actually run along
+    was NOT independently re-derived the way #69 proved column `b`/`h`
+    against a rotated instance -- this ticket's own live probe confirms
+    the PARAMETER NAMES and VALUES, not a rotation-independent axis proof.
+    Flagged, not silently assumed: see the verification doc's own "Still
+    open" note.
+
+    Any of the six missing/unset refuses with ``FootingHostError``, naming
+    the parameter, before any rebar placement -- same discipline every
+    other live-read function in this module and ``column_host`` follows.
+    """
+    symbol = footing.Symbol
+    a_mm = _require_type_dimension_mm(
+        symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_LENGTH, "Length")
+    b_mm = _require_type_dimension_mm(
+        symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_WIDTH, "Width")
+    footing_thickness_mm = _require_type_dimension_mm(
+        symbol, DB.BuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS,
+        "Foundation Thickness")
+    cover_mm = _require_instance_cover_mm(
+        footing, DB.BuiltInParameter.CLEAR_COVER_OTHER,
+        "Rebar Cover - Other Faces")
+    bottom_cover_mm = _require_instance_cover_mm(
+        footing, DB.BuiltInParameter.CLEAR_COVER_BOTTOM,
+        "Rebar Cover - Bottom Face")
+    top_cover_mm = _require_instance_cover_mm(
+        footing, DB.BuiltInParameter.CLEAR_COVER_TOP,
+        "Rebar Cover - Top Face")
+    return FootingGeometry(
+        a_mm=a_mm, b_mm=b_mm, footing_thickness_mm=footing_thickness_mm,
+        cover_mm=cover_mm, bottom_cover_mm=bottom_cover_mm,
+        top_cover_mm=top_cover_mm)

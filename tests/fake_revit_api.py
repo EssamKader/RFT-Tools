@@ -1074,6 +1074,16 @@ class FakeBuiltInParameter(object):
     # The column adapter's reads (#106). Each is exercised live.
     CLEAR_COVER_OTHER = object()
     CLEAR_COVER_TOP = object()
+    # #228: the footing adapter's own live reads, VERIFIED LIVE (Revit
+    # 2024, ColumnRFT.Trail.rvt) -- see docs/footing/verification/
+    # issue-228-footing-dimension-read.md. CLEAR_COVER_BOTTOM is a
+    # footing-only addition (a column has no bottom face); the plan/
+    # thickness three are TYPE (Symbol) parameters, unlike a column's own
+    # family-defined `b`/`h`.
+    CLEAR_COVER_BOTTOM = object()
+    STRUCTURAL_FOUNDATION_LENGTH = object()
+    STRUCTURAL_FOUNDATION_WIDTH = object()
+    STRUCTURAL_FOUNDATION_THICKNESS = object()
     FAMILY_BASE_LEVEL_PARAM = object()
     FAMILY_TOP_LEVEL_PARAM = object()
     FAMILY_BASE_LEVEL_OFFSET_PARAM = object()
@@ -1290,10 +1300,16 @@ class FakeFamilySymbol(object):
     _next_id = [7000]
 
     def __init__(self, name, family_name="M_Concrete-Rectangular-Column",
-                 parameters=None, id_value=None):
+                 parameters=None, id_value=None, built_in_parameters=None):
         self._name = name
         self.Family = FakeFamily(family_name)
         self._parameters = dict(parameters or {})
+        #: #228 -- a footing's own type dimensions are read via
+        #: ``get_Parameter(BuiltInParameter....)``, not ``LookupParameter``
+        #: (a column's family-defined ``b``/``h`` route, above). Kept as a
+        #: separate dict rather than overloading ``_parameters`` since the
+        #: two lookup methods are genuinely different Revit API calls.
+        self._built_in_parameters = dict(built_in_parameters or {})
         if id_value is None:
             id_value = FakeFamilySymbol._next_id[0]
             FakeFamilySymbol._next_id[0] += 1
@@ -1302,7 +1318,7 @@ class FakeFamilySymbol(object):
     def get_Parameter(self, built_in):
         if built_in is FakeBuiltInParameter.SYMBOL_NAME_PARAM:
             return FakeStringParameter(self._name)
-        return None
+        return self._built_in_parameters.get(built_in)
 
     def LookupParameter(self, name):
         if name not in self._parameters:
