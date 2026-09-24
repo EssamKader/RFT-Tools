@@ -18,6 +18,7 @@ recomputed -- every number is read off a `FootingGeometry`, a
 `DowelColumnSection`, a `FootingPlan` or a `footing_batch.BatchPlan`.
 """
 
+import math
 from collections import namedtuple
 
 ReportSection = namedtuple("ReportSection", "heading lines")
@@ -62,18 +63,39 @@ def _hook_end_words(hooks):
     return "neither end hooked, straight bar (%s)" % hooks.shape
 
 
+def _actual_bar_length_mm(geometry):
+    """Found in review (issue #236): ``mesh_bar_lengths()``'s own
+    ``mesh_bar_x_mm``/``mesh_bar_y_mm`` is Sec 4's FIXED U-shape total
+    (``Z + 2*N``), computed before #199/#200's per-end hook decision is
+    known -- it does not shrink for an L-shape or straight bar, which
+    #229 places with one or both hook legs simply absent. Reporting that
+    fixed total next to the ACTUAL shape (see ``_hook_end_words``) would
+    overstate the real bar's length by one un-hooked end's own hook leg.
+    Summing ``geometry.points`` (the SAME ``MeshBarGeometry`` the Revit
+    adapter places) instead guarantees the report always matches what
+    actually gets placed -- never a second, independently-derived length.
+    """
+    total_mm = 0.0
+    points = geometry.points
+    for index in range(len(points) - 1):
+        a, b = points[index], points[index + 1]
+        total_mm += math.sqrt((b.x_mm - a.x_mm) ** 2
+                              + (b.y_mm - a.y_mm) ** 2
+                              + (b.z_mm - a.z_mm) ** 2)
+    return total_mm
+
+
 def mesh_section(plan):
     """The bottom mesh's own two representative bars (#198), plus #229's
     own per-bar hook shape -- #199/#200 always computed this decision,
     but nothing reported it until now."""
     bottom_mesh = plan.bottom_mesh
-    lengths = bottom_mesh.lengths
     lines = [
         "mesh_bar_x length = %s -- %s" % (
-            _mm(lengths.mesh_bar_x_mm),
+            _mm(_actual_bar_length_mm(bottom_mesh.bar_x_geometry)),
             _hook_end_words(bottom_mesh.bar_x_hooks)),
         "mesh_bar_y length = %s -- %s" % (
-            _mm(lengths.mesh_bar_y_mm),
+            _mm(_actual_bar_length_mm(bottom_mesh.bar_y_geometry)),
             _hook_end_words(bottom_mesh.bar_y_hooks)),
         "Primary reinforcement direction = %s" % bottom_mesh.primary_direction,
     ]
