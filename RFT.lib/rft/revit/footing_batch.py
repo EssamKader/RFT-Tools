@@ -525,8 +525,19 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
             # #233 (R13): the top mat, when this candidate's own plan
             # carries one -- inside the SAME transaction as the bottom
             # mesh/dowels (this repo's hard "one transaction" rule).
+            # #253 (R16, review finding): checked defensively here too --
+            # candidate.plan.top_mesh is not None is set by a SEPARATE,
+            # earlier call (plan_candidates/build_footing_plan); a caller
+            # that supplies top diameters there but forgets to also thread
+            # top_mesh_bar_x_type/top_mesh_bar_y_type into THIS call would
+            # otherwise pass None straight into Rebar.CreateFromCurves --
+            # mirrors the dowel_tie/perimeter_tie blocks just below, which
+            # already re-check their own bar-type args for the identical
+            # reason.
             top_bar_x, top_bar_y = None, None
-            if candidate.plan.top_mesh is not None:
+            if (candidate.plan.top_mesh is not None
+                    and top_mesh_bar_x_type is not None
+                    and top_mesh_bar_y_type is not None):
                 top_bar_x, top_bar_y = place_straight_top_mesh(
                     doc, candidate.element, candidate.plan.top_mesh,
                     top_mesh_bar_x_type, top_mesh_bar_y_type)
