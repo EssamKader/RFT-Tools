@@ -131,6 +131,16 @@ BATCH_TRANSACTION_NAME = "RFT Detail Footing Batch"
 #: `perimeter_tie` at all, unchanged (the SAME graceful "opt-in, else
 #: FootingPlan.perimeter_tie stays None" degrade `build_footing_plan`
 #: itself already applies).
+#: #253 (R16): ``top_mesh_bar_x_type``/``top_mesh_bar_y_type`` are the
+#: top mat's OWN bar types, independent of ``bar_x_type``/``bar_y_type``
+#: above (the bottom mat's) -- carried here too so a batch run gives
+#: every footing in the group the SAME top-mat bar type the engineer
+#: picked on the Mesh & Dowels tab, rather than silently reusing the
+#: bottom mat's own type. Append-only, both default to ``None`` -- every
+#: caller that predates #253 keeps building a batch with no top mat bar
+#: type of its own (``build_footing_plan`` itself refuses per-candidate,
+#: via ``TopMeshBarTypeRequiredError``, if TOP+BTM is chosen without
+#: them).
 BatchInputs = namedtuple(
     "BatchInputs",
     ["x_offset_mm", "y_offset_mm", "ld_multiplier",
@@ -143,10 +153,11 @@ BatchInputs = namedtuple(
      "perimeter_tie_bar_type", "perimeter_tie_spacing_mm",
      "perimeter_tie_quantity", "perimeter_tie_lap_mm",
      "perimeter_tie_first_bar_length_mm",
-     "perimeter_tie_second_bar_length_mm"])
+     "perimeter_tie_second_bar_length_mm",
+     "top_mesh_bar_x_type", "top_mesh_bar_y_type"])
 BatchInputs.__new__.__defaults__ = (
     None, None, None, None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None,
-    None, None, None, None, None, None)
+    None, None, None, None, None, None, None, None)
 
 
 class FootingBatchError(Exception):
@@ -349,6 +360,21 @@ def plan_candidates(doc, host_footing, inputs):
         perimeter_tie_dia_mm = bar_type_diameter_mm(
             inputs.perimeter_tie_bar_type, internal_to_mm)
 
+    # #253 (R16): the top mat's OWN diameters -- independent of
+    # mesh_bar_x_dia_mm/mesh_bar_y_dia_mm above (the bottom mat's), the
+    # SAME opt-in-on-type-supplied gate perimeter_tie_dia_mm just used.
+    # ``None`` when no top mat type was supplied for this batch;
+    # build_footing_plan itself refuses per candidate (Top MeshBarType
+    # RequiredError) if TOP+BTM is chosen without them.
+    top_mesh_bar_x_dia_mm = None
+    if inputs.top_mesh_bar_x_type is not None:
+        top_mesh_bar_x_dia_mm = bar_type_diameter_mm(
+            inputs.top_mesh_bar_x_type, internal_to_mm)
+    top_mesh_bar_y_dia_mm = None
+    if inputs.top_mesh_bar_y_type is not None:
+        top_mesh_bar_y_dia_mm = bar_type_diameter_mm(
+            inputs.top_mesh_bar_y_type, internal_to_mm)
+
     candidates = []
     for element, geometry, column_section in reads:
         footing_inputs = FootingInputs(
@@ -380,7 +406,9 @@ def plan_candidates(doc, host_footing, inputs):
             perimeter_tie_first_bar_length_mm=
                 inputs.perimeter_tie_first_bar_length_mm,
             perimeter_tie_second_bar_length_mm=
-                inputs.perimeter_tie_second_bar_length_mm)
+                inputs.perimeter_tie_second_bar_length_mm,
+            top_mesh_bar_x_dia_mm=top_mesh_bar_x_dia_mm,
+            top_mesh_bar_y_dia_mm=top_mesh_bar_y_dia_mm)
         try:
             plan = build_footing_plan(
                 footing_inputs, column_section=column_section,
@@ -424,7 +452,8 @@ def read_existing(doc, batch_plan):
 
 def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
                 dowel_tie_bar_type=None, dowel_tie_hook_type=None,
-                perimeter_tie_bar_type=None, perimeter_tie_hook_type=None):
+                perimeter_tie_bar_type=None, perimeter_tie_hook_type=None,
+                top_mesh_bar_x_type=None, top_mesh_bar_y_type=None):
     """Spec Sec 5: ONE transaction for the whole batch, all-or-nothing.
     If every candidate was excluded, the run refuses as a whole rather
     than opening an empty transaction -- checked before ``Transaction``
@@ -449,6 +478,16 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
     type at all (see ``rft.revit.footing_perimeter_tie``'s own
     docstring) -- passed through regardless, since
     ``place_perimeter_ties`` itself decides whether to use it.
+
+    #253 (R16): ``top_mesh_bar_x_type``/``top_mesh_bar_y_type`` are the
+    top mat's OWN bar types -- never ``bar_x_type``/``bar_y_type`` (the
+    bottom mat's). Default to ``None`` so every caller that predates
+    this ticket keeps building a batch with no top mat placed of its
+    own; each candidate's own top mat is placed only when its plan
+    carries one (``candidate.plan.top_mesh is not None``), which itself
+    only happens when ``plan_candidates`` was given both top mat
+    diameters -- so by the time a candidate's plan carries a top mesh,
+    both of these are guaranteed supplied too.
     """
     if not batch_plan.candidates:
         raise FootingBatchError(
@@ -486,11 +525,22 @@ def apply_batch(doc, batch_plan, bar_x_type, bar_y_type, dowel_bar_type,
             # #233 (R13): the top mat, when this candidate's own plan
             # carries one -- inside the SAME transaction as the bottom
             # mesh/dowels (this repo's hard "one transaction" rule).
+            # #253 (R16, review finding): checked defensively here too --
+            # candidate.plan.top_mesh is not None is set by a SEPARATE,
+            # earlier call (plan_candidates/build_footing_plan); a caller
+            # that supplies top diameters there but forgets to also thread
+            # top_mesh_bar_x_type/top_mesh_bar_y_type into THIS call would
+            # otherwise pass None straight into Rebar.CreateFromCurves --
+            # mirrors the dowel_tie/perimeter_tie blocks just below, which
+            # already re-check their own bar-type args for the identical
+            # reason.
             top_bar_x, top_bar_y = None, None
-            if candidate.plan.top_mesh is not None:
+            if (candidate.plan.top_mesh is not None
+                    and top_mesh_bar_x_type is not None
+                    and top_mesh_bar_y_type is not None):
                 top_bar_x, top_bar_y = place_straight_top_mesh(
                     doc, candidate.element, candidate.plan.top_mesh,
-                    bar_x_type, bar_y_type)
+                    top_mesh_bar_x_type, top_mesh_bar_y_type)
             # #242: the dowel_tie closed loop, same transaction, same
             # footing host -- only when both bar/hook types were supplied
             # AND this candidate's own plan carries a loop.

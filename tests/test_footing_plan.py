@@ -40,6 +40,7 @@ from rft.core.footing_plan import (
     DowelArrayPlan,
     FootingInputs,
     PerimeterTiePlan,
+    TopMeshBarTypeRequiredError,
     TopMeshPlan,
     build_footing_plan,
 )
@@ -59,6 +60,20 @@ def _inputs(**overrides):
         ld_multiplier=40.0)
     values.update(overrides)
     return FootingInputs(**values)
+
+
+def _top_inputs(**overrides):
+    """#253 (R16): every TOP+BTM fixture needs its own REQUIRED top bar
+    diameters set. Defaults them equal to the bottom mat's own defaults
+    (16.0/12.0) so every pre-existing TOP+BTM test below (which predates
+    #253 and asserts the two mats behave identically) keeps its original
+    meaning unless a test explicitly overrides them to prove R16's
+    independence."""
+    values = dict(
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        top_mesh_bar_x_dia_mm=16.0, top_mesh_bar_y_dia_mm=12.0)
+    values.update(overrides)
+    return _inputs(**values)
 
 
 def test_the_plan_carries_exactly_what_mesh_bar_lengths_would_compute():
@@ -103,8 +118,7 @@ def test_top_mesh_never_gets_a_bottom_style_array():
     """#232's own scope: the array builder is bottom-mat-only (Story 4's
     top mat has no placement adapter yet, same reasoning #229's bent
     geometry stayed bottom-only)."""
-    plan = build_footing_plan(_inputs(
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+    plan = build_footing_plan(_top_inputs(
         mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0))
     assert plan.top_mesh.bar_x_array is None
     assert plan.top_mesh.bar_y_array is None
@@ -160,13 +174,13 @@ def test_the_top_mesh_now_gets_its_own_bent_geometry_per_r13():
     the SAME composing module that populates the bottom mat's own
     geometry -- the ``None`` this test used to require is exactly what
     R13 was raised to fix."""
-    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    inputs = _top_inputs()
     plan = build_footing_plan(inputs)
 
     expected_bar_x, expected_bar_y = top_mesh_bar_geometry(
         plan.top_mesh.lengths, inputs.top_cover_mm,
-        inputs.footing_thickness_mm, inputs.mesh_bar_x_dia_mm,
-        inputs.mesh_bar_y_dia_mm, plan.top_mesh.bar_x_hooks,
+        inputs.footing_thickness_mm, inputs.top_mesh_bar_x_dia_mm,
+        inputs.top_mesh_bar_y_dia_mm, plan.top_mesh.bar_x_hooks,
         plan.top_mesh.bar_y_hooks)
     assert plan.top_mesh.bar_x_geometry == expected_bar_x
     assert plan.top_mesh.bar_y_geometry == expected_bar_y
@@ -176,8 +190,7 @@ def test_the_top_mesh_array_stays_none_array_is_separate_follow_up_scope():
     """#233's own scope: only the single representative bar per direction
     is built for the top mat -- the array (many parallel bars, mirroring
     #232's bottom-mesh array) is deliberately left unbuilt."""
-    plan = build_footing_plan(_inputs(
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+    plan = build_footing_plan(_top_inputs(
         mesh_bar_x_spacing_mm=200.0, mesh_bar_y_spacing_mm=200.0))
     assert plan.top_mesh.bar_x_array is None
     assert plan.top_mesh.bar_y_array is None
@@ -187,7 +200,7 @@ def test_the_top_mesh_hook_leg_is_subtracted_not_added():
     """R13's own reason for existing: a hooked top-mat bar's own vertical
     leg must go DOWN (toward the bottom mat), the opposite direction from
     the bottom mat's own hook leg at the SAME (mirrored) base elevation."""
-    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    inputs = _top_inputs()
     plan = build_footing_plan(inputs)
 
     assert plan.top_mesh.bar_x_hooks.start.needs_hook
@@ -294,7 +307,7 @@ def test_top_and_btm_toggles_a_second_mat_instance_on():
     second mat instance on/off -- no new formula math is being tested
     here, #198/#199/#200's own suites already cover the formulas this
     reuses."""
-    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    inputs = _top_inputs()
     plan = build_footing_plan(inputs)
     assert isinstance(plan.top_mesh, TopMeshPlan)
     assert plan.top_mesh.lengths == plan.bottom_mesh.lengths
@@ -308,7 +321,7 @@ def test_the_top_mat_sits_near_the_top_face_not_on_top_of_the_bottom_mat():
     measured down from the top face) -- neither equal to the bottom mat's
     z_x=58/z_y=72 (measured up from the bottom face).
     """
-    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    inputs = _top_inputs()
     plan = build_footing_plan(inputs)
 
     bottom_z_x = plan.bottom_mesh.bar_x_endpoints.start.z_mm
@@ -325,16 +338,22 @@ def test_the_top_mat_sits_near_the_top_face_not_on_top_of_the_bottom_mat():
 
 
 def test_top_mat_endpoints_match_local_top_mesh_bar_endpoints_directly():
-    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+    """#253 (R16): the top mat's own endpoints must be built from its own
+    ``top_mesh_bar_x_dia_mm``/``top_mesh_bar_y_dia_mm`` -- NOT the bottom
+    mat's ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm`` -- so this fixture
+    deliberately gives the top mat DIFFERENT diameters (12.0/10.0) from
+    the bottom mat's (16.0/12.0)."""
+    inputs = _top_inputs(
+        top_mesh_bar_x_dia_mm=12.0, top_mesh_bar_y_dia_mm=10.0)
     plan = build_footing_plan(inputs)
 
     lengths = mesh_bar_lengths(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
-        inputs.top_cover_mm, inputs.mesh_bar_x_dia_mm)
+        inputs.top_cover_mm, inputs.top_mesh_bar_x_dia_mm)
     expected_x, expected_y = local_top_mesh_bar_endpoints(
         lengths, inputs.top_cover_mm, inputs.footing_thickness_mm,
-        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+        inputs.top_mesh_bar_x_dia_mm, inputs.top_mesh_bar_y_dia_mm)
 
     assert plan.top_mesh.bar_x_endpoints == expected_x
     assert plan.top_mesh.bar_y_endpoints == expected_y
@@ -344,13 +363,68 @@ def test_top_mat_shape_mode_is_independent_of_the_bottom_mats():
     """Sec 7: 'Independent of Story 3 ... set separately, never
     coupled.' A bottom U override must not leak into an L-alternating
     top mat."""
-    inputs = _inputs(
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+    inputs = _top_inputs(
         bottom_mat_shape_mode=MAT_SHAPE_U,
         top_mat_shape_mode=MAT_SHAPE_L_ALTERNATING)
     plan = build_footing_plan(inputs)
     assert plan.bottom_mesh.bar_x_hooks.shape == SHAPE_U
     assert plan.top_mesh.bar_x_hooks.shape == SHAPE_L
+
+
+def test_the_plan_defaults_top_mesh_bar_dia_fields_to_none():
+    """#253 (R16): predates-#253 callers (this file's own ``_inputs``
+    helper, and script.py) keep building a BTM-only plan unchanged."""
+    inputs = _inputs()
+    assert inputs.top_mesh_bar_x_dia_mm is None
+    assert inputs.top_mesh_bar_y_dia_mm is None
+
+
+def test_top_mesh_bar_dia_fields_are_irrelevant_when_btm_only():
+    """BTM-only never even looks at the two new fields -- they may stay
+    ``None`` (the default) with no refusal, since ``top_mesh`` itself
+    stays ``None`` in this case."""
+    inputs = _inputs(top_reinforcement=TOP_REINFORCEMENT_BTM_ONLY)
+    plan = build_footing_plan(inputs)
+    assert plan.top_mesh is None
+
+
+def test_top_and_btm_refuses_when_the_top_bar_x_dia_is_missing():
+    """#253 (R16): TOP+BTM makes the top mat's own bar diameters REQUIRED
+    -- must refuse cleanly rather than silently borrow the bottom mat's
+    ``mesh_bar_x_dia_mm``."""
+    inputs = _top_inputs(top_mesh_bar_x_dia_mm=None)
+    with pytest.raises(TopMeshBarTypeRequiredError):
+        build_footing_plan(inputs)
+
+
+def test_top_and_btm_refuses_when_the_top_bar_y_dia_is_missing():
+    inputs = _top_inputs(top_mesh_bar_y_dia_mm=None)
+    with pytest.raises(TopMeshBarTypeRequiredError):
+        build_footing_plan(inputs)
+
+
+def test_top_mat_bar_diameters_are_independent_of_the_bottom_mats():
+    """#253 (R16): a top mat with SMALLER bar diameters than the bottom
+    mat (the common structural case Essam's own gap report named) must
+    build using its OWN diameters throughout -- lengths, endpoints and
+    hook plan -- never the bottom mat's."""
+    inputs = _top_inputs(
+        mesh_bar_x_dia_mm=20.0, mesh_bar_y_dia_mm=20.0,
+        top_mesh_bar_x_dia_mm=10.0, top_mesh_bar_y_dia_mm=8.0)
+    plan = build_footing_plan(inputs)
+
+    expected_top_lengths = mesh_bar_lengths(
+        inputs.a_mm, inputs.b_mm, inputs.cover_mm,
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.top_cover_mm, inputs.top_mesh_bar_x_dia_mm)
+    assert plan.top_mesh.lengths == expected_top_lengths
+    assert plan.top_mesh.lengths != plan.bottom_mesh.lengths
+
+    expected_bottom_lengths = mesh_bar_lengths(
+        inputs.a_mm, inputs.b_mm, inputs.cover_mm,
+        inputs.footing_thickness_mm, inputs.bottom_cover_mm,
+        inputs.top_cover_mm, inputs.mesh_bar_x_dia_mm)
+    assert plan.bottom_mesh.lengths == expected_bottom_lengths
 
 
 def test_the_plan_defaults_dowel_fields_to_none_with_no_dowel_plan():
