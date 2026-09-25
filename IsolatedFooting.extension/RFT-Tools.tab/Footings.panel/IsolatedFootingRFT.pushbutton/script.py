@@ -68,6 +68,20 @@ import os
 from pyrevit import forms, revit, script
 from Autodesk.Revit.DB import Transaction
 
+# The window's title-bar icon, imported separately from everything else:
+# a missing/broken WPF imaging type must never stop the window opening.
+# Mirrors ColumnRFT.pushbutton/script.py's own _apply_window_icon exactly
+# (issue #258) -- an ABSOLUTE file URI, never a relative one, since this
+# window is loaded with literal_string=True (rft.ui.shared_styles's own
+# reason: that leaves BaseUri null, so a relative URI resolves to nothing,
+# no error).
+try:
+    from System import Uri, UriKind
+    from System.Windows.Media.Imaging import BitmapCacheOption, BitmapImage
+    _WPF_IMAGING_AVAILABLE = True
+except Exception:
+    _WPF_IMAGING_AVAILABLE = False
+
 from rft.core.footing_plan import FootingInputs, build_footing_plan
 from rft.core.footing_plan import MAT_SHAPE_L_ALTERNATING, MAT_SHAPE_U
 from rft.core.footing_plan import (
@@ -104,6 +118,36 @@ TRANSACTION_NAME = (
 logger = script.get_logger()
 
 
+def _apply_window_icon(window):
+    """Put the pushbutton's own icon.png in the window's title bar.
+
+    Mirrors ColumnRFT.pushbutton/script.py's own ``_apply_window_icon``
+    exactly (issue #258) -- an ABSOLUTE file URI, never a relative one:
+    this window is loaded with ``literal_string=True``, which leaves
+    ``BaseUri`` null, so a relative URI has nothing to resolve against
+    (the same reason ``rft.ui.shared_styles`` rewrites its own resource
+    path). A relative URI would not raise here; it would simply resolve
+    to nothing.
+
+    Wrapped: a missing or unreadable icon must never stop the window
+    opening. The icon is decoration; the window is the tool.
+    """
+    if not _WPF_IMAGING_AVAILABLE:
+        return
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+    if not os.path.exists(path):
+        return
+    try:
+        image = BitmapImage()
+        image.BeginInit()
+        image.UriSource = Uri(path, UriKind.Absolute)
+        image.CacheOption = BitmapCacheOption.OnLoad
+        image.EndInit()
+        window.Icon = image
+    except Exception:
+        pass
+
+
 class FootingWindow(forms.WPFWindow):
     """The three-tab shell: Footing & Column, Mesh & Dowels, Review."""
 
@@ -120,6 +164,7 @@ class FootingWindow(forms.WPFWindow):
             )),
             literal_string=True,
         )
+        _apply_window_icon(self)
 
         self.footing = None
         self.column = None
