@@ -604,3 +604,64 @@ only required (refused on `Build plan` if unset) when TOP+BTM is
 selected, and the batch path (`footing_batch.BatchInputs`) carries the
 SAME two fields so a batch run gives every footing in the group the same
 top-mat bar type rather than reusing the bottom mat's.
+
+## R15 — Dowel-array inner ties (crossties): engineer-stated subsets, exactly like column inner ties, additive to the existing outer loop
+
+**Spec Ref:** specs/isolated-footing.md §9 only ever describes ONE tie —
+a closed loop enclosing the whole dowel array (#242's own
+`dowel_tie_loop_mm`). It never names a second tie topology, so a footing
+inner tie (bridging interior dowel bars, not the whole array) is a gap
+in §9, not a rule §9 states and this ticket contradicts.
+
+**Ruling (Essam, per issue #247):** footing dowel-array inner ties
+(crossties) work **exactly** like column inner ties (R17,
+`docs/column/spec-amendments.md`): the engineer directly STATES which
+dowel bars each inner tie touches (a subset of bar indices, free text,
+one tie per line), never an auto-generated pattern. This is additive —
+the existing whole-array outer loop (#242) stays exactly as it was; inner
+ties are a separate, new set of shapes placed ALONGSIDE it, not a
+replacement for it.
+
+**Reuse, confirmed before implementing:** `rft.core.column_ties.
+parse_tie_subsets`/`resolve_ties` are 100% column-agnostic pure functions
+(no `ColumnLayout` dependency in either body) and are reused UNCHANGED
+against the SAME `_ArrayLayout`/`_ArrayBarPosition` translation
+`footing_dowel_ties.dowel_tie_loop_mm` (#242) already built for the outer
+loop — not a second, duplicate translation. `resolve_ties` always
+prepends `outer_perimeter_subset`; that prepended entry is discarded in
+favour of `dowel_tie_loop_mm`'s own outer-loop call, which enforces its
+OWN stricter refusal (`DowelTieNotBuildableError`) for an unbuildable
+whole-array loop rather than `resolve_tie`'s silent cross-tie
+degradation — so the outer loop's refusal rule has exactly one source of
+truth, while `resolve_ties` is still the thing that resolves every inner
+subset.
+
+**Vertical placement, confirmed by reading `rft.revit.
+column_place_ties.place_ties` (not re-derived):** footing inner stirrups
+ride the SAME `dowel_tie_ladder` Z-levels as the existing outer loop — one
+ladder, every level carries the outer loop's shape plus every inner tie's
+shape (`for level: for tie:`), mirroring `place_ties`'s own loop structure
+exactly. No separate level scheme was invented for inner ties.
+
+**Scope this ruling opens (issue #247):** `rft.core.footing_dowel_ties.
+dowel_ties_mm(dowel_bars, tie_subsets_text, tie_dia_mm, bar_dia_mm,
+bend_diameter_mm)` returns a `DowelTies(outer_loop, inner_ties)` — the
+existing #242 `DowelTieLoop` unchanged, plus a tuple of new
+`DowelInnerTie(kind, corners)` entries (empty when no `tie_subsets_text`
+was supplied). `footing_plan.FootingInputs` grows one new, append-only,
+default-`None` field, `dowel_tie_subsets_text`; `DowelTiePlan` grows a new
+`inner_ties` field (always a tuple, never `None`, mirroring
+`DowelArrayPlan.overshoot_bar_indices`'s own "never None" convention).
+`rft.revit.footing_dowel_ties.place_dowel_ties` places every inner tie at
+every ladder level alongside the outer loop, drawing a cross-tie
+(`column_ties.KIND_CROSS_TIE`) as a single straight leg and a closed
+loop/triangle as the full hook-closing chain — the SAME kind-based
+drawing distinction `column_place_ties._uv_segments_mm` already makes,
+mirrored rather than reinvented. `IsolatedFootingRFT`'s own
+`dowel_tie_subsets_tb` (Mesh & Dowels tab) mirrors the column tool's
+`tie_subsets_tb` styling (multi-line, `AcceptsReturn`, `Consolas`) and is
+optional — left blank, the whole-array outer loop is the only `dowel_tie`
+built, unchanged from #242. **SHAPE UNVERIFIED**: none of this has been
+run against a live host — see `rft.revit.footing_dowel_ties`'s own
+"SHAPE UNVERIFIED" docstring note, extended to inner ties by this
+ruling.

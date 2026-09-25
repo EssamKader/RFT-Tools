@@ -22,6 +22,7 @@ correctly and refuses when it should.
 import pytest
 
 import rft.core.footing_dowel_ties as footing_dowel_ties
+from rft.core.column_ties import KIND_CROSS_TIE
 from rft.core.footing_dowel_ties import (
     END_OFFSET_BELOW_TOF_MM,
     START_OFFSET_FROM_FOOTING_BOTTOM_MM,
@@ -31,6 +32,7 @@ from rft.core.footing_dowel_ties import (
     dowel_tie_ladder,
     dowel_tie_loop_mm,
     dowel_tie_run_mm,
+    dowel_ties_mm,
 )
 from rft.core.footing_dowels import BarEndpoints, DowelBarGeometry, LocalPoint
 
@@ -195,3 +197,69 @@ def test_a_rectangle_too_narrow_to_bend_refuses_rather_than_placing_a_cross_tie(
     with pytest.raises(DowelTieNotBuildableError):
         dowel_tie_loop_mm(
             bars, tie_dia_mm=8.0, bar_dia_mm=16.0, bend_diameter_mm=60.0)
+
+
+# --------------------------------------------------------------------- #
+# #247 (R15) -- dowel_ties_mm: engineer-stated inner ties (crossties),
+# additive to the #242 whole-array outer loop. Reuses column_ties.
+# parse_tie_subsets/resolve_ties unchanged (tested in test_column_ties.py);
+# these tests only check this module's own wiring: empty text keeps #242
+# behaviour unchanged, a valid subset returns one resolved inner tie
+# alongside the outer loop, and an invalid subset's ValueError propagates.
+
+_FOUR_CORNER_BARS = [
+    _bar_at(-150.0, -200.0), _bar_at(150.0, -200.0),
+    _bar_at(150.0, 200.0), _bar_at(-150.0, 200.0),
+]
+
+
+def test_no_subsets_text_returns_the_outer_loop_only_unchanged_from_242():
+    for empty in (None, ""):
+        ties = dowel_ties_mm(
+            _FOUR_CORNER_BARS, empty, tie_dia_mm=8.0, bar_dia_mm=16.0,
+            bend_diameter_mm=60.0)
+        expected_loop = dowel_tie_loop_mm(
+            _FOUR_CORNER_BARS, tie_dia_mm=8.0, bar_dia_mm=16.0,
+            bend_diameter_mm=60.0)
+        assert ties.outer_loop == expected_loop
+        assert ties.inner_ties == tuple()
+
+
+def test_blank_and_comment_only_text_is_also_no_inner_ties():
+    ties = dowel_ties_mm(
+        _FOUR_CORNER_BARS, "\n# just a comment\n\n",
+        tie_dia_mm=8.0, bar_dia_mm=16.0, bend_diameter_mm=60.0)
+    assert ties.inner_ties == tuple()
+
+
+def test_a_two_bar_subset_returns_one_cross_tie_alongside_the_outer_loop():
+    # Bars 0 and 1 share v=-200 -- the "opposite bars on one face" shape
+    # the UI's own help text describes ("1 6" is a cross-tie), which
+    # degrades to KIND_CROSS_TIE under A1 (see this module's own "Inner
+    # ties" docstring section for why a diagonal 2-bar subset would NOT).
+    ties = dowel_ties_mm(
+        _FOUR_CORNER_BARS, "0 1", tie_dia_mm=8.0, bar_dia_mm=16.0,
+        bend_diameter_mm=60.0)
+    assert ties.outer_loop is not None
+    assert len(ties.inner_ties) == 1
+    inner = ties.inner_ties[0]
+    assert inner.kind == KIND_CROSS_TIE
+    actual = set((round(c.x_mm, 6), round(c.y_mm, 6)) for c in inner.corners)
+    assert actual == set([(-150.0, -200.0), (150.0, -200.0)])
+
+
+def test_multiple_lines_return_multiple_inner_ties_in_order():
+    ties = dowel_ties_mm(
+        _FOUR_CORNER_BARS, "0 1\n1 2", tie_dia_mm=8.0, bar_dia_mm=16.0,
+        bend_diameter_mm=60.0)
+    assert len(ties.inner_ties) == 2
+
+
+def test_an_invalid_subset_line_propagates_parse_tie_subsets_own_value_error():
+    # A single bar number is not a tie (parse_tie_subsets' own "at least
+    # two" rule) -- its ValueError must propagate unmodified, not be
+    # swallowed or re-wrapped.
+    with pytest.raises(ValueError):
+        dowel_ties_mm(
+            _FOUR_CORNER_BARS, "5", tie_dia_mm=8.0, bar_dia_mm=16.0,
+            bend_diameter_mm=60.0)

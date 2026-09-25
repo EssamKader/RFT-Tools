@@ -60,6 +60,33 @@ to enclose the entire array, so :func:`dowel_tie_loop_mm` refuses
 (`DowelTieNotBuildableError`) rather than silently placing a cross-tie
 between two arbitrary array corners.
 
+## Inner ties (crossties) -- #247, ruling R15
+
+The outer loop above is the WHOLE-array wrap and stays exactly as it was
+(#242, unchanged). R15 (`docs/footing/spec-amendments.md`) adds a SEPARATE,
+additive set of shapes: inner ties (crossties) bridging interior dowel
+bars, entered by the engineer exactly like a column's own inner ties
+(R17) -- free text, one tie per line, never an auto-generated pattern.
+`rft.core.column_ties.parse_tie_subsets`/`resolve_ties` are reused
+UNCHANGED (they are already 100% column-agnostic pure text parsing/subset
+resolution -- no `ColumnLayout` dependency in either function body) against
+the SAME `_ArrayLayout`/`_ArrayBarPosition` translation this module already
+built for the outer loop, not a duplicate of it.
+
+`resolve_ties` always prepends `outer_perimeter_subset` (the same call
+:func:`dowel_tie_loop_mm` already makes directly) -- its own outer entry is
+discarded here rather than reused, since :func:`dowel_tie_loop_mm` already
+enforces its OWN refusal (`DowelTieNotBuildableError`) for an unbuildable
+whole-array loop, a stricter rule than `resolve_tie`'s own silent
+cross-tie degradation. Calling `resolve_ties` only for its INNER entries
+keeps that refusal the single source of truth for the outer loop, while
+still reusing `resolve_ties` (not a hand-written loop over `resolve_tie`)
+for the inner ones, per the ticket's own instruction.
+
+SHAPE UNVERIFIED: this has not been run against a live host (see
+`rft.revit.footing_dowel_ties`'s own placement-layer note for the same
+caveat, extended to inner ties).
+
 ## Reusing `column_tie_levels.tie_levels` for a footing that has no zones
 
 `rft.core.column_tie_levels.tie_levels` builds a ladder against the
@@ -89,7 +116,13 @@ and would need a different (much smaller) piece of code.
 
 from collections import namedtuple
 
-from .column_ties import KIND_CLOSED_LOOP, outer_perimeter_subset, resolve_tie
+from .column_ties import (
+    KIND_CLOSED_LOOP,
+    outer_perimeter_subset,
+    parse_tie_subsets,
+    resolve_tie,
+    resolve_ties,
+)
 from .column_tie_levels import tie_levels
 
 #: Spec Ref: Sec 9 -- "50mm from the bottom of the footing." Deliberately
@@ -308,3 +341,94 @@ def dowel_tie_loop_mm(dowel_bars, tie_dia_mm, bar_dia_mm, bend_diameter_mm):
     corners = tuple(DowelTieCorner(x_mm=u, y_mm=v)
                     for u, v in resolved.vertices)
     return DowelTieLoop(corners=corners)
+
+
+#: One engineer-stated inner tie (#247, R15): `kind` is `column_ties.
+#: KIND_CROSS_TIE`/`KIND_CLOSED_LOOP`/`KIND_TRIANGLE` (whatever
+#: `resolve_tie` decided for that subset -- a 2-bar subset always resolves
+#: to a cross-tie, per `subset_indices`' own "at least 2 bars" floor; 3+
+#: can resolve to either, exactly like a column's own inner ties). `corners`
+#: is `resolve_tie`'s own `vertices` -- 2 points for a cross-tie, 3 or 4 for
+#: a closed loop/triangle -- in the SAME `DowelTieCorner` shape the outer
+#: `DowelTieLoop.corners` already uses, so a placement adapter reads both
+#: with one corner type.
+DowelInnerTie = namedtuple("DowelInnerTie", ["kind", "corners"])
+
+#: The combined result :func:`dowel_ties_mm` returns: the existing #242
+#: outer loop, UNCHANGED, plus (#247) the engineer-stated inner ties, in
+#: the order they were typed. `outer_loop` is a `DowelTieLoop` (see
+#: :func:`dowel_tie_loop_mm`); `inner_ties` is a tuple of `DowelInnerTie`,
+#: empty when no `tie_subsets_text` was supplied -- never `None`, so a
+#: caller can always iterate it with no null check (the same "never None"
+#: convention `footing_plan.DowelArrayPlan.overshoot_bar_indices` already
+#: established).
+DowelTies = namedtuple("DowelTies", ["outer_loop", "inner_ties"])
+
+
+def _resolve_inner_ties(dowel_bars, tie_subsets_text, tie_dia_mm, bar_dia_mm,
+                        bend_diameter_mm):
+    """#247 (R15): the engineer-stated inner ties (crossties), parsed from
+    free text exactly like a column's own inner ties (R17) -- see this
+    module's own "Inner ties" docstring section for why `resolve_ties`'
+    own prepended outer-perimeter entry is discarded here rather than
+    reused.
+
+    `tie_subsets_text` being `None` or empty (or blank/comment-only) is NOT
+    an error -- Sec 9's own whole-array loop keeps working unchanged for
+    every engineer who never types an inner tie (this ticket's own "must
+    not change existing behaviour" instruction). A genuinely invalid line
+    still raises `parse_tie_subsets`' own `ValueError`, propagated
+    unmodified -- not swallowed, and not re-wrapped in a footing-domain
+    exception, since it already names the offending line number on its
+    own.
+    """
+    if not tie_subsets_text:
+        return tuple()
+    subsets = parse_tie_subsets(tie_subsets_text)
+    if not subsets:
+        return tuple()
+
+    positions = [
+        _ArrayBarPosition(
+            index=index, u_mm=bar.vertical.start.x_mm,
+            v_mm=bar.vertical.start.y_mm)
+        for index, bar in enumerate(dowel_bars)]
+    layout = _ArrayLayout(bars=positions)
+    resolved = resolve_ties(subsets, layout, tie_dia_mm, bar_dia_mm,
+                            bend_diameter_mm)
+    # resolve_ties always prepends outer_perimeter_subset -- discarded here,
+    # see this module's own "Inner ties" docstring section.
+    inner_resolved = resolved[1:]
+    return tuple(
+        DowelInnerTie(
+            kind=tie.kind,
+            corners=tuple(DowelTieCorner(x_mm=u, y_mm=v)
+                          for u, v in tie.vertices))
+        for tie in inner_resolved)
+
+
+def dowel_ties_mm(dowel_bars, tie_subsets_text, tie_dia_mm, bar_dia_mm,
+                  bend_diameter_mm):
+    """#247 (R15): the one place both the existing #242 outer loop AND the
+    new engineer-stated inner ties are built from, so a future placement
+    adapter reads ONE `DowelTies` object rather than calling
+    `dowel_tie_loop_mm` and an inner-tie builder independently (Sec 4's
+    "one composing module" rule).
+
+    `tie_subsets_text` is optional (`None` or empty is fine -- see
+    :func:`_resolve_inner_ties`'s own docstring): every engineer who wants
+    only the whole-array loop, exactly as before #247, needs zero changes
+    to their existing workflow.
+
+    Raises whatever :func:`dowel_tie_loop_mm` itself raises for the outer
+    loop (`DowelTieArrayTooSmallError`/`DowelTieNotBuildableError`), and
+    whatever `parse_tie_subsets` itself raises (a bare `ValueError` naming
+    the offending line) for the inner ties -- neither is caught or
+    re-wrapped here.
+    """
+    outer_loop = dowel_tie_loop_mm(
+        dowel_bars, tie_dia_mm, bar_dia_mm, bend_diameter_mm)
+    inner_ties = _resolve_inner_ties(
+        dowel_bars, tie_subsets_text, tie_dia_mm, bar_dia_mm,
+        bend_diameter_mm)
+    return DowelTies(outer_loop=outer_loop, inner_ties=inner_ties)
