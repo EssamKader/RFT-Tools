@@ -569,3 +569,38 @@ length through its four corners (SW→SE→NE→NW→back to SW at
 When `PerimeterTieSplice.bar_count == 1` (loop at or under the 12m stock
 length, the common case), this ruling does not apply — place the single
 closed loop exactly as before, unaffected.
+
+## R16 — Top mat bar diameter: set independently of the bottom mat's, never coupled
+
+**Spec Ref:** specs/isolated-footing.md §7/Story 4 never names bar
+diameter as a shared-vs-independent choice at all — the same kind of
+silence R13 and the `top_mat_shape_mode` toggle (§7's "set separately,
+never coupled" wording) already closed for hook direction and U/L shape
+respectively. #201/#233 built the top mat reusing the BOTTOM mat's own
+`mesh_bar_x_dia_mm`/`mesh_bar_y_dia_mm` throughout, unchallenged until
+issue #253 raised it.
+
+**Ruling (Essam, 2026-09-25):** the top mat's bar diameter, in both
+directions, is set INDEPENDENTLY of the bottom mat's — the same
+"set separately, never coupled" principle §7 already states for the
+BTM-only/TOP+BTM reinforcement toggle and the U/L-shape toggle. A top mat
+commonly runs a smaller bar than the bottom mat (the reinforcement it
+resists is smaller), so silently reusing the bottom mat's own diameter
+would be wrong in the common case, not just a missing convenience.
+
+**Scope this ruling opens (issue #253):** two new `FootingInputs` fields,
+`top_mesh_bar_x_dia_mm`/`top_mesh_bar_y_dia_mm`, both defaulting to
+`None` so every caller that predates #253 (BTM-only plans, and every
+existing TOP+BTM test that never named its own top diameters) is
+unchanged. Once `top_reinforcement == TOP_REINFORCEMENT_TOP_AND_BTM`,
+both become REQUIRED — `build_footing_plan` raises
+`TopMeshBarTypeRequiredError` rather than silently falling back to the
+bottom mat's own `mesh_bar_x_dia_mm`/`mesh_bar_y_dia_mm`. The top mat's
+own lengths, endpoints and hook plan (`_build_mesh_mat_plan`) and its own
+bent geometry (`top_mesh_bar_geometry`) all use these new fields
+throughout, never the bottom mat's diameters. The UI (`FootingWindow`)
+grows its own `top_mesh_bar_x_type_cb`/`top_mesh_bar_y_type_cb` combos,
+only required (refused on `Build plan` if unset) when TOP+BTM is
+selected, and the batch path (`footing_batch.BatchInputs`) carries the
+SAME two fields so a batch run gives every footing in the group the same
+top-mat bar type rather than reusing the bottom mat's.

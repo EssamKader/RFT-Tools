@@ -273,6 +273,7 @@ class FootingWindow(forms.WPFWindow):
         """
         options = bar_type_options(revit.doc, internal_to_mm)
         for combo in (self.mesh_bar_x_type_cb, self.mesh_bar_y_type_cb,
+                     self.top_mesh_bar_x_type_cb, self.top_mesh_bar_y_type_cb,
                      self.dowel_bar_type_cb, self.dowel_tie_bar_type_cb,
                      self.perimeter_tie_bar_type_cb):
             combo.Items.Clear()
@@ -426,6 +427,26 @@ class FootingWindow(forms.WPFWindow):
                 "A dowel tie hook type must be selected (#242).")
             return
 
+        # #253 (R16): the top mat's OWN bar types -- independent of
+        # mesh_bar_x_type/mesh_bar_y_type above (the bottom mat's), never
+        # inferred from them. Only REQUIRED when TOP+BTM is actually
+        # chosen (mirrors the dowel_tie/perimeter_tie gates above: a field
+        # this window asks for unconditionally but only requires once the
+        # feature it belongs to is actually requested).
+        top_mesh_bar_x_type = self._selected_bar_type_object(
+            self.top_mesh_bar_x_type_cb)
+        top_mesh_bar_y_type = self._selected_bar_type_object(
+            self.top_mesh_bar_y_type_cb)
+        top_reinforcement = self._selected_top_reinforcement()
+        if (top_reinforcement == TOP_REINFORCEMENT_TOP_AND_BTM
+                and (top_mesh_bar_x_type is None
+                     or top_mesh_bar_y_type is None)):
+            self._refuse_on_tab(
+                self.mesh_dowels_status_tb,
+                "Top mat bar types (X and Y) must be selected when "
+                "Reinforcement is Top + Bottom (#253, R16).")
+            return
+
         # #244: perimeter_tie is OPT-IN -- leaving its bar type unselected
         # skips it entirely (perimeter_tie_dia_mm stays None, the same
         # opt-in gate every other optional field in this window already
@@ -479,6 +500,17 @@ class FootingWindow(forms.WPFWindow):
         if perimeter_tie_bar_type is not None:
             perimeter_tie_dia_mm = bar_type_diameter_mm(
                 perimeter_tie_bar_type, internal_to_mm)
+        # #253 (R16): the top mat's own diameters -- None when no top mat
+        # type was selected (BTM-only case; the gate above already
+        # refused if TOP+BTM was chosen with either left unselected).
+        top_mesh_bar_x_dia_mm = None
+        if top_mesh_bar_x_type is not None:
+            top_mesh_bar_x_dia_mm = bar_type_diameter_mm(
+                top_mesh_bar_x_type, internal_to_mm)
+        top_mesh_bar_y_dia_mm = None
+        if top_mesh_bar_y_type is not None:
+            top_mesh_bar_y_dia_mm = bar_type_diameter_mm(
+                top_mesh_bar_y_type, internal_to_mm)
 
         geometry = self.geometry
         inputs = FootingInputs(
@@ -510,7 +542,9 @@ class FootingWindow(forms.WPFWindow):
             perimeter_tie_first_bar_length_mm=
                 perimeter_tie_first_bar_length_mm,
             perimeter_tie_second_bar_length_mm=
-                perimeter_tie_second_bar_length_mm)
+                perimeter_tie_second_bar_length_mm,
+            top_mesh_bar_x_dia_mm=top_mesh_bar_x_dia_mm,
+            top_mesh_bar_y_dia_mm=top_mesh_bar_y_dia_mm)
 
         try:
             plan = build_footing_plan(
@@ -525,6 +559,8 @@ class FootingWindow(forms.WPFWindow):
         self._bar_types = {
             "mesh_bar_x_type": mesh_bar_x_type,
             "mesh_bar_y_type": mesh_bar_y_type,
+            "top_mesh_bar_x_type": top_mesh_bar_x_type,
+            "top_mesh_bar_y_type": top_mesh_bar_y_type,
             "dowel_bar_type": dowel_bar_type,
             "dowel_tie_bar_type": dowel_tie_bar_type,
             "dowel_tie_hook_type": dowel_tie_hook_type,
@@ -558,7 +594,9 @@ class FootingWindow(forms.WPFWindow):
             perimeter_tie_first_bar_length_mm=
                 perimeter_tie_first_bar_length_mm,
             perimeter_tie_second_bar_length_mm=
-                perimeter_tie_second_bar_length_mm)
+                perimeter_tie_second_bar_length_mm,
+            top_mesh_bar_x_type=top_mesh_bar_x_type,
+            top_mesh_bar_y_type=top_mesh_bar_y_type)
 
         sections = [
             footing_report.footing_geometry_section(geometry),
@@ -607,12 +645,15 @@ class FootingWindow(forms.WPFWindow):
                 bar_types["dowel_bar_type"])
             # #233 (R13): the top mat, same transaction, same footing
             # host as the bottom mesh -- only when the engineer asked for
-            # TOP+BTM (self.plan.top_mesh is not None).
+            # TOP+BTM (self.plan.top_mesh is not None). #253 (R16): the
+            # top mat's OWN bar types -- never the bottom mat's
+            # mesh_bar_x_type/mesh_bar_y_type.
             top_bar_x, top_bar_y = None, None
             if self.plan.top_mesh is not None:
                 top_bar_x, top_bar_y = place_straight_top_mesh(
                     doc, self.footing, self.plan.top_mesh,
-                    bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])
+                    bar_types["top_mesh_bar_x_type"],
+                    bar_types["top_mesh_bar_y_type"])
             # #242: the dowel_tie closed loop, same transaction, same
             # footing host as the bottom mesh/dowels -- only when the
             # plan actually carries a loop (a real dowel array plus a
@@ -711,7 +752,11 @@ class FootingWindow(forms.WPFWindow):
                 perimeter_tie_bar_type=
                     self._bar_types["perimeter_tie_bar_type"],
                 perimeter_tie_hook_type=
-                    self._bar_types["perimeter_tie_hook_type"])
+                    self._bar_types["perimeter_tie_hook_type"],
+                top_mesh_bar_x_type=
+                    self._bar_types["top_mesh_bar_x_type"],
+                top_mesh_bar_y_type=
+                    self._bar_types["top_mesh_bar_y_type"])
         except footing_batch.FootingBatchError as ex:
             self._refuse_on_tab(self.review_status_tb, str(ex))
             forms.alert(str(ex), title="Batch refused")
@@ -762,6 +807,8 @@ class FootingWindow(forms.WPFWindow):
         combo_by_field = {
             "mesh_bar_x_type": self.mesh_bar_x_type_cb,
             "mesh_bar_y_type": self.mesh_bar_y_type_cb,
+            "top_mesh_bar_x_type": self.top_mesh_bar_x_type_cb,
+            "top_mesh_bar_y_type": self.top_mesh_bar_y_type_cb,
             "dowel_bar_type": self.dowel_bar_type_cb,
             "dowel_tie_bar_type": self.dowel_tie_bar_type_cb,
             "perimeter_tie_bar_type": self.perimeter_tie_bar_type_cb,

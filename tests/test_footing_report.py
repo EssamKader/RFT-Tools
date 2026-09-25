@@ -264,7 +264,10 @@ def _top_plan():
         footing_thickness_mm=450.0, bottom_cover_mm=50.0,
         top_cover_mm=50.0, mesh_bar_x_dia_mm=16.0,
         mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
-        ld_multiplier=40.0, top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+        ld_multiplier=40.0, top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        # #253 (R16): the top mat's own bar diameters are REQUIRED once
+        # TOP+BTM is chosen.
+        top_mesh_bar_x_dia_mm=16.0, top_mesh_bar_y_dia_mm=12.0)
     return build_footing_plan(inputs)
 
 

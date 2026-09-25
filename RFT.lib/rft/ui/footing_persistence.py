@@ -48,7 +48,10 @@ SETTINGS_SLOT = "IsolatedFootingRFT_inputs"
 # quantity_tb/perimeter_tie_lap_tb/perimeter_tie_first_bar_length_tb/
 # perimeter_tie_second_bar_length_tb joined TEXT_FIELDS and
 # perimeter_tie_bar_type joined TYPE_FIELDS below.
-SETTINGS_VERSION = 4
+# #253 (R16): bumped to 5 -- top_mesh_bar_x_type/top_mesh_bar_y_type
+# joined TYPE_FIELDS below (the top mat's own bar type, independent of
+# the bottom mat's).
+SETTINGS_VERSION = 5
 
 # Free-text inputs (TextBox contents, stored verbatim as typed) -- the
 # window's own parsers (rft.ui.inputs) already turn text into values and
@@ -87,6 +90,8 @@ TYPE_FIELDS = (
     "dowel_tie_bar_type",
     "dowel_tie_hook_type",
     "perimeter_tie_bar_type",
+    "top_mesh_bar_x_type",
+    "top_mesh_bar_y_type",
 )
 
 # Footing/column-scoped, read from the model every run, never remembered

@@ -317,6 +317,9 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0"
@@ -329,16 +332,37 @@
                                 <ComboBoxItem Content="Top + Bottom (TOP+BTM)"/>
                             </ComboBox>
 
+                            <!-- #253 (R16): the top mat's OWN bar type,
+                                 independent of the bottom mat's mesh_bar_x_
+                                 type_cb/mesh_bar_y_type_cb above, only
+                                 meaningful (and required, on Build plan)
+                                 when Reinforcement above is TOP+BTM. -->
                             <TextBlock Grid.Row="1" Grid.Column="0"
-                                       Text="Hook shape, top mat (#201/#233)"
+                                       Text="Top mat bar type, X-direction (#253)"
                                        Style="{StaticResource InputLabel}"/>
                             <ComboBox Grid.Row="1" Grid.Column="1"
+                                      x:Name="top_mesh_bar_x_type_cb"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Top mat bar type, Y-direction (#253)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1"
+                                      x:Name="top_mesh_bar_y_type_cb"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Hook shape, top mat (#201/#233)"
+                                       Style="{StaticResource InputLabel}"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1"
                                       x:Name="top_mat_shape_cb"
                                       SelectedIndex="0">
                                 <ComboBoxItem Content="Auto (per-end LD compare)"/>
                                 <ComboBoxItem Content="U-Shape (both ends hooked)"/>
                                 <ComboBoxItem Content="L-Shape, alternating"/>
                             </ComboBox>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="The two bar types above are only used, and only required, when Reinforcement is Top + Bottom (R16) -- they are ignored for Bottom only."
+                                       Style="{StaticResource ReadOutSource}"/>
                         </Grid>
 
                         <TextBlock Style="{StaticResource SectionHeading}"

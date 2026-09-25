@@ -160,6 +160,19 @@ from .footing_mesh import (
 #: #232 keeps building a plan with no array, unchanged -- the SAME
 #: trailing-defaults pattern every field since ``bottom_mat_shape_mode``
 #: has used.
+#: #253 (ruling R16, docs/footing/spec-amendments.md): ``top_mesh_bar_x_
+#: dia_mm``/``top_mesh_bar_y_dia_mm`` are the top mat's OWN bar diameters
+#: -- independent of ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm`` above,
+#: which remain the BOTTOM mat's own fields, unchanged. Sec 7/Story 4
+#: never named bar diameter as a shared-vs-independent choice at all
+#: (silence, not a stated rule); R16 closes that silence the same way the
+#: BTM-only/TOP+BTM toggle and the U/L-shape toggle
+#: (``top_mat_shape_mode``) are already "set separately, never coupled."
+#: Both default to ``None`` so every caller that predates #253 (BTM-only
+#: plans) is unchanged; when ``top_reinforcement ==
+#: TOP_REINFORCEMENT_TOP_AND_BTM`` they become REQUIRED --
+#: ``build_footing_plan`` raises ``TopMeshBarTypeRequiredError`` rather
+#: than silently falling back to the bottom mat's own diameter.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -175,7 +188,8 @@ FootingInputs = namedtuple(
      "perimeter_tie_second_bar_length_mm",
      "dowel_count_b_face", "dowel_count_h_face",
      "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
-     "dowel_splice_length_mm"],
+     "dowel_splice_length_mm",
+     "top_mesh_bar_x_dia_mm", "top_mesh_bar_y_dia_mm"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -194,7 +208,8 @@ TOP_REINFORCEMENT_TOP_AND_BTM = "TOP_AND_BTM"
 FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
     None, None, None, None, None, None,
-    None, None, None, None, None)
+    None, None, None, None, None,
+    None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -378,30 +393,48 @@ FootingPlan = namedtuple(
      "perimeter_tie"])
 
 
-def _bottom_mat_endpoints(lengths, inputs):
+def _bottom_mat_endpoints(lengths, bar_x_dia_mm, bar_y_dia_mm, inputs):
     """Bottom mat Z-elevation, measured from ``bottom_cover_mm`` upward --
     unchanged since #198."""
     return local_mesh_bar_endpoints(
-        lengths, inputs.bottom_cover_mm, inputs.mesh_bar_x_dia_mm,
-        inputs.mesh_bar_y_dia_mm)
+        lengths, inputs.bottom_cover_mm, bar_x_dia_mm, bar_y_dia_mm)
 
 
-def _top_mat_endpoints(lengths, inputs):
+def _top_mat_endpoints(lengths, bar_x_dia_mm, bar_y_dia_mm, inputs):
     """Top mat Z-elevation, measured from ``top_cover_mm`` / footing
     thickness downward -- see ``local_top_mesh_bar_endpoints``'s own
     docstring (R3, docs/footing/spec-amendments.md) for why this differs
     from the bottom mat; confirmed correct by Essam."""
     return local_top_mesh_bar_endpoints(
         lengths, inputs.top_cover_mm, inputs.footing_thickness_mm,
-        inputs.mesh_bar_x_dia_mm, inputs.mesh_bar_y_dia_mm)
+        bar_x_dia_mm, bar_y_dia_mm)
 
 
-def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
+class TopMeshBarTypeRequiredError(ValueError):
+    """#253 (ruling R16, docs/footing/spec-amendments.md): the engineer
+    picked ``TOP_REINFORCEMENT_TOP_AND_BTM`` but left ``top_mesh_bar_x_
+    dia_mm``/``top_mesh_bar_y_dia_mm`` (or both) unset.
+
+    Spec Sec 7/Story 4 never names bar diameter as shared-vs-independent
+    at all -- R16 rules it independent, the same "set separately, never
+    coupled" principle already governing ``top_mat_shape_mode``. Refusing
+    here, rather than silently falling back to the bottom mat's own
+    ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm``, is REUSE_GUIDELINES.md
+    Sec 3's "Explicit Refusals" rule.
+    """
+
+
+def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn,
+                          bar_x_dia_mm, bar_y_dia_mm):
     """The one shared per-mat call sequence both the bottom and (#201) top
     mat go through: ``mesh_bar_lengths``, ``primary_reinforcement_
     direction``, an endpoints function and ``bar_hook_plan_for_mat``,
-    parametrized by which mat's ``mat_shape_mode`` to honour and which
-    ``endpoints_fn`` computes that mat's own Z-elevation.
+    parametrized by which mat's ``mat_shape_mode`` to honour, which
+    ``endpoints_fn`` computes that mat's own Z-elevation, and (#253, R16)
+    which mat's own bar diameters (``bar_x_dia_mm``/``bar_y_dia_mm``) to
+    use throughout -- the bottom mat's own ``mesh_bar_x_dia_mm``/
+    ``mesh_bar_y_dia_mm``, or the top mat's own ``top_mesh_bar_x_dia_mm``/
+    ``top_mesh_bar_y_dia_mm``, never mixed between the two mats.
 
     Spec Ref: Sec 4 (one composing module) and the #201 ticket body itself
     ("the top mat reuses the SAME mesh-length formulas ... and the SAME
@@ -423,10 +456,11 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
     lengths = mesh_bar_lengths(
         inputs.a_mm, inputs.b_mm, inputs.cover_mm,
         inputs.footing_thickness_mm, inputs.bottom_cover_mm,
-        inputs.top_cover_mm, inputs.mesh_bar_x_dia_mm)
+        inputs.top_cover_mm, bar_x_dia_mm)
     direction = primary_reinforcement_direction(
         inputs.x_offset_mm, inputs.y_offset_mm)
-    bar_x_endpoints, bar_y_endpoints = endpoints_fn(lengths, inputs)
+    bar_x_endpoints, bar_y_endpoints = endpoints_fn(
+        lengths, bar_x_dia_mm, bar_y_dia_mm, inputs)
     # Spec Ref: Sec 2/3 -- a = 2*X + Cw is symmetric, so both ends of
     # mesh_bar_x share the same X offset (and both ends of mesh_bar_y the
     # same Y offset); bar_hook_plan_for_mat itself takes independent
@@ -442,11 +476,11 @@ def _build_mesh_mat_plan(plan_cls, inputs, mat_shape_mode, endpoints_fn):
     # top mat (#201).
     bar_x_hooks = bar_hook_plan_for_mat(
         0, mat_shape_mode,
-        inputs.x_offset_mm, inputs.x_offset_mm, inputs.mesh_bar_x_dia_mm,
+        inputs.x_offset_mm, inputs.x_offset_mm, bar_x_dia_mm,
         inputs.ld_multiplier)
     bar_y_hooks = bar_hook_plan_for_mat(
         0, mat_shape_mode,
-        inputs.y_offset_mm, inputs.y_offset_mm, inputs.mesh_bar_y_dia_mm,
+        inputs.y_offset_mm, inputs.y_offset_mm, bar_y_dia_mm,
         inputs.ld_multiplier)
     return plan_cls(
         lengths=lengths, primary_direction=direction,
@@ -722,6 +756,13 @@ def build_footing_plan(inputs, column_section=None,
     ``inputs.top_mat_shape_mode``, independent of ``bottom_mat_shape_mode``
     per Sec 7's "set separately, never coupled").
 
+    #253 (ruling R16): ``TOP_REINFORCEMENT_TOP_AND_BTM`` also requires
+    ``inputs.top_mesh_bar_x_dia_mm``/``top_mesh_bar_y_dia_mm`` -- the top
+    mat's own bar diameters, independent of the bottom mat's
+    ``mesh_bar_x_dia_mm``/``mesh_bar_y_dia_mm``, same "set separately,
+    never coupled" principle. Raises ``TopMeshBarTypeRequiredError`` if
+    either is left ``None`` while TOP+BTM is selected.
+
     #222 (specs/isolated-footing-dowel-array.md Sec 4, "Data flow"):
     ``column_section`` is a ``DowelColumnSection`` (``Cw_mm``/``Cd_mm``/
     ``Ccover_mm`` -- the column's own live cross-section width/depth and
@@ -738,7 +779,8 @@ def build_footing_plan(inputs, column_section=None,
     """
     bottom_mesh = _build_mesh_mat_plan(
         BottomMeshPlan, inputs, inputs.bottom_mat_shape_mode,
-        _bottom_mat_endpoints)
+        _bottom_mat_endpoints, inputs.mesh_bar_x_dia_mm,
+        inputs.mesh_bar_y_dia_mm)
     # #229: the bottom mat's own real bent U/L geometry, built from the
     # SAME lengths/hook-plan just computed above -- never re-derived
     # independently, so the report and the placer read the identical
@@ -764,19 +806,33 @@ def build_footing_plan(inputs, column_section=None,
     if inputs.top_reinforcement == TOP_REINFORCEMENT_BTM_ONLY:
         top_mesh = None
     elif inputs.top_reinforcement == TOP_REINFORCEMENT_TOP_AND_BTM:
+        # #253 (R16): the top mat's own bar diameters are REQUIRED once
+        # TOP+BTM is chosen -- never silently borrowed from the bottom
+        # mat's mesh_bar_x_dia_mm/mesh_bar_y_dia_mm.
+        if (inputs.top_mesh_bar_x_dia_mm is None
+                or inputs.top_mesh_bar_y_dia_mm is None):
+            raise TopMeshBarTypeRequiredError(
+                "TOP_REINFORCEMENT_TOP_AND_BTM requires both "
+                "top_mesh_bar_x_dia_mm and top_mesh_bar_y_dia_mm to be "
+                "set -- the top mat's bar type is independent of the "
+                "bottom mat's (R16, docs/footing/spec-amendments.md) "
+                "and is never inferred from it.")
         top_mesh = _build_mesh_mat_plan(
             TopMeshPlan, inputs, inputs.top_mat_shape_mode,
-            _top_mat_endpoints)
+            _top_mat_endpoints, inputs.top_mesh_bar_x_dia_mm,
+            inputs.top_mesh_bar_y_dia_mm)
         # #233 (R13, docs/footing/spec-amendments.md): the top mat's own
         # real bent centreline -- the mirror image of the bottom mat's
         # own #229 step just above, built from this SAME plan's own
         # lengths/hook-plan, never re-derived independently. No array
         # (bar_x_array/bar_y_array) for the top mat yet -- see
         # TopMeshPlan's own docstring and this ticket's PR description.
+        # #253 (R16): uses the top mat's OWN diameters, not the bottom
+        # mat's mesh_bar_x_dia_mm/mesh_bar_y_dia_mm.
         top_bar_x_geometry, top_bar_y_geometry = top_mesh_bar_geometry(
             top_mesh.lengths, inputs.top_cover_mm,
-            inputs.footing_thickness_mm, inputs.mesh_bar_x_dia_mm,
-            inputs.mesh_bar_y_dia_mm, top_mesh.bar_x_hooks,
+            inputs.footing_thickness_mm, inputs.top_mesh_bar_x_dia_mm,
+            inputs.top_mesh_bar_y_dia_mm, top_mesh.bar_x_hooks,
             top_mesh.bar_y_hooks)
         top_mesh = top_mesh._replace(
             bar_x_geometry=top_bar_x_geometry,

@@ -367,7 +367,11 @@ def test_plan_candidates_threads_the_shared_top_reinforcement_choice(
         geometry_by_footing_id={1: _geometry()})
 
     shared_inputs = _shared_inputs()._replace(
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        # #253 (R16): the top mat's own bar types are REQUIRED once
+        # TOP+BTM is chosen -- never inferred from bar_x_type/bar_y_type.
+        top_mesh_bar_x_type=FakeRebarBarType(bar_nominal_diameter=mm(16.0)),
+        top_mesh_bar_y_type=FakeRebarBarType(bar_nominal_diameter=mm(12.0)))
     result = plan_candidates(FakeDocument({}), ftg_a, shared_inputs)
 
     assert len(result.candidates) == 1
@@ -476,7 +480,10 @@ def _plan_with_top_mesh(cw_mm=300.0, cd_mm=600.0, ccover_mm=40.0):
         mesh_bar_y_dia_mm=12.0, x_offset_mm=300.0, y_offset_mm=150.0,
         ld_multiplier=40.0, dowel_bar_dia_mm=25.0, dowel_ld_multiplier=20.0,
         dowel_tie_dia_mm=10.0, dowel_count_b_face=3, dowel_count_h_face=3,
-        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM)
+        top_reinforcement=TOP_REINFORCEMENT_TOP_AND_BTM,
+        # #253 (R16): the top mat's own bar diameters are REQUIRED once
+        # TOP+BTM is chosen.
+        top_mesh_bar_x_dia_mm=16.0, top_mesh_bar_y_dia_mm=12.0)
     return build_footing_plan(
         inputs, column_section=_column_section(cw_mm, cd_mm, ccover_mm))
 
@@ -568,7 +575,9 @@ def test_apply_batch_places_the_top_mesh_when_the_plan_carries_one():
                       candidates=[with_top, without_top])
     read_existing(doc, batch)
 
-    result = apply_batch(doc, batch, object(), object(), object())
+    result = apply_batch(
+        doc, batch, object(), object(), object(),
+        top_mesh_bar_x_type=object(), top_mesh_bar_y_type=object())
 
     results_by_id = dict(result.per_footing)
     assert results_by_id[501].top_bar_x is not None

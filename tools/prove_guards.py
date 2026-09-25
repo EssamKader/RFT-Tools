@@ -1902,7 +1902,8 @@ CASES = [
      '            if self.plan.top_mesh is not None:\n'
      '                top_bar_x, top_bar_y = place_straight_top_mesh(\n'
      '                    doc, self.footing, self.plan.top_mesh,\n'
-     '                    bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])\n'
+     '                    bar_types["top_mesh_bar_x_type"],\n'
+     '                    bar_types["top_mesh_bar_y_type"])\n'
      '            # #242: the dowel_tie closed loop, same transaction, same\n'
      '            # footing host as the bottom mesh/dowels -- only when the\n'
      '            # plan actually carries a loop (a real dowel array plus a\n'
@@ -1977,7 +1978,8 @@ CASES = [
      '        if self.plan.top_mesh is not None:\n'
      '            top_bar_x, top_bar_y = place_straight_top_mesh(\n'
      '                doc, self.footing, self.plan.top_mesh,\n'
-     '                bar_types["mesh_bar_x_type"], bar_types["mesh_bar_y_type"])',
+     '                bar_types["top_mesh_bar_x_type"],\n'
+     '                bar_types["top_mesh_bar_y_type"])',
      TFW + "test_single_footing_placement_places_the_top_mat_before_commit",
      "#233 -- the top mat's own placement call moved to AFTER "
      "transaction.Commit(), outside the one transaction this repo's hard "
