@@ -544,7 +544,16 @@ class FootingWindow(forms.WPFWindow):
             perimeter_tie_second_bar_length_mm=
                 perimeter_tie_second_bar_length_mm,
             top_mesh_bar_x_dia_mm=top_mesh_bar_x_dia_mm,
-            top_mesh_bar_y_dia_mm=top_mesh_bar_y_dia_mm)
+            top_mesh_bar_y_dia_mm=top_mesh_bar_y_dia_mm,
+            # #247 (R15): engineer-stated inner dowel ties (crossties) --
+            # optional free text, parsed by build_footing_plan itself
+            # (rft.core.footing_dowel_ties._resolve_inner_ties), the SAME
+            # "propagate the bare ValueError to this window's own
+            # try/except ValueError below" pattern every other opt-in
+            # field on this window already uses. Blank text means no
+            # inner ties -- the whole-array outer loop only, unchanged
+            # from #242.
+            dowel_tie_subsets_text=self.dowel_tie_subsets_tb.Text)
 
         try:
             plan = build_footing_plan(

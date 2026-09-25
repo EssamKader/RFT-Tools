@@ -30,7 +30,7 @@ from .footing_dowels import (
     local_dowel_bar_geometry,
     positioned_dowel_bar_geometry,
 )
-from .footing_dowel_ties import dowel_tie_ladder, dowel_tie_loop_mm
+from .footing_dowel_ties import dowel_tie_ladder, dowel_ties_mm
 from .footing_perimeter_tie import (
     perimeter_tie_bar_lengths_mm,
     perimeter_tie_geometry,
@@ -173,6 +173,16 @@ from .footing_mesh import (
 #: TOP_REINFORCEMENT_TOP_AND_BTM`` they become REQUIRED --
 #: ``build_footing_plan`` raises ``TopMeshBarTypeRequiredError`` rather
 #: than silently falling back to the bottom mat's own diameter.
+#: #247 (R15, docs/footing/spec-amendments.md): ``dowel_tie_subsets_text``
+#: is the engineer's own free-text entry of inner dowel ties (crossties),
+#: EXACTLY the ``column_ties.parse_tie_subsets`` format the column tool's
+#: own ``tie_subsets_tb`` already uses -- one tie per line, a subset of
+#: dowel bar indices, never an auto-generated pattern (R17's own ruling,
+#: mirrored here per R15). Appended at the very end, defaulting to
+#: ``None`` (the SAME "opt-in, no inner ties" meaning an empty string
+#: carries -- see ``footing_dowel_ties._resolve_inner_ties``) so every
+#: caller that predates #247 keeps building a plan with the whole-array
+#: outer loop only, unchanged.
 FootingInputs = namedtuple(
     "FootingInputs",
     ["a_mm", "b_mm", "cover_mm", "footing_thickness_mm",
@@ -189,7 +199,8 @@ FootingInputs = namedtuple(
      "dowel_count_b_face", "dowel_count_h_face",
      "mesh_bar_x_spacing_mm", "mesh_bar_y_spacing_mm",
      "dowel_splice_length_mm",
-     "top_mesh_bar_x_dia_mm", "top_mesh_bar_y_dia_mm"],
+     "top_mesh_bar_x_dia_mm", "top_mesh_bar_y_dia_mm",
+     "dowel_tie_subsets_text"],
 )
 #: Python 2/3-compatible way to give a namedtuple field a default without
 #: breaking every existing positional/keyword call site that predates
@@ -209,7 +220,7 @@ FootingInputs.__new__.__defaults__ = (
     None, TOP_REINFORCEMENT_BTM_ONLY, None, None, None, None, None,
     None, None, None, None, None, None,
     None, None, None, None, None,
-    None, None)
+    None, None, None)
 
 #: ``lengths`` is a ``footing_mesh.MeshBarLengths``; ``primary_direction``
 #: is ``footing_mesh.DIRECTION_X``/``DIRECTION_Y``; ``bar_x_endpoints``/
@@ -339,7 +350,19 @@ DowelArrayPlan = namedtuple(
 #: established). The LADDER is unaffected either way -- every caller that
 #: predates #242 (tie diameter/spacing supplied, no array/bend diameter
 #: yet) keeps building the SAME ladder-only plan, unchanged.
-DowelTiePlan = namedtuple("DowelTiePlan", ["ladder", "tie_dia_mm", "loop"])
+#: #247 (R15, docs/footing/spec-amendments.md): ``inner_ties`` is a tuple
+#: of ``footing_dowel_ties.DowelInnerTie`` -- the engineer-stated inner
+#: ties (crossties), from ``inputs.dowel_tie_subsets_text``, additive to
+#: ``loop`` above (which stays the WHOLE-array outer wrap, unchanged).
+#: Always a tuple, never ``None`` -- empty when no ``dowel_tie_subsets_
+#: text`` was supplied (every caller that predates #247, or an engineer
+#: who wants the outer loop only), so a placement adapter can always
+#: iterate it with no null check (the SAME "never None" convention
+#: ``DowelArrayPlan.overshoot_bar_indices`` already established). Built
+#: alongside ``loop`` by the SAME ``dowel_ties_mm`` call -- see
+#: ``_build_dowel_tie_plan`` -- never a second, independent parse.
+DowelTiePlan = namedtuple(
+    "DowelTiePlan", ["ladder", "tie_dia_mm", "loop", "inner_ties"])
 
 #: #204 (Sec 3 Story 7, Sec 10): ``geometry`` is a
 #: ``footing_perimeter_tie.PerimeterTieGeometry`` (inner dimensions,
@@ -639,8 +662,8 @@ def _build_dowel_plan(inputs, column_section):
 
 
 def _build_dowel_tie_plan(inputs, dowel_plan, dowel_tie_bend_diameter_mm):
-    """#203 (Sec 3 Story 6, Sec 9), extended by #242: the one place
-    ``footing_dowel_ties.dowel_tie_ladder``/``dowel_tie_loop_mm`` are
+    """#203 (Sec 3 Story 6, Sec 9), extended by #242 and #247 (R15): the
+    one place ``footing_dowel_ties.dowel_tie_ladder``/``dowel_ties_mm`` are
     called from, so a future placement adapter reads the SAME
     ``DowelTiePlan`` rather than calling ``footing_dowel_ties``
     independently (Sec 4's "one composing module" rule, already applied
@@ -648,26 +671,37 @@ def _build_dowel_tie_plan(inputs, dowel_plan, dowel_tie_bend_diameter_mm):
 
     ``dowel_plan`` is the SAME ``DowelArrayPlan`` (or ``None``)
     ``build_footing_plan`` already built -- never re-derived here, since
-    a `dowel_tie` wraps THAT array, not a second one. ``loop`` stays
-    ``None`` (ladder-only, #203's own original scope) unless a real array
-    exists (``dowel_plan`` is not ``None`` and carries at least 2 bars --
-    see ``footing_dowel_ties.dowel_tie_loop_mm``'s own refusal) AND
-    ``dowel_tie_bend_diameter_mm``/``inputs.dowel_bar_dia_mm`` are both
-    supplied.
+    a `dowel_tie` wraps THAT array, not a second one. ``loop``/
+    ``inner_ties`` both stay ``None``/empty (ladder-only, #203's own
+    original scope) unless a real array exists (``dowel_plan`` is not
+    ``None`` and carries at least 2 bars -- see ``footing_dowel_ties.
+    dowel_tie_loop_mm``'s own refusal) AND ``dowel_tie_bend_diameter_mm``/
+    ``inputs.dowel_bar_dia_mm`` are both supplied -- the SAME gate #242
+    already used, now feeding ``dowel_ties_mm`` (outer loop + #247's
+    engineer-stated inner ties) instead of ``dowel_tie_loop_mm`` alone.
+    ``inputs.dowel_tie_subsets_text`` is optional (``None``/empty means no
+    inner ties -- see ``footing_dowel_ties._resolve_inner_ties``'s own
+    docstring), so every caller that predates #247 keeps building the
+    SAME outer-loop-only plan, unchanged.
     """
     ladder = dowel_tie_ladder(
         inputs.footing_thickness_mm, inputs.dowel_tie_spacing_mm)
 
     loop = None
+    inner_ties = tuple()
     if (dowel_plan is not None and len(dowel_plan.bars) >= 2
             and dowel_tie_bend_diameter_mm is not None
             and inputs.dowel_bar_dia_mm is not None):
-        loop = dowel_tie_loop_mm(
-            dowel_plan.bars, inputs.dowel_tie_dia_mm,
-            inputs.dowel_bar_dia_mm, dowel_tie_bend_diameter_mm)
+        ties = dowel_ties_mm(
+            dowel_plan.bars, inputs.dowel_tie_subsets_text,
+            inputs.dowel_tie_dia_mm, inputs.dowel_bar_dia_mm,
+            dowel_tie_bend_diameter_mm)
+        loop = ties.outer_loop
+        inner_ties = ties.inner_ties
 
     return DowelTiePlan(
-        ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm, loop=loop)
+        ladder=ladder, tie_dia_mm=inputs.dowel_tie_dia_mm, loop=loop,
+        inner_ties=inner_ties)
 
 
 def _build_perimeter_tie_plan(inputs):

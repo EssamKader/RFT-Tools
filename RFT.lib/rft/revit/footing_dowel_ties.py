@@ -18,6 +18,15 @@ calls ``Rebar.CreateFromCurves`` once per ladder level, one closed-loop
   same division of labour ``rft.revit.footing_mesh``/``footing_dowels``
   already keep between "the core decides the shape" and "the adapter
   places it".
+- #247 (R15): ``DowelTiePlan.inner_ties`` are placed at the SAME ladder
+  levels as the outer loop -- ``for level: for tie:``, mirroring
+  ``rft.revit.column_place_ties.place_ties``'s own loop structure exactly
+  (the ticket's own instruction: "do not invent a separate level scheme").
+  A cross-tie (``column_ties.KIND_CROSS_TIE``) is one straight leg between
+  its two named points, never a closed loop's hook-closing rectangle --
+  see ``column_place_ties._cross_tie_uv_segments_mm``/
+  ``_closed_loop_uv_segments_mm``'s own drawing distinction, mirrored here
+  as :func:`_cross_tie_curves`/:func:`_loop_curves`.
 - Footing-local-to-world conversion reuses ``rft.revit.footing_mesh.
   _footing_origin``/``_to_world_point`` AS-IS -- the SAME footing-
   bounding-box-centre convention every other footing placement adapter in
@@ -50,7 +59,8 @@ covers:
    footing's own top face (Sec 2) are kept writes. This module's own
    ``Rebar.CreateFromCurves`` call, with ``RebarStyle.StirrupTie`` and a
    real hook type, is therefore a new combination on a footing host, not
-   yet run live.
+   yet run live. #247's own inner cross-ties are the SAME unverified
+   combination, one leg instead of four.
 2. **The winding-sensitive hook orientation.** ``rft.core.column_ties``'s
    own ``_RECTANGLE_WINDING_SIGN``/R21 (``RebarHookOrientation.Left``,
    both ends) was measured live on a COLUMN host, where a column's own
@@ -73,6 +83,7 @@ a transaction -- the caller owns the one transaction for the whole footing
 from Autodesk.Revit.DB import Line, XYZ
 from Autodesk.Revit.DB.Structure import Rebar, RebarHookOrientation, RebarStyle
 
+from ..core.column_ties import KIND_CROSS_TIE
 from ..core.footing_mesh import LocalPoint
 from .footing_mesh import _footing_origin, _to_world_point
 
@@ -96,13 +107,18 @@ class DowelTieNotPlaceableError(Exception):
     """
 
 
-def _loop_curves(origin_x, origin_y, origin_z, z_mm, loop):
-    """The closed loop's own footing-local corners, at ONE level's Z, as a
-    chain of connected world ``Line``s -- the last one closing back to the
-    first, since this is a closed polygon, not an open chain (unlike
-    ``rft.revit.footing_dowels``'s own bent-bar curves).
+def _loop_curves(origin_x, origin_y, origin_z, z_mm, tie):
+    """A closed polygon's own footing-local corners (``tie.corners``), at
+    ONE level's Z, as a chain of connected world ``Line``s -- the last one
+    closing back to the first, since this is a closed polygon, not an open
+    chain (unlike ``rft.revit.footing_dowels``'s own bent-bar curves).
+
+    Used for the #242 outer loop AND (#247) any inner tie whose ``kind``
+    is a closed loop or triangle -- both carry the SAME ``.corners`` shape
+    (``footing_dowel_ties.DowelTieLoop``/``DowelInnerTie``), so one chain
+    builder serves both.
     """
-    corners = loop.corners
+    corners = tie.corners
     count = len(corners)
     points = [
         _to_world_point(
@@ -113,10 +129,34 @@ def _loop_curves(origin_x, origin_y, origin_z, z_mm, loop):
             for i in range(count)]
 
 
-def _create_dowel_tie_rebar(document, footing, origin, z_mm, loop, bar_type,
-                            hook_type):
+def _cross_tie_curves(origin_x, origin_y, origin_z, z_mm, tie):
+    """#247: an inner cross-tie's own single straight leg between its two
+    named points -- NOT a closed loop's hook-closing rectangle, mirroring
+    ``rft.revit.column_place_ties._cross_tie_uv_segments_mm``'s own
+    one-leg distinction (do not invent a new drawing convention).
+    """
+    corners = tie.corners
+    points = [
+        _to_world_point(
+            origin_x, origin_y, origin_z,
+            LocalPoint(corner.x_mm, corner.y_mm, z_mm))
+        for corner in corners]
+    return [Line.CreateBound(points[0], points[-1])]
+
+
+def _curves_for_tie(origin, z_mm, tie):
+    """Dispatches on ``tie.kind`` -- a cross-tie gets one leg
+    (:func:`_cross_tie_curves`), everything else (a closed loop/triangle)
+    gets the full chain (:func:`_loop_curves`), mirroring
+    ``column_place_ties._uv_segments_mm``'s own dispatch.
+    """
     origin_x, origin_y, origin_z = origin
-    curves = _loop_curves(origin_x, origin_y, origin_z, z_mm, loop)
+    if tie.kind == KIND_CROSS_TIE:
+        return _cross_tie_curves(origin_x, origin_y, origin_z, z_mm, tie)
+    return _loop_curves(origin_x, origin_y, origin_z, z_mm, tie)
+
+
+def _create_rebar_from_curves(document, footing, curves, bar_type, hook_type):
     return Rebar.CreateFromCurves(
         document,
         RebarStyle.StirrupTie,
@@ -133,11 +173,38 @@ def _create_dowel_tie_rebar(document, footing, origin, z_mm, loop, bar_type,
     )
 
 
+def _create_dowel_tie_rebar(document, footing, origin, z_mm, loop, bar_type,
+                            hook_type):
+    origin_x, origin_y, origin_z = origin
+    curves = _loop_curves(origin_x, origin_y, origin_z, z_mm, loop)
+    return _create_rebar_from_curves(
+        document, footing, curves, bar_type, hook_type)
+
+
+def _create_inner_tie_rebar(document, footing, origin, z_mm, tie, bar_type,
+                            hook_type):
+    """#247: one inner tie (cross-tie, closed loop or triangle), at ONE
+    ladder level -- see :func:`_curves_for_tie` for the kind dispatch.
+    """
+    curves = _curves_for_tie(origin, z_mm, tie)
+    return _create_rebar_from_curves(
+        document, footing, curves, bar_type, hook_type)
+
+
 def place_dowel_ties(document, footing, dowel_tie_plan, bar_type, hook_type):
     """Places one closed-loop ``Rebar`` per level in
     ``dowel_tie_plan.ladder.levels``, at ``dowel_tie_plan.loop``'s own
     footing-local rectangle, hosted directly on ``footing`` -- the SAME
     footing every other placement adapter in this tool hosts on.
+
+    #247 (R15): also places every ``dowel_tie_plan.inner_ties`` entry at
+    the SAME ladder level as the outer loop -- ``for level: for tie:``,
+    mirroring ``rft.revit.column_place_ties.place_ties``'s own loop
+    structure (the ticket's own instruction; see this module's own "Reuse
+    plan" docstring section). ``inner_ties`` is read with ``getattr``
+    defaulting to an empty tuple so a caller passing a plan object built
+    before #247 (no ``inner_ties`` attribute at all) still places the
+    outer loop unchanged.
 
     ``dowel_tie_plan`` is a ``rft.core.footing_plan.DowelTiePlan`` -- the
     caller must build it via ``rft.core.footing_plan.build_footing_plan``,
@@ -149,8 +216,9 @@ def place_dowel_ties(document, footing, dowel_tie_plan, bar_type, hook_type):
     a caller cannot mistake "no ties were built" for "no ties were
     needed".
 
-    Returns the list of created ``Rebar`` elements, one per ladder level,
-    in level order.
+    Returns the list of created ``Rebar`` elements, in level order; within
+    a level, the outer loop first, then every inner tie in the order
+    ``dowel_tie_plan.inner_ties`` carries them.
     """
     if dowel_tie_plan.loop is None:
         raise DowelTieNotPlaceableError(
@@ -161,9 +229,15 @@ def place_dowel_ties(document, footing, dowel_tie_plan, bar_type, hook_type):
             "build_footing_plan can build one (see "
             "rft.core.footing_plan.DowelTiePlan's own docstring).")
 
+    inner_ties = getattr(dowel_tie_plan, "inner_ties", tuple())
     origin = _footing_origin(footing)
-    return [
-        _create_dowel_tie_rebar(
+    created = []
+    for level in dowel_tie_plan.ladder.levels:
+        created.append(_create_dowel_tie_rebar(
             document, footing, origin, level.z_mm, dowel_tie_plan.loop,
-            bar_type, hook_type)
-        for level in dowel_tie_plan.ladder.levels]
+            bar_type, hook_type))
+        for tie in inner_ties:
+            created.append(_create_inner_tie_rebar(
+                document, footing, origin, level.z_mm, tie, bar_type,
+                hook_type))
+    return created

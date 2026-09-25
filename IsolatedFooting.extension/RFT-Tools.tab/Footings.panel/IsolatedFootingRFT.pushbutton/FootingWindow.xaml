@@ -443,6 +443,22 @@
                                       x:Name="dowel_tie_hook_type_cb"/>
                         </Grid>
 
+                        <!-- #247 (R15): inner dowel ties (crossties), engineer-stated,
+                             EXACTLY like the column tool's own tie_subsets_tb, a
+                             subset of dowel bar indices per line, never an
+                             auto-generated pattern. Optional: left blank, the whole-
+                             array outer loop above is the only dowel_tie built,
+                             unchanged from #242. -->
+                        <TextBlock Style="{StaticResource ReadOutSource}"
+                                   Margin="0,8,0,0"
+                                   Text="Inner dowel ties (crossties, optional, R15): one tie per line, the dowel bar numbers it touches. Two bars make a cross-tie (1 6); three or more make a closed loop. A line starting with T, e.g. T 1 3 5, is a genuine three-sided triangle. The whole-array outer loop above is always built and never typed here."/>
+                        <TextBox x:Name="dowel_tie_subsets_tb"
+                                 Height="86" Margin="0,6,0,0"
+                                 AcceptsReturn="True"
+                                 FontFamily="Consolas" FontSize="11"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Text=""/>
+
                         <TextBlock Style="{StaticResource SectionHeading}"
                                    Text="Perimeter tie (#204/#244) -- wraps the footing's own plan perimeter, R4/R5/R14"/>
                         <Grid Margin="0,4,0,0">
